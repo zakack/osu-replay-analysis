@@ -1,3 +1,6 @@
 replays/
 build/
 resources/
+bin/
+obj/
+*.user

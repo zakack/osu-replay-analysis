@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>ora</AssemblyName>
+    <RootNamespace>Ora.Cli</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Extract\Extract.csproj" />
+    <ProjectReference Include="..\Sim\Sim.csproj" />
+  </ItemGroup>
+</Project>
