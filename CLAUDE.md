@@ -247,9 +247,10 @@ section, it's the map, not the player.
   resimulator can reach exactly on tracking-dependent judgements.
 - **The replay handler's "important section" rule never applies.**
   `FramedReplayInputHandler` refuses mid-frame times while a button is held — but only when
-  `FrameAccuratePlayback` is true, and that public field is never assigned anywhere in
-  `osu.Game`. Implementing the rule as written is measurably wrong: it suppresses fine
-  sampling exactly where slider tracking is decided.
+  `FrameAccuratePlayback` is true, and across the whole `ppy/osu` tree that public field is
+  assigned in exactly one place: `osu.Game.Tests/NonVisual/FramedReplayInputHandlerTest.cs`.
+  Never in game code. Implementing the rule as written is measurably wrong, because it
+  suppresses fine sampling exactly where slider tracking is decided.
 - **Replays end when the play ends.** A failed or abandoned play simply has no frames past
   that point, and lazer judges nothing after it. Simulating to the end of the beatmap
   invents a miss for every remaining object — which looks like a catastrophic ruleset bug

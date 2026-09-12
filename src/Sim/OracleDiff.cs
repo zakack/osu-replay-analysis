@@ -75,8 +75,19 @@ public static class OracleDiff
     /// </summary>
     public static IReadOnlyList<Divergence> Compare(OracleRun run, SimulationResult simulation)
     {
-        var simulated = simulation.InJudgementOrder
-                                  .ToDictionary(o => (o.HitObject.GetType().Name, o.HitObject.StartTime), o => o.Result.ToString());
+        // A queue per key rather than one entry: 2B maps can carry two objects of the same
+        // type at the same start time, and a dictionary would silently drop one of them.
+        var simulated = new Dictionary<(string, double), Queue<string>>();
+
+        foreach (var state in simulation.InJudgementOrder)
+        {
+            var key = (state.HitObject.GetType().Name, state.HitObject.StartTime);
+
+            if (!simulated.TryGetValue(key, out var queue))
+                simulated[key] = queue = new Queue<string>();
+
+            queue.Enqueue(state.Result.ToString());
+        }
 
         var divergences = new List<Divergence>();
 
@@ -84,15 +95,20 @@ public static class OracleDiff
         {
             var key = (judgement.ObjectType, judgement.StartTime);
 
-            string simulatedResult = simulated.Remove(key, out string? value) ? value : "<not judged>";
+            string simulatedResult = simulated.TryGetValue(key, out var queue) && queue.Count > 0
+                ? queue.Dequeue()
+                : "<not judged>";
 
             if (simulatedResult != judgement.Result)
                 divergences.Add(new Divergence(judgement.ObjectType, judgement.StartTime, judgement.Result, simulatedResult));
         }
 
         // Anything left was judged by the simulation and not by the game at all.
-        foreach (var ((type, startTime), result) in simulated)
-            divergences.Add(new Divergence(type, startTime, "<not judged>", result));
+        foreach (var ((type, startTime), queue) in simulated)
+        {
+            while (queue.Count > 0)
+                divergences.Add(new Divergence(type, startTime, "<not judged>", queue.Dequeue()));
+        }
 
         return divergences.OrderBy(d => d.StartTime).ToArray();
     }

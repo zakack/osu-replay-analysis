@@ -17,9 +17,10 @@ public readonly record struct GameplayFrame(double Time, Vector2 Cursor, IReadOn
 /// <c>FramedReplayInputHandler</c> has an "important section" rule that refuses mid-frame
 /// times while a button is held, which would mean sliders are only ever evaluated on replay
 /// frame boundaries. It never applies: the rule is gated on
-/// <c>FramedReplayInputHandler.FrameAccuratePlayback</c>, a public field that nothing in
-/// osu.Game ever assigns, so it is always false. Implementing the rule anyway was measurably
-/// wrong — it suppressed fine sampling exactly where tracking is decided.
+/// <c>FramedReplayInputHandler.FrameAccuratePlayback</c>, a public field assigned in exactly
+/// one place across the whole ppy/osu tree — one of osu.Game's own unit tests — and never in
+/// game code, so it is always false during playback. Implementing the rule anyway was
+/// measurably wrong: it suppressed fine sampling exactly where tracking is decided.
 ///
 /// What actually happens: the clock advances at the host's frame rate, clamped to the
 /// current replay frame's span and snapped to a frame's time as it is crossed.
