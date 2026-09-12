@@ -144,6 +144,7 @@ public static class OracleDiff
         int compared = 0;
         int agreed = 0;
         int totalDivergences = 0;
+        int totalJudgements = 0;
 
         foreach (var target in targets)
         {
@@ -165,6 +166,7 @@ public static class OracleDiff
             var divergences = Compare(run, simulation);
             compared++;
             totalDivergences += divergences.Count;
+            totalJudgements += run.Judgements.Count;
 
             if (divergences.Count == 0)
                 agreed++;
@@ -210,7 +212,8 @@ public static class OracleDiff
         output.WriteLine($"compared {compared} of {targets.Count} targets at the oracle-matched step of {ReplaySampler.OracleMatchStep:F2}ms");
         output.WriteLine($"  simulation agrees with the live game  {agreed}");
         output.WriteLine($"  simulation diverges from it           {compared - agreed}");
-        output.WriteLine($"  total diverging judgements            {totalDivergences}");
+        output.WriteLine($"  diverging judgements                  {totalDivergences} of {totalJudgements}" +
+                         (totalJudgements > 0 ? $"  ({100.0 * totalDivergences / totalJudgements:F3}%)" : string.Empty));
         output.WriteLine();
         output.WriteLine("Every target here is a mismatch against the .osr header. The ones where the");
         output.WriteLine("simulation agrees with the live game are not defects here: replaying a replay");
