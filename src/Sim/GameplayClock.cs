@@ -83,7 +83,23 @@ public sealed class ReplaySampler(Replay replay, double clockRate = 1, double? s
     /// </summary>
     public const double OracleMatchStep = 1000.0 / 60;
 
-    private readonly List<OsuReplayFrame> frames = replay.Frames.Cast<OsuReplayFrame>().ToList();
+    /// <summary>
+    /// A constant offset applied to every replay frame time, in beatmap milliseconds.
+    ///
+    /// Purely a diagnostic. The legacy encoder rounds each frame time to a whole millisecond
+    /// (<c>LegacyScoreEncoder</c>: <c>int time = (int)Math.Round(legacyFrame.Time + offset)</c>),
+    /// so a replay's timing is quantised relative to the play that produced it. Sweeping this
+    /// answers whether the residual against the header is a constant shift — which would be a
+    /// bug to find — or scatter, which would be information the file no longer carries.
+    /// </summary>
+    public static double FrameShift { get; set; } =
+        double.TryParse(Environment.GetEnvironmentVariable("ORA_FRAME_SHIFT_MS"), out double shift) ? shift : 0;
+
+    private readonly List<OsuReplayFrame> frames = FrameShift == 0
+        ? replay.Frames.Cast<OsuReplayFrame>().ToList()
+        : replay.Frames.Cast<OsuReplayFrame>()
+                .Select(f => new OsuReplayFrame(f.Time + FrameShift, f.Position, f.Actions.ToArray()))
+                .ToList();
 
     public IReadOnlyList<OsuReplayFrame> Frames => frames;
 

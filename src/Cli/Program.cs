@@ -1,6 +1,8 @@
 using Extract;
 using osu.Game.Beatmaps;
 using osu.Game.Rulesets.Osu;
+using osu.Game.Rulesets.Osu.Objects;
+using osu.Game.Rulesets.Scoring;
 using Sim;
 
 if (args.Length == 0)
@@ -13,6 +15,8 @@ if (args.Length == 0)
     Console.Error.WriteLine("  oracle-list [n]       pick mismatching replays for the differential oracle to record");
     Console.Error.WriteLine("  oracle-diff           diff the simulation against the oracle's recordings, object by object");
     Console.Error.WriteLine("  trace <replay> <ms>   dump per-sample slider tracking state around a time");
+    Console.Error.WriteLine("  offsets <replay>      per click-judged object: result, hit offset, distance to the great edge");
+    Console.Error.WriteLine("  sweep [ms]...         shift every replay frame time and report the drift in click judgements");
     return 2;
 }
 
@@ -100,6 +104,67 @@ switch (args[0])
         Report.Print(results, Console.Out);
         Report.Write(results, "build/verification.json");
         Console.WriteLine("written: build/verification.json");
+        return 0;
+    }
+
+    case "offsets":
+    {
+        // Per click-judged object: what it was, when it was due, what it got, and by how
+        // much it was early or late. The point is to see where the judgements that disagree
+        // with the header sit relative to a hit window edge.
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine("offsets: expected a replay path");
+            return 2;
+        }
+
+        var index = BeatmapIndex.Read("build/beatmap-index.json");
+        var score = ReplayLoader.Decode(args[1], index);
+        var header = ReplayLoader.ReadHeader(args[1]);
+        var playable = new FlatWorkingBeatmap(index[header.BeatmapMd5].Path)
+            .GetPlayableBeatmap(new OsuRuleset().RulesetInfo, score.ScoreInfo.Mods);
+
+        // A spinner carries empty hit windows, so take them from a circle.
+        var windows = playable.HitObjects.OfType<HitCircle>().First().HitWindows;
+
+        Console.WriteLine($"# great <= {windows.WindowFor(HitResult.Great):0.###}  "
+                          + $"ok <= {windows.WindowFor(HitResult.Ok):0.###}  "
+                          + $"meh <= {windows.WindowFor(HitResult.Meh):0.###}");
+        Console.WriteLine("type,startTime,result,offset,distanceToGreatEdge");
+
+        double great = windows.WindowFor(HitResult.Great);
+
+        foreach (var state in new Simulator().Run(playable, score).Objects)
+        {
+            if (state.HitObject is not HitCircle || state.HitObject is SliderEndCircle || state.TimeOffset is not { } offset)
+                continue;
+
+            Console.WriteLine($"{state.HitObject.GetType().Name},{state.HitObject.StartTime:0.###},"
+                              + $"{state.Result},{offset:0.####},{Math.Abs(offset) - great:0.####}");
+        }
+
+        return 0;
+    }
+
+    case "sweep":
+    {
+        // Only the replays the oracle recorded: they were sampled across the mismatch
+        // distribution already, and they are the set where the live game's own answer is
+        // also on disk, so a shift that helps here can be checked against lazer rather than
+        // only against the header.
+        var index = BeatmapIndex.Read("build/beatmap-index.json");
+        var corpus = CorpusSurvey.ReadRecords("build/corpus.json");
+        var recorded = OracleDiff.RecordedReplayPaths("build/oracle").ToHashSet();
+
+        var subset = corpus.Where(r => r is { RulesetId: 0, Paired: true, DecodeError: null })
+                           .Where(r => recorded.Contains(r.Path))
+                           .ToArray();
+
+        double[] shifts = args.Length > 1
+            ? args.Skip(1).Select(double.Parse).ToArray()
+            : [-1, -0.5, -0.25, 0, 0.25, 0.5, 1];
+
+        ShiftSweep.Run(subset, index, shifts, Console.Out);
         return 0;
     }
 

@@ -131,6 +131,17 @@ public static class OracleDiff
         JsonSerializer.Deserialize<List<OracleTarget>>(File.ReadAllText(source), options)
         ?? throw new InvalidDataException($"Could not read oracle targets from {source}");
 
+    /// <summary>
+    /// Every replay the oracle has a recording for, by the path the recording names. Cheaper
+    /// and more direct than re-hashing the corpus to find them.
+    /// </summary>
+    public static IEnumerable<string> RecordedReplayPaths(string directory) =>
+        Directory.Exists(directory)
+            ? Directory.EnumerateFiles(directory, "*.json")
+                       .Select(f => JsonSerializer.Deserialize<OracleRun>(File.ReadAllText(f), options)?.ReplayPath)
+                       .OfType<string>()
+            : [];
+
     public static OracleRun? ReadRun(string replayPath)
     {
         string path = Path.Combine("build", "oracle",
