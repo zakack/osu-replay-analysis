@@ -25,6 +25,38 @@ public static class Report
         foreach (var group in byOutcome.OrderByDescending(g => g.Value.Length))
             output.WriteLine($"  {group.Value.Length,5}  {group.Key}");
 
+        // The taxonomy, which is the part worth reading. Three of these classes are not
+        // defects, and the last one is the only place a disagreement means a bug.
+        var byCause = results.GroupBy(Taxonomy.Classify).ToDictionary(g => g.Key, g => g.ToArray());
+
+        output.WriteLine();
+        output.WriteLine("by cause:");
+
+        foreach (var cause in Enum.GetValues<Cause>())
+        {
+            var group = byCause.GetValueOrDefault(cause) ?? [];
+
+            if (group.Length > 0)
+                output.WriteLine($"  {group.Length,5}  {cause}");
+        }
+
+        // The question the taxonomy exists to answer: on a modern client, for a play that
+        // ran to the end, does this reproduce what lazer judged?
+        int comparable = (byCause.GetValueOrDefault(Cause.Exact)?.Length ?? 0)
+                         + (byCause.GetValueOrDefault(Cause.TrackingOnly)?.Length ?? 0)
+                         + (byCause.GetValueOrDefault(Cause.ClickMismatch)?.Length ?? 0);
+
+        if (comparable > 0)
+        {
+            int clicksExact = comparable - (byCause.GetValueOrDefault(Cause.ClickMismatch)?.Length ?? 0);
+            int allExact = byCause.GetValueOrDefault(Cause.Exact)?.Length ?? 0;
+
+            output.WriteLine();
+            output.WriteLine($"of {comparable} replays on a modern client that played to the end:");
+            output.WriteLine($"  {clicksExact,5}  reproduce every click judgement  ({100.0 * clicksExact / comparable:F1}%)");
+            output.WriteLine($"  {allExact,5}  reproduce every statistic        ({100.0 * allExact / comparable:F1}%)");
+        }
+
         var mismatches = byOutcome.GetValueOrDefault(Outcome.Mismatch) ?? [];
 
         if (mismatches.Length > 0)

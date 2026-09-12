@@ -30,7 +30,20 @@ public sealed record VerificationResult(
     Dictionary<HitResult, int>? Expected,
     Dictionary<HitResult, int>? Actual,
     int ExpectedCombo,
-    int ActualCombo);
+    int ActualCombo)
+{
+    /// <summary>
+    /// The lazer build that wrote the score. Hit windows changed shape on 2025.710.0, so a
+    /// disagreement means different things either side of it.
+    /// </summary>
+    public string ClientVersion { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Objects the simulation never resolved, which means the replay stopped before the
+    /// beatmap did.
+    /// </summary>
+    public int Unjudged { get; init; }
+}
 
 public static class Verification
 {
@@ -61,8 +74,10 @@ public static class Verification
 
             // The Classic mod swaps in LegacyHitPolicy and changes slider head and tail
             // judgement. It is a different ruleset branch, not a variation, so it waits.
+            string clientVersion = score.ScoreInfo.ClientVersion;
+
             if (mods.Any(m => m is OsuModClassic))
-                return scoped(record, Outcome.OutOfScopeClassic);
+                return scoped(record, Outcome.OutOfScopeClassic) with { ClientVersion = clientVersion };
 
             var working = new FlatWorkingBeatmap(index[record.BeatmapMd5].Path);
             var playable = working.GetPlayableBeatmap(new OsuRuleset().RulesetInfo, mods);
@@ -74,7 +89,7 @@ public static class Verification
             var expected = groundTruth(score);
 
             if (expected == null)
-                return scoped(record, Outcome.NoGroundTruth);
+                return scoped(record, Outcome.NoGroundTruth) with { ClientVersion = clientVersion };
 
             var simulation = new Simulator().Run(playable, score);
 
@@ -88,7 +103,8 @@ public static class Verification
                 if (wrong.Length > 0)
                 {
                     string counts = string.Join(" ", wrong.Select(r => $"{r}:{maximums[r]}->{generated.GetValueOrDefault(r)}"));
-                    return new VerificationResult(record.Path, Outcome.ObjectCountMismatch, counts, null, null, 0, 0);
+                    return new VerificationResult(record.Path, Outcome.ObjectCountMismatch, counts, null, null, 0, 0)
+                        { ClientVersion = clientVersion };
                 }
             }
             var actual = compared.ToDictionary(r => r, r => simulation.Statistics.GetValueOrDefault(r));
@@ -96,13 +112,15 @@ public static class Verification
             bool statisticsMatch = compared.All(r => expected.GetValueOrDefault(r) == actual[r]);
             bool comboMatches = score.ScoreInfo.MaxCombo == simulation.MaxCombo;
 
-            if (statisticsMatch && comboMatches)
-                return new VerificationResult(record.Path, Outcome.Match, null, expected, actual, score.ScoreInfo.MaxCombo, simulation.MaxCombo);
-
             // An object left unjudged is a different failure from one judged wrongly: it
-            // means the loop never reached a state where the object could resolve, which
-            // points at ordering or termination rather than at the ruleset.
+            // means the loop never reached a state where the object could resolve, which for
+            // a replay that stops early is not a failure at all.
             int unjudged = simulation.Objects.Count(o => !o.Judged);
+
+            if (statisticsMatch && comboMatches)
+                return new VerificationResult(record.Path, Outcome.Match, null, expected, actual, score.ScoreInfo.MaxCombo, simulation.MaxCombo)
+                    { ClientVersion = clientVersion, Unjudged = unjudged };
+
             string unjudgedNote = unjudged > 0 ? $" [unjudged:{unjudged}]" : string.Empty;
 
             string detail = !statisticsMatch
@@ -121,7 +139,8 @@ public static class Verification
             if (dropReasons.Length > 0)
                 detail += $" [tails lost: {string.Join(",", dropReasons)}]";
 
-            return new VerificationResult(record.Path, Outcome.Mismatch, detail, expected, actual, score.ScoreInfo.MaxCombo, simulation.MaxCombo);
+            return new VerificationResult(record.Path, Outcome.Mismatch, detail, expected, actual, score.ScoreInfo.MaxCombo, simulation.MaxCombo)
+                { ClientVersion = clientVersion, Unjudged = unjudged };
         }
         catch (Exception e)
         {

@@ -15,6 +15,7 @@ if (args.Length == 0)
     Console.Error.WriteLine("  oracle-list [n]       pick mismatching replays for the differential oracle to record");
     Console.Error.WriteLine("  oracle-diff           diff the simulation against the oracle's recordings, object by object");
     Console.Error.WriteLine("  trace <replay> <ms>   dump per-sample slider tracking state around a time");
+    Console.Error.WriteLine("  versions              print the lazer build that wrote each score in the corpus");
     Console.Error.WriteLine("  offsets <replay>      per click-judged object: result, hit offset, distance to the great edge");
     Console.Error.WriteLine("  sweep [ms]...         shift every replay frame time and report the drift in click judgements");
     return 2;
@@ -104,6 +105,36 @@ switch (args[0])
         Report.Print(results, Console.Out);
         Report.Write(results, "build/verification.json");
         Console.WriteLine("written: build/verification.json");
+        return 0;
+    }
+
+    case "versions":
+    {
+        // Which lazer built each score. Hit windows were floored to half-integers on
+        // 2025-04-18 (ppy/osu 0f078ee550), so a score's client build decides which rules
+        // its header was written under, and comparing against one reference ruleset makes
+        // that a source of disagreement all by itself.
+        var index = BeatmapIndex.Read("build/beatmap-index.json");
+        var corpus = CorpusSurvey.ReadRecords("build/corpus.json");
+
+        Console.WriteLine("clientVersion,replayPath");
+
+        foreach (var record in corpus.Where(r => r is { RulesetId: 0, Paired: true, DecodeError: null }))
+        {
+            string version;
+
+            try
+            {
+                version = ReplayLoader.Decode(record.Path, index).ScoreInfo.ClientVersion;
+            }
+            catch (Exception e)
+            {
+                version = $"error:{e.GetType().Name}";
+            }
+
+            Console.WriteLine($"{(string.IsNullOrEmpty(version) ? "unknown" : version)},{record.Path}");
+        }
+
         return 0;
     }
 

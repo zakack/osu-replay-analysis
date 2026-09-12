@@ -125,15 +125,33 @@ the replay, and record what it judged object by object. The header gives totals,
 you a run is wrong and nothing about where; the oracle names the object and the millisecond.
 It is quarantined in a test project and must never be referenced from the pipeline.
 
-Aim for exact reproduction, but do not treat every shortfall as a bug. Key state changes
-are evaluated at exact replay frame timestamps, so hit circles should reproduce
-deterministically. Slider tracking samples the cursor every update and spinner rotation
-accumulates per update, so both are host-rate dependent in the real client. Stage the work
-— circles, then sliders, then spinners — and make the deliverable a *mismatch taxonomy*:
-every residual assigned to a named cause with a minimal reproducing test. The match rate is
-one number; the taxonomy is the knowledge. The failures teach the parts of the ruleset that aren't documented anywhere —
+Aim for exact reproduction, but do not treat every shortfall as a bug, and do not treat the
+header as the target. The right gate is agreement with the differential oracle, which is
+what proves the port, plus a header residual every part of which has a measured cause. The
+match rate against the header alone is not a meaningful number, because most of the corpus
+disagrees for reasons that have nothing to do with whether the ruleset was reimplemented
+correctly. Stage the work — circles, then sliders, then spinners — and make the deliverable
+a *mismatch taxonomy*: every residual assigned to a named cause with a minimal reproducing
+test. The failures teach the parts of the ruleset that aren't documented anywhere —
 notelock especially (object n+1 cannot be judged before n resolves), and lazer slider tail
 vs Classic.
+
+Four causes account for the local corpus, and only the last is a defect:
+
+- **The score was set under different hit windows.** Every edge moved half a millisecond on
+  lazer `2025.710.0`, the first release carrying ppy/osu `0f078ee550`. Before it the window
+  was the raw difficulty range and could sit anywhere, including on the whole-millisecond
+  grid that replay frame times occupy; after it every edge is an integer minus 0.5 and is
+  immune to that rounding. Judging an older score against the current ruleset moves roughly
+  two to three judgements per replay off a window edge, always outward. This is the single
+  largest class, and it is a rules change, not an error. Bucket by `ScoreInfo.ClientVersion`
+  before drawing any conclusion from a match rate.
+- **The replay stopped before the beatmap did.** A failed or abandoned play records nothing
+  past its end. Judging past the last frame invents misses.
+- **Slider tracking.** See the trap below: lazer's own tracking is framerate-dependent by a
+  mechanism ppy has open as a bug, so tails are not reproducible even in principle.
+- **A click judgement differs on a modern client's completed play.** This bucket should be
+  empty. It is the only place a disagreement is evidence of a bug in the port.
 
 **2. The two-click flam — as a debugging instrument, not a feature.** Immediately after
 extraction works, before any analysis. Two synthesized clicks per object: one at the
@@ -190,14 +208,23 @@ already applies separate wide-angle and acute-angle bonuses. It's the reference
 implementation of rotation-invariant featurization, open source, maintained, and it
 produces the star rating that would be compared against.
 
-Available per-object after extraction: signed hit error; cursor position, velocity,
-acceleration, jerk; aim error at hit time normalized by CS radius; tap intervals;
-frametime distribution; object geometry; per-object aim/speed/rhythm strain.
+Available per-object after extraction: signed hit error; cursor position and velocity;
+aim error at hit time normalized by CS radius; tap intervals; frametime distribution;
+object geometry; per-object aim/speed/rhythm strain.
+
+**What the 60Hz recorder costs, feature by feature.** The two most important quantities in
+the whole design survive intact: a button change forces a frame, so cursor position at the
+moment of a click and the time of that click are both sampled exactly, not interpolated.
+Aim error at hit time and tap interval are therefore as precise as the client was. What
+does not survive is the derivative stack. **Jerk is out** — at a 17ms floor it is almost
+entirely differencing artifact. Acceleration is marginal and should not carry a finding on
+its own. Velocity is fine computed over a window of several samples, and wrong computed
+between adjacent ones.
 
 **K1 vs K2 alternation is not recoverable from lazer replays.** `OsuReplayFrame.ToLegacy`
 only ever emits `Left1`, `Right1` and `Smoke`, so the second key is destroyed on encode.
 Tap intervals survive; handedness of the tap does not. Only stable-format replays retain
-it, and they are 15 of 1009 in the local corpus.
+it, and they are 15 of 1009 in the local corpus. ppy has this open as #33465.
 
 Conditioning worth running: aim error bucketed by jump angle × spacing × BPM; tap interval
 regularity by position within a stream; hit error drift across map length; cursor velocity profile in the 200ms before a miss vs the same pattern class
@@ -240,20 +267,43 @@ section, it's the map, not the player.
   "miss" means different things depending on mod list. Branch on it.
 - **Lazer allows freely-set rate multipliers**, not just DT/HT. Read the actual rate off
   the mod; never assume 1.5 for BPM and strain-time normalization.
+- **Hit windows moved half a millisecond, and it splits the corpus in two.** ppy/osu
+  `0f078ee550` (2025-04-18, shipped in `2025.710.0`) changed `OsuHitWindows.SetDifficulty`
+  from the raw `DifficultyRange` value to `Math.Floor(range) - 0.5`. The stated purpose was
+  to end exactly the problem this project ran into: replay frame times are whole
+  milliseconds, so a window edge sitting on or near an integer lets playback reach a
+  different judgement from the play. Moving every edge to a half-integer immunises it. The
+  consequence for us is that a score set before that release was judged under rules the
+  current ruleset no longer implements, and the difference is visible as two to three
+  judgements per replay drifting outward from Great. Read `ScoreInfo.ClientVersion` and
+  branch. Related ppy issues, all describing the same thing from the player's side: #28744,
+  #29217, #11311.
+- **Slider tracking is framerate-dependent by design defect, and ppy has it open as #34016.**
+  The follow radius on frame n+1 depends on whether tracking was active on frame n, so the
+  tracking decision feeds back into its own tolerance. Combined with the tail's 36ms
+  leniency window, the same replay judged at two different sampling rates reaches different
+  answers — ppy's own report demonstrates a tail that is missed at normal speed and hit at
+  0.05x. This is *not* only the 60Hz position floor. Even with perfect cursor data, tails
+  would not be reproducible without knowing the original client's frame rate, which the file
+  does not record. Treat tail and large-tick counts as a bounded interval, never as an
+  equality.
 - **Replay frames are not a uniform sample.** Stable ties frames to client framerate, so
   temporal resolution varies with the player's rig, and interpolation happens at roughly
   the precision being measured. Characterize this before building anything on derivatives
-  — jerk especially will be mostly artifact if handled carelessly.
-- **A replay does not reproduce the play it came from, and this is measurable.** The
+  — which is why jerk is not in the feature list at all.
+- **A replay does not reproduce the play it came from, and the loss is specific.** The
   recorder stores cursor position at a fixed 60Hz (`ReplayRecorder.RecordFrameRate = 60`),
-  taking extra frames only when a button changes state. The original play judged slider
-  tracking against the true cursor at the client's real frame rate. Those positions are not
-  in the file, so anything replaying it is interpolating between 17ms samples, and the
-  client's sampling rate is unrecoverable. The differential oracle shows the live game
-  replaying a replay disagreeing with the header that same play wrote — which is also why
-  judgement counts can differ between the results screen and watching the replay back.
-  Consequence: the `.osr` header is ground truth for *the original play*, not a target a
-  resimulator can reach exactly on tracking-dependent judgements.
+  taking extra frames only when a button changes state. Tracking was judged during the play
+  against the true cursor at the client's real frame rate; those positions are not in the
+  file, so anything replaying it interpolates between 17ms samples. The differential oracle
+  shows the live game replaying a replay disagreeing with the header that same play wrote,
+  which is also why judgement counts can differ between the results screen and watching the
+  replay back — ppy #28744, closed, and #34016, open.
+  What survives exactly, and it is the important half: every click. A button change forces a
+  frame, so the press time and the cursor position at the press are recorded rather than
+  interpolated, and on a modern client a completed play's Great/Ok/Meh/Miss counts reproduce
+  exactly. The header is unreachable on *tracking-dependent* judgements specifically, and
+  reachable on the rest.
 - **The replay handler's "important section" rule never applies.**
   `FramedReplayInputHandler` refuses mid-frame times while a button is held — but only when
   `FrameAccuratePlayback` is true, and across the whole `ppy/osu` tree that public field is
