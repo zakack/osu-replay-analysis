@@ -221,10 +221,17 @@ entirely differencing artifact. Acceleration is marginal and should not carry a 
 its own. Velocity is fine computed over a window of several samples, and wrong computed
 between adjacent ones.
 
-**K1 vs K2 alternation is not recoverable from lazer replays.** `OsuReplayFrame.ToLegacy`
-only ever emits `Left1`, `Right1` and `Smoke`, so the second key is destroyed on encode.
-Tap intervals survive; handedness of the tap does not. Only stable-format replays retain
-it, and they are 15 of 1009 in the local corpus. ppy has this open as #33465.
+**Tap alternation *is* recoverable from lazer replays.** This note previously said the
+opposite and was wrong. `OsuReplayFrame.ToLegacy` emits `Left1` for `OsuAction.LeftButton`
+and `Right1` for `OsuAction.RightButton`, and osu! has exactly those two gameplay actions,
+so nothing is lost: both arrive in the legacy bitfield as M1 and M2. Measured on three
+exported lazer replays, presses alternate between the two 58%, 69% and 97% of the time,
+which is a player alternating, not an artefact.
+
+What is genuinely unavailable is which *physical* input produced an action, since lazer
+binds any key or button to one of the two. So "did this player alternate" and "what is the
+interval between taps on the same finger" are both answerable; "was this a mouse button or
+a keyboard key" is not.
 
 Conditioning worth running: aim error bucketed by jump angle × spacing × BPM; tap interval
 regularity by position within a stream; hit error drift across map length; cursor velocity profile in the 200ms before a miss vs the same pattern class
