@@ -25,6 +25,7 @@ if (args.Length == 0)
     Console.Error.WriteLine("  trace <replay> <ms>   dump per-sample slider tracking state around a time");
     Console.Error.WriteLine("  versions              print the lazer build that wrote each score in the corpus");
     Console.Error.WriteLine("  offsets <replay>      per click-judged object: result, hit offset, distance to the great edge");
+    Console.Error.WriteLine("  flam <replay> [out]   build a self-contained page that clicks the map and your taps");
     Console.Error.WriteLine("  tail-sweep [ms]...    trim the end off replays that stopped early and report the drift");
     Console.Error.WriteLine("  sweep [ms]...         shift every replay frame time and report the drift in click judgements");
     return 2;
@@ -183,6 +184,35 @@ switch (args[0])
                               + $"{state.Result},{offset:0.####},{Math.Abs(offset) - great:0.####}");
         }
 
+        return 0;
+    }
+
+    case "flam":
+    {
+        // Two clicks per object: one where the object was, one where it was hit. A constant
+        // offset in reconstructed hit times is inaudible in a table and unmistakable as an
+        // echo, and everything downstream is built on those times.
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine("flam: expected a replay path");
+            return 2;
+        }
+
+        var index = BeatmapIndex.Read("build/beatmap-index.json");
+        var score = ReplayLoader.Decode(args[1], index);
+        var header = ReplayLoader.ReadHeader(args[1]);
+        var playable = new FlatWorkingBeatmap(index[header.BeatmapMd5].Path)
+            .GetPlayableBeatmap(new OsuRuleset().RulesetInfo, score.ScoreInfo.Mods);
+
+        var track = Flam.Build(args[1], playable, score);
+        string destination = args.Length > 2
+            ? args[2]
+            : Path.Combine("build", "flam", Path.GetFileNameWithoutExtension(args[1]) + ".html");
+
+        Flam.Write(track, Path.Combine("tools", "flam", "template.html"), destination);
+
+        Console.WriteLine(Flam.Summarise(track));
+        Console.WriteLine($"written: {destination}");
         return 0;
     }
 
