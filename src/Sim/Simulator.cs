@@ -35,6 +35,10 @@ public sealed class Simulator(IHitPolicy policy)
 
     private int sequence;
 
+    /// <summary>Moving window cursors, so per-sample work is proportional to what is live.</summary>
+    private int swept;
+    private int active;
+
     /// <summary>
     /// Override the sampling step. Set to <see cref="ReplaySampler.OracleMatchStep"/> when
     /// diffing against the oracle, so a divergence means a rule was ported wrong rather than
@@ -48,6 +52,8 @@ public sealed class Simulator(IHitPolicy policy)
     public SimulationResult Run(IBeatmap playable, Score score)
     {
         sequence = 0;
+        swept = 0;
+        active = 0;
 
         // Rate mods stretch the client's wall-clock frame time across more beatmap time,
         // and scale spinner rotation, so the rate is needed in both places.
@@ -103,16 +109,26 @@ public sealed class Simulator(IHitPolicy policy)
             // SliderInputManager is a child component, so its Update runs before the nested
             // objects' UpdateAfterChildren. Tracking for this instant is therefore settled
             // before anything reads it.
-            foreach (var tracker in trackers.Values)
-            {
-                if (tracker.IsAlive(frame.Time) && !tracker.State.AllJudged)
-                    tracker.Update(frame.Time, frame.Cursor, frame.Actions);
-            }
+            // Only sliders and spinners that are currently alive need updating, and they are
+            // ordered by start time, so a moving window replaces a scan of the whole map on
+            // every single sample. On a long map at a fine step that scan was the run time.
+            while (active < layout.Tracked.Count && layout.Tracked[active].AllJudged)
+                active++;
 
-            foreach (var spinner in layout.Spinners.Values)
+            for (int i = active; i < layout.Tracked.Count; i++)
             {
-                if (spinner.IsAlive(frame.Time) && !spinner.State.AllJudged)
-                    spinner.Update(frame.Time, frame.Cursor, frame.Actions);
+                var state = layout.Tracked[i];
+
+                if (!isAlive(state, frame.Time))
+                    break;
+
+                if (state.AllJudged)
+                    continue;
+
+                if (trackers.TryGetValue(state, out var slider))
+                    slider.Update(frame.Time, frame.Cursor, frame.Actions);
+                else
+                    layout.Spinners[state].Update(frame.Time, frame.Cursor, frame.Actions);
             }
 
             sweep(layout, frame.Time, frame.Cursor, frame.Actions);
@@ -186,7 +202,26 @@ public sealed class Simulator(IHitPolicy policy)
         List<ObjectState> TopLevel,
         List<ObjectState> Pressable,
         Dictionary<ObjectState, SliderTracker> Trackers,
-        Dictionary<ObjectState, SpinnerTracker> Spinners);
+        Dictionary<ObjectState, SpinnerTracker> Spinners)
+    {
+        /// <summary>
+        /// Sliders and spinners, the objects needing per-sample updates, ordered by when
+        /// they come alive rather than by start time. Those differ when preempt does, and
+        /// the moving window stops at the first object that is not yet live — so ordering by
+        /// start time could skip one that woke early.
+        /// </summary>
+        public List<ObjectState> Tracked { get; } =
+            TopLevel.Where(o => o.HitObject is Slider or Spinner)
+                    .OrderBy(o => o.HitObject.StartTime - o.HitObject.TimePreempt)
+                    .ToList();
+    }
+
+    /// <summary>
+    /// Both tracker kinds come alive one preempt before their object starts, which is when
+    /// lazer's drawable appears and begins accumulating cursor state.
+    /// </summary>
+    private static bool isAlive(ObjectState state, double time) =>
+        time >= state.HitObject.StartTime - state.HitObject.TimePreempt;
 
     private void press(Layout layout, double time, Vector2 cursor, OsuAction action, IReadOnlyList<OsuAction> pressed)
     {
@@ -231,10 +266,15 @@ public sealed class Simulator(IHitPolicy policy)
         var trackers = layout.Trackers;
 
         // Spinners resolve their own ticks and result, so they are stepped whole rather
-        // than object by object.
-        foreach (var spinner in layout.Spinners.Values)
+        // than object by object. Same moving window as above.
+        for (int i = active; i < layout.Tracked.Count; i++)
         {
-            if (!spinner.State.AllJudged)
+            var state = layout.Tracked[i];
+
+            if (!isAlive(state, time))
+                break;
+
+            if (!state.AllJudged && layout.Spinners.TryGetValue(state, out var spinner))
                 spinner.Resolve(time, ref sequence);
         }
 
