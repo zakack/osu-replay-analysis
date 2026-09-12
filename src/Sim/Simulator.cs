@@ -36,8 +36,22 @@ public sealed class Simulator(IHitPolicy policy)
     private int sequence;
 
     /// <summary>Moving window cursors, so per-sample work is proportional to what is live.</summary>
-    private int swept;
     private int active;
+
+    /// <summary>
+    /// Stop this many beatmap milliseconds before the replay's last frame. A diagnostic for
+    /// the one residual class that is plausibly ours.
+    ///
+    /// On failure lazer schedules <c>ConcludeFailedScore</c> for the frame after the fail, so
+    /// the header's counts are fixed at that instant — but the fail animation then ramps the
+    /// track frequency from 1 to 0 over 2500ms of wall clock
+    /// (<c>FailAnimationContainer.duration</c>), and the recorder keeps writing frames the
+    /// whole way down. The tail of a failed replay is therefore about 1250ms of beatmap time
+    /// that the header never saw. Sweeping this says whether that accounts for the extra
+    /// misses on replays that ended early.
+    /// </summary>
+    public static double TailTrim { get; set; } =
+        double.TryParse(Environment.GetEnvironmentVariable("ORA_TAIL_TRIM_MS"), out double trim) ? trim : 0;
 
     /// <summary>
     /// Override the sampling step. Set to <see cref="ReplaySampler.OracleMatchStep"/> when
@@ -52,7 +66,6 @@ public sealed class Simulator(IHitPolicy policy)
     public SimulationResult Run(IBeatmap playable, Score score)
     {
         sequence = 0;
-        swept = 0;
         active = 0;
 
         // Rate mods stretch the client's wall-clock frame time across more beatmap time,
@@ -90,7 +103,7 @@ public sealed class Simulator(IHitPolicy policy)
         // play keeps recording past the final object anyway, while a failed or abandoned one
         // simply stops, and lazer judges nothing after that. Running even a miss window
         // longer invents judgements around the point of failure.
-        double until = sampler.LastFrameTime;
+        double until = sampler.LastFrameTime - TailTrim * clockRate;
 
         IReadOnlyList<OsuAction> held = [];
 

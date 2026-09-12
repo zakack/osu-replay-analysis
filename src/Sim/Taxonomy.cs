@@ -29,9 +29,19 @@ public enum Cause
     LegacyHitWindows,
 
     /// <summary>
-    /// The replay stops before the beatmap does, so objects were left unjudged. A failed or
-    /// abandoned play records nothing past the point it ended, and the boundary between
-    /// "the play ended here" and "these objects were missed" is not yet settled.
+    /// The replay stops before the beatmap does, so objects were left unjudged.
+    ///
+    /// For a failed play this one is ours. <c>Player.onFail</c> schedules
+    /// <c>ConcludeFailedScore</c> for the very next frame, so the header's counts are fixed
+    /// at the instant of failure — but <c>FailAnimationContainer</c> then ramps the track
+    /// frequency from 1 to 0 across 2500ms of wall clock, and the recorder keeps writing
+    /// frames the whole way down. The replay therefore carries roughly 1250ms of beatmap
+    /// time the header never saw, and judging it invents about five misses. Trimming that
+    /// much off the end takes exact matches in this class from 3 of 111 to 34, where every
+    /// other trim value gives 0 to 3 — a sharp optimum exactly where the animation predicts
+    /// one. The fix is to locate the failure rather than subtract a constant, by feeding the
+    /// judgement stream through lazer's own <c>OsuHealthProcessor</c>, which runs unloaded
+    /// with no host exactly as <c>ScoreProcessor</c> does.
     /// </summary>
     EndedEarly,
 

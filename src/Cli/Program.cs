@@ -5,6 +5,14 @@ using osu.Game.Rulesets.Osu.Objects;
 using osu.Game.Rulesets.Scoring;
 using Sim;
 
+#if DEBUG
+// A solution build ignores Directory.Build.props' Release default, so `dotnet build` at the
+// repository root leaves bin/Release untouched and the next run silently uses the previous
+// build. Say so, rather than letting it look like an edit that did not take.
+Console.Error.WriteLine("warning: this is a Debug build. Batch commands are much slower, and "
+                        + "a root `dotnet build` does not update bin/Release. Use -c Release.");
+#endif
+
 if (args.Length == 0)
 {
     Console.Error.WriteLine("usage: ora <command> [args]");
@@ -17,6 +25,7 @@ if (args.Length == 0)
     Console.Error.WriteLine("  trace <replay> <ms>   dump per-sample slider tracking state around a time");
     Console.Error.WriteLine("  versions              print the lazer build that wrote each score in the corpus");
     Console.Error.WriteLine("  offsets <replay>      per click-judged object: result, hit offset, distance to the great edge");
+    Console.Error.WriteLine("  tail-sweep [ms]...    trim the end off replays that stopped early and report the drift");
     Console.Error.WriteLine("  sweep [ms]...         shift every replay frame time and report the drift in click judgements");
     return 2;
 }
@@ -196,6 +205,30 @@ switch (args[0])
             : [-1, -0.5, -0.25, 0, 0.25, 0.5, 1];
 
         ShiftSweep.Run(subset, index, shifts, Console.Out);
+        return 0;
+    }
+
+    case "tail-sweep":
+    {
+        var index = BeatmapIndex.Read("build/beatmap-index.json");
+        var corpus = CorpusSurvey.ReadRecords("build/corpus.json");
+
+        // The replays that stopped before the beatmap did, taken from the last verification
+        // run rather than re-derived.
+        var early = OracleDiff.ReadVerification("build/verification.json")
+                              .Where(r => r.Unjudged > 0)
+                              .Select(r => r.ReplayPath)
+                              .ToHashSet();
+
+        var subset = corpus.Where(r => r is { RulesetId: 0, Paired: true, DecodeError: null })
+                           .Where(r => early.Contains(r.Path))
+                           .ToArray();
+
+        double[] trims = args.Length > 1
+            ? args.Skip(1).Select(double.Parse).ToArray()
+            : [0, 500, 1000, 1250, 1500, 2000, 2500];
+
+        ShiftSweep.RunTailTrim(subset, index, trims, Console.Out);
         return 0;
     }
 

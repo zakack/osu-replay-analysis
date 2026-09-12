@@ -2,7 +2,13 @@
   <PropertyGroup>
     <!-- Release by default. These are batch tools over a thousand-replay corpus, and a
          Debug build of osu.Game also takes RealmAccess's development-database path, which
-         makes a second full copy of the realm on every open. -->
+         makes a second full copy of the realm on every open.
+
+         This only applies when a project is built directly. A solution build sets
+         Configuration itself, so `dotnet build` at the repository root produces Debug and
+         silently leaves bin/Release stale — which looks exactly like a change that did not
+         take effect. Build with `-c Release`, or build the project. Cli prints a banner on
+         a Debug build so the mistake is visible rather than inferred. -->
     <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>12.0</LangVersion>
