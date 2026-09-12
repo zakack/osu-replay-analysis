@@ -111,6 +111,11 @@ store is addressed by SHA-256, and only the realm database holds the mapping. Bu
 index first, from a *copy* of the realm, and never traverse or brute-force hash the file
 store.
 
+Build the differential oracle early, not late. Host lazer's real gameplay headlessly, play
+the replay, and record what it judged object by object. The header gives totals, which tell
+you a run is wrong and nothing about where; the oracle names the object and the millisecond.
+It is quarantined in a test project and must never be referenced from the pipeline.
+
 Aim for exact reproduction, but do not treat every shortfall as a bug. Key state changes
 are evaluated at exact replay frame timestamps, so hit circles should reproduce
 deterministically. Slider tracking samples the cursor every update and spinner rotation
@@ -230,6 +235,21 @@ section, it's the map, not the player.
   temporal resolution varies with the player's rig, and interpolation happens at roughly
   the precision being measured. Characterize this before building anything on derivatives
   — jerk especially will be mostly artifact if handled carelessly.
+- **A replay does not reproduce the play it came from, and this is measurable.** The
+  recorder stores cursor position at a fixed 60Hz (`ReplayRecorder.RecordFrameRate = 60`),
+  taking extra frames only when a button changes state. The original play judged slider
+  tracking against the true cursor at the client's real frame rate. Those positions are not
+  in the file, so anything replaying it is interpolating between 17ms samples, and the
+  client's sampling rate is unrecoverable. The differential oracle shows the live game
+  replaying a replay disagreeing with the header that same play wrote — which is also why
+  judgement counts can differ between the results screen and watching the replay back.
+  Consequence: the `.osr` header is ground truth for *the original play*, not a target a
+  resimulator can reach exactly on tracking-dependent judgements.
+- **The replay handler's "important section" rule never applies.**
+  `FramedReplayInputHandler` refuses mid-frame times while a button is held — but only when
+  `FrameAccuratePlayback` is true, and that public field is never assigned anywhere in
+  `osu.Game`. Implementing the rule as written is measurably wrong: it suppresses fine
+  sampling exactly where slider tracking is decided.
 - **Replays end when the play ends.** A failed or abandoned play simply has no frames past
   that point, and lazer judges nothing after it. Simulating to the end of the beatmap
   invents a miss for every remaining object — which looks like a catastrophic ruleset bug

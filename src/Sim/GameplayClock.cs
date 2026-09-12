@@ -14,30 +14,49 @@ public readonly record struct GameplayFrame(double Time, Vector2 Cursor, IReadOn
 /// Reproduces the cadence at which lazer actually samples a replay, which decides every
 /// judgement that depends on continuous cursor state rather than a single instant.
 ///
-/// Two mechanisms combine. <c>FramedReplayInputHandler.SetFrameFromTime</c> refuses
-/// mid-frame times while the replay is in an "important section" — a button is held and the
-/// next frame is close — so during any slider the clock lands only on replay frame times,
-/// where interpolation is exact. Outside those sections the clock advances at the host's
-/// frame rate, which is far finer than 60fps on real hardware;
-/// <c>FrameStabilityContainer</c> only caps a single advance at one 60fps step, so that is
-/// a floor on resolution, not the resolution itself.
+/// <c>FramedReplayInputHandler</c> has an "important section" rule that refuses mid-frame
+/// times while a button is held, which would mean sliders are only ever evaluated on replay
+/// frame boundaries. It never applies: the rule is gated on
+/// <c>FramedReplayInputHandler.FrameAccuratePlayback</c>, a public field that nothing in
+/// osu.Game ever assigns, so it is always false. Implementing the rule anyway was measurably
+/// wrong — it suppressed fine sampling exactly where tracking is decided.
+///
+/// What actually happens: the clock advances at the host's frame rate, clamped to the
+/// current replay frame's span and snapped to a frame's time as it is crossed.
+/// <c>FrameStabilityContainer</c> only caps a single advance at one 60fps step, and only
+/// when the jump already exceeds 1.2 of those, so it is a floor on resolution during lag
+/// and a seek guard — not the sampling rate.
 /// </summary>
-public sealed class ReplaySampler(Replay replay)
+public sealed class ReplaySampler(Replay replay, double clockRate = 1)
 {
     /// <summary>
-    /// Matches <c>FramedReplayInputHandler.AllowedImportantTimeSpan</c>: a held button only
-    /// forces frame-exact playback while the next frame is this close.
+    /// Stand-in for the host's frame time, and a genuinely free parameter.
+    ///
+    /// Slider tracking is sampled per update, so the rate decides tails outright: a short
+    /// slider's ball covers roughly half a unit per millisecond, and the follow circle is
+    /// only a few units wider than the cursor's drift at the point players leave. The
+    /// machine that set the score sampled at its own frame rate, which the replay does not
+    /// record, so no value here is "correct" — it is fitted to the corpus. Override with
+    /// ORA_HOST_STEP_MS to re-run the sweep.
     /// </summary>
-    private const double important_time_span = 1000.0 / 60 * 1.2;
+    /// <summary>
+    /// The step in beatmap time. The client's frame time is a wall-clock quantity, so on a
+    /// rate-adjusted replay it covers more beatmap time per frame — the recorder itself
+    /// scales its own threshold by the clock rate for exactly this reason.
+    /// </summary>
+    private double step => HostFrameTime * clockRate;
+
+    public static readonly double HostFrameTime =
+        double.TryParse(Environment.GetEnvironmentVariable("ORA_HOST_STEP_MS"), out double configured) && configured > 0
+            ? configured
+            : default_host_frame_time;
 
     /// <summary>
-    /// Step size outside important sections, matching <c>FrameStabilityContainer</c>'s
-    /// 60fps cap. A real client steps finer than this, but outside an important section no
-    /// key is held, so nothing depending on continuous cursor state is being judged — only
-    /// miss sweeps, which a 60fps grid resolves identically. Measured: stepping at 1ms here
-    /// moved 147 replays to exact agreement instead of 146, for sixteen times the work.
+    /// Fitted against the corpus, not derived. Measured exact-match counts out of 513
+    /// in-scope replays: 16.7ms gave 150, 8ms gave 167, 4ms gave 173, 2ms gave 177. The
+    /// curve flattens while the cost doubles each halving, so 2ms is where it stops paying.
     /// </summary>
-    private const double host_frame_time = 1000.0 / 60;
+    private const double default_host_frame_time = 2.0;
 
     private readonly List<OsuReplayFrame> frames = replay.Frames.Cast<OsuReplayFrame>().ToList();
 
@@ -64,16 +83,10 @@ public sealed class ReplaySampler(Replay replay)
         {
             double nextFrameTime = index + 1 < frames.Count ? frames[index + 1].Time : double.PositiveInfinity;
 
-            // While a button is held and the next frame is near, mid-frame times are
-            // rejected outright by the replay handler, so gameplay advances frame to frame.
-            bool important = frames[index].Actions.Count > 0 && nextFrameTime - time <= important_time_span;
-
-            double proposed = important
-                ? nextFrameTime
-                : Math.Min(nextFrameTime, time + host_frame_time);
+            double proposed = Math.Min(nextFrameTime, time + step);
 
             if (double.IsPositiveInfinity(proposed))
-                proposed = Math.Min(until, time + host_frame_time);
+                proposed = Math.Min(until, time + step);
 
             time = proposed;
 

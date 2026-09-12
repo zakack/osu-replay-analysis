@@ -1,4 +1,6 @@
 using Extract;
+using osu.Game.Beatmaps;
+using osu.Game.Rulesets.Osu;
 using Sim;
 
 if (args.Length == 0)
@@ -8,6 +10,9 @@ if (args.Length == 0)
     Console.Error.WriteLine("  index [lazer-root]    build the beatmap MD5 index from a copy of lazer's realm");
     Console.Error.WriteLine("  survey <dir>...       triage a replay corpus: format, ruleset, pairing, decodability");
     Console.Error.WriteLine("  verify                simulate the corpus and report the match rate and mismatch taxonomy");
+    Console.Error.WriteLine("  oracle-list [n]       pick mismatching replays for the differential oracle to record");
+    Console.Error.WriteLine("  oracle-diff           diff the simulation against the oracle's recordings, object by object");
+    Console.Error.WriteLine("  trace <replay> <ms>   dump per-sample slider tracking state around a time");
     return 2;
 }
 
@@ -95,6 +100,58 @@ switch (args[0])
         Report.Print(results, Console.Out);
         Report.Write(results, "build/verification.json");
         Console.WriteLine("written: build/verification.json");
+        return 0;
+    }
+
+    case "oracle-list":
+    {
+        int limit = args.Length > 1 ? int.Parse(args[1]) : 8;
+
+        var results = OracleDiff.ReadVerification("build/verification.json");
+        var corpus = CorpusSurvey.ReadRecords("build/corpus.json");
+        var targets = OracleDiff.ChooseTargets(results, corpus, limit);
+
+        OracleDiff.WriteTargets(targets, "build/oracle-targets.json");
+
+        foreach (var target in targets)
+            Console.WriteLine($"  {Path.GetFileName(target.ReplayPath)}");
+
+        Console.WriteLine($"written: build/oracle-targets.json ({targets.Count} targets)");
+        return 0;
+    }
+
+    case "oracle-diff":
+    {
+        var index = BeatmapIndex.Read("build/beatmap-index.json");
+        var targets = OracleDiff.ReadTargets("build/oracle-targets.json");
+
+        OracleDiff.Run(targets, index, Console.Out);
+        return 0;
+    }
+
+    case "trace":
+    {
+        if (args.Length < 3)
+        {
+            Console.Error.WriteLine("trace: expected a replay path and a time in milliseconds");
+            return 2;
+        }
+
+        double around = double.Parse(args[2]);
+        var index = BeatmapIndex.Read("build/beatmap-index.json");
+        var score = ReplayLoader.Decode(args[1], index);
+        var header = ReplayLoader.ReadHeader(args[1]);
+        var playable = new FlatWorkingBeatmap(index[header.BeatmapMd5].Path)
+            .GetPlayableBeatmap(new OsuRuleset().RulesetInfo, score.ScoreInfo.Mods);
+
+        var lines = new List<string>();
+        var simulator = new Simulator { TraceAround = (around, lines.Add) };
+        simulator.Run(playable, score);
+
+        foreach (string line in lines.Where(l => l.StartsWith('#')
+                                                 || Math.Abs(double.Parse(l.Split('\u0020', StringSplitOptions.RemoveEmptyEntries)[0]) - around) <= 400))
+            Console.WriteLine(line);
+
         return 0;
     }
 

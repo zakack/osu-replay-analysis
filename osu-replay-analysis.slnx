@@ -10,6 +10,7 @@
     <Project Path="src/Sim/Sim.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Oracle/Oracle.csproj" />
     <Project Path="tests/Tests/Tests.csproj" />
   </Folder>
 </Solution>

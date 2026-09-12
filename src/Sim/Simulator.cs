@@ -1,11 +1,13 @@
 using osu.Game.Beatmaps;
 using osu.Game.Rulesets.Objects;
+using osu.Game.Rulesets.Objects.Types;
 using osu.Game.Rulesets.Osu;
 using osu.Game.Rulesets.Osu.Objects;
 using osu.Game.Rulesets.Osu.Scoring;
 using osu.Game.Rulesets.Osu.UI;
 using osu.Game.Rulesets.Scoring;
 using osu.Game.Scoring;
+using osu.Game.Utils;
 using osuTK;
 
 namespace Sim;
@@ -33,14 +35,41 @@ public sealed class Simulator(IHitPolicy policy)
 
     private int sequence;
 
+    /// <summary>Trace tracking state for the slider containing this time, for diagnosis.</summary>
+    public (double Time, Action<string> Write)? TraceAround { get; set; }
+
     public SimulationResult Run(IBeatmap playable, Score score)
     {
         sequence = 0;
 
         var layout = build(playable);
+
+        if (TraceAround is { } trace)
+        {
+            var target = layout.Trackers
+                               .Where(kv => trace.Time >= kv.Key.HitObject.StartTime - 500 && trace.Time <= ((Slider)kv.Key.HitObject).EndTime + 500)
+                               .OrderBy(kv => Math.Abs(((Slider)kv.Key.HitObject).EndTime - trace.Time))
+                               .Select(kv => kv.Value)
+                               .FirstOrDefault();
+
+            if (target != null)
+            {
+                var s = (Slider)target.State.HitObject;
+                trace.Write($"# slider start={s.StartTime:F1} end={s.EndTime:F1} duration={s.Duration:F1} " +
+                            $"spans={s.SpanCount()} spanDuration={s.SpanDuration:F1} radius={s.Radius:F2} " +
+                            $"pathDistance={s.Path.Distance:F1} stacked={s.StackedPosition}");
+
+                foreach (var nested in target.State.Nested)
+                    trace.Write($"#   {nested.HitObject.GetType().Name,-18} start={nested.HitObject.StartTime:F1}");
+
+                target.Trace = trace.Write;
+            }
+        }
         var flat = layout.Flat;
         var trackers = layout.Trackers;
-        var sampler = new ReplaySampler(score.Replay);
+        // Rate mods stretch the client's wall-clock frame time across more beatmap time,
+        // so the sampling step has to be scaled the same way the recorder scales its own.
+        var sampler = new ReplaySampler(score.Replay, ModUtils.CalculateRateWithMods(score.ScoreInfo.Mods));
 
         // Stop exactly when the replay stops. Gameplay ends with the frames: a completed
         // play keeps recording past the final object anyway, while a failed or abandoned one

@@ -68,11 +68,27 @@ public sealed class SliderTracker(ObjectState sliderState)
 
     private float followRadius(bool expanded) => (float)slider.Radius * (expanded ? follow_area : 1);
 
+    /// <summary>Set to capture per-sample tracking state for one slider under investigation.</summary>
+    public Action<string>? Trace { get; set; }
+
     public void Update(double time, Vector2 cursor, IReadOnlyList<OsuAction> pressed)
     {
         // The follow area is tested expanded only while already tracking, which is what
         // makes tracking sticky once established and strict to re-acquire once lost.
-        UpdateTracking(time, pressed, IsCursorInFollowArea(time, cursor, Tracking));
+        bool expanded = Tracking;
+        bool inArea = IsCursorInFollowArea(time, cursor, expanded);
+
+        UpdateTracking(time, pressed, inArea);
+
+        if (Trace != null)
+        {
+            double progress = Math.Clamp((time - slider.StartTime) / slider.Duration, 0, 1);
+            var ball = slider.StackedPosition + slider.CurvePositionAt(progress);
+
+            Trace($"{time,10:F1}  keys={string.Join("+", pressed),-24} " +
+                  $"dist={Vector2.Distance(cursor, ball),7:F1} radius={followRadius(expanded),6:F1} " +
+                  $"expanded={(expanded ? "Y" : "n")} inArea={(inArea ? "Y" : "n")} tracking={(Tracking ? "Y" : "n")}");
+        }
     }
 
     public void UpdateTracking(double time, IReadOnlyList<OsuAction> pressed, bool validPosition)
