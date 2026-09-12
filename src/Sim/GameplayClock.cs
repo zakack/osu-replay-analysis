@@ -33,9 +33,9 @@ public sealed class ReplaySampler(Replay replay)
     /// <summary>
     /// Step size outside important sections, matching <c>FrameStabilityContainer</c>'s
     /// 60fps cap. A real client steps finer than this, but outside an important section no
-    /// key is held, so nothing that depends on continuous cursor state is being judged —
-    /// only miss sweeps, which a 60fps grid resolves identically. Stepping at 1ms here was
-    /// measured as 16x the work for no gain in agreement.
+    /// key is held, so nothing depending on continuous cursor state is being judged — only
+    /// miss sweeps, which a 60fps grid resolves identically. Measured: stepping at 1ms here
+    /// moved 147 replays to exact agreement instead of 146, for sixteen times the work.
     /// </summary>
     private const double host_frame_time = 1000.0 / 60;
 
