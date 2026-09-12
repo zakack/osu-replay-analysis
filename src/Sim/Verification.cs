@@ -43,10 +43,25 @@ public sealed record VerificationResult(
     /// beatmap did.
     /// </summary>
     public int Unjudged { get; init; }
+
+    /// <summary>
+    /// Click-judged objects the <em>header</em> never accounts for, which means the play
+    /// stopped before the beatmap did.
+    ///
+    /// This catches what <see cref="Unjudged"/> cannot. A play that fails near the end keeps
+    /// recording through the fail animation, and if that tail runs past the last object then
+    /// the replay has frames for the whole beatmap and the simulation resolves everything.
+    /// Nothing is unjudged, so the only remaining evidence that the play ended early is that
+    /// its own counts are short.
+    /// </summary>
+    public int HeaderShortfall { get; init; }
 }
 
 public static class Verification
 {
+    /// <summary>The results a click on a hit object or slider head can produce.</summary>
+    private static readonly HitResult[] clicks = [HitResult.Great, HitResult.Ok, HitResult.Meh, HitResult.Miss];
+
     /// <summary>
     /// Every judgement type a circles-and-sliders stage should account for. Slider tails and
     /// large ticks are compared too, because lazer replays carry them in the statistics blob
@@ -109,6 +124,14 @@ public static class Verification
             }
             var actual = compared.ToDictionary(r => r, r => simulation.Statistics.GetValueOrDefault(r));
 
+            // Every click-judged object has Great as its maximum, and nothing else does:
+            // spinners max out at bonus results and slider parts at their own. So the header's
+            // maximum Great is the count of objects the play should have clicked, and the
+            // difference is what it never reached.
+            int shortfall = maximums.TryGetValue(HitResult.Great, out int maximumGreat)
+                ? maximumGreat - clicks.Sum(r => expected.GetValueOrDefault(r))
+                : 0;
+
             bool statisticsMatch = compared.All(r => expected.GetValueOrDefault(r) == actual[r]);
             bool comboMatches = score.ScoreInfo.MaxCombo == simulation.MaxCombo;
 
@@ -119,9 +142,12 @@ public static class Verification
 
             if (statisticsMatch && comboMatches)
                 return new VerificationResult(record.Path, Outcome.Match, null, expected, actual, score.ScoreInfo.MaxCombo, simulation.MaxCombo)
-                    { ClientVersion = clientVersion, Unjudged = unjudged };
+                    { ClientVersion = clientVersion, Unjudged = unjudged, HeaderShortfall = shortfall };
 
             string unjudgedNote = unjudged > 0 ? $" [unjudged:{unjudged}]" : string.Empty;
+
+            if (shortfall > 0)
+                unjudgedNote += $" [header short:{shortfall}]";
 
             string detail = !statisticsMatch
                 ? string.Join(" ", compared.Where(r => expected.GetValueOrDefault(r) != actual[r])
@@ -140,7 +166,7 @@ public static class Verification
                 detail += $" [tails lost: {string.Join(",", dropReasons)}]";
 
             return new VerificationResult(record.Path, Outcome.Mismatch, detail, expected, actual, score.ScoreInfo.MaxCombo, simulation.MaxCombo)
-                { ClientVersion = clientVersion, Unjudged = unjudged };
+                { ClientVersion = clientVersion, Unjudged = unjudged, HeaderShortfall = shortfall };
         }
         catch (Exception e)
         {

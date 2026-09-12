@@ -63,8 +63,20 @@ public enum Cause
     TrackingOnly,
 
     /// <summary>
-    /// A click judgement differs on a modern client's completed play. This is the bucket
-    /// that should be empty, and the only one where a disagreement is evidence of a bug.
+    /// A click judgement differs on a modern client's completed play.
+    ///
+    /// This is the only bucket where a disagreement <em>could</em> be a defect, but it is not
+    /// evidence of one on its own, and the corpus proves the distinction. Both replays left
+    /// here differ from their header by exactly one click, and the differential oracle
+    /// reproduces the live game on both without a single divergence — so the disagreement is
+    /// between the header and lazer's own playback, not between lazer and us. Nor is it the
+    /// hit window rounding effect returning: the disputed judgements sit three and a half
+    /// milliseconds or more outside a window edge rather than on it.
+    ///
+    /// What cannot be done is localising it. The header carries totals, so it names no object
+    /// and no millisecond, and there is nothing else in the file to appeal to. Only the oracle
+    /// can settle a replay in here, and until it has, membership means unexplained rather than
+    /// wrong.
     /// </summary>
     ClickMismatch
 }
@@ -137,7 +149,11 @@ public static class Taxonomy
         // Order matters, and it runs from the least to the most attributable to us. A replay
         // that ended early on an old client is reported as ended early, because that is the
         // confound that has to be removed before the other question can even be asked.
-        if (result.Unjudged > 0)
+        // Two independent signs of the same thing. The replay running out of frames leaves
+        // objects unresolved; a play that failed close enough to the end that its fail
+        // animation recorded past the last object leaves nothing unresolved at all, and shows
+        // up only as a header that does not account for every object.
+        if (result.Unjudged > 0 || result.HeaderShortfall > 0)
             return Cause.EndedEarly;
 
         if (OnLegacyHitWindows(result))
