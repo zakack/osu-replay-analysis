@@ -18,7 +18,6 @@ public enum Outcome
     Match,
     Mismatch,
     ObjectCountMismatch,
-    OutOfScopeSpinners,
     OutOfScopeClassic,
     NoGroundTruth,
     Error
@@ -46,7 +45,9 @@ public static class Verification
         HitResult.LargeTickHit, HitResult.LargeTickMiss, HitResult.SliderTailHit,
         // A dropped slider tail becomes IgnoreMiss, not LargeTickMiss, so leaving these out
         // hides exactly the failure sliders are most likely to produce.
-        HitResult.IgnoreHit, HitResult.IgnoreMiss
+        HitResult.IgnoreHit, HitResult.IgnoreMiss,
+        // Spinner ticks and bonus spins.
+        HitResult.SmallBonus, HitResult.LargeBonus
     ];
 
     public static VerificationResult Verify(ReplayRecord record, IReadOnlyDictionary<string, IndexEntry> index)
@@ -65,9 +66,6 @@ public static class Verification
 
             var working = new FlatWorkingBeatmap(index[record.BeatmapMd5].Path);
             var playable = working.GetPlayableBeatmap(new OsuRuleset().RulesetInfo, mods);
-
-            if (playable.HitObjects.Any(o => o is Spinner))
-                return scoped(record, Outcome.OutOfScopeSpinners);
 
             // Separate a generation problem from a judgement one. If our object counts do
             // not match the score's maximum statistics, the beatmap was converted

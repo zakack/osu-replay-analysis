@@ -49,7 +49,11 @@ public sealed class Simulator(IHitPolicy policy)
     {
         sequence = 0;
 
-        var layout = build(playable);
+        // Rate mods stretch the client's wall-clock frame time across more beatmap time,
+        // and scale spinner rotation, so the rate is needed in both places.
+        double clockRate = ModUtils.CalculateRateWithMods(score.ScoreInfo.Mods);
+
+        var layout = build(playable, clockRate);
 
         if (TraceAround is { } trace)
         {
@@ -74,9 +78,7 @@ public sealed class Simulator(IHitPolicy policy)
         }
         var flat = layout.Flat;
         var trackers = layout.Trackers;
-        // Rate mods stretch the client's wall-clock frame time across more beatmap time,
-        // so the sampling step has to be scaled the same way the recorder scales its own.
-        var sampler = new ReplaySampler(score.Replay, ModUtils.CalculateRateWithMods(score.ScoreInfo.Mods), StepOverride);
+        var sampler = new ReplaySampler(score.Replay, clockRate, StepOverride);
 
         // Stop exactly when the replay stops. Gameplay ends with the frames: a completed
         // play keeps recording past the final object anyway, while a failed or abandoned one
@@ -107,7 +109,13 @@ public sealed class Simulator(IHitPolicy policy)
                     tracker.Update(frame.Time, frame.Cursor, frame.Actions);
             }
 
-            sweep(flat, trackers, frame.Time, frame.Cursor, frame.Actions);
+            foreach (var spinner in layout.Spinners.Values)
+            {
+                if (spinner.IsAlive(frame.Time) && !spinner.State.AllJudged)
+                    spinner.Update(frame.Time, frame.Cursor, frame.Actions);
+            }
+
+            sweep(layout, frame.Time, frame.Cursor, frame.Actions);
         }
 
         return summarise(flat);
@@ -117,11 +125,12 @@ public sealed class Simulator(IHitPolicy policy)
     /// Flatten to the order lazer enumerates alive objects in: each top-level object
     /// followed by its nested objects. Notelock walks this list, so the order is load-bearing.
     /// </summary>
-    private static Layout build(IBeatmap playable)
+    private static Layout build(IBeatmap playable, double clockRate)
     {
         var flat = new List<ObjectState>();
         var topLevel = new List<ObjectState>();
         var trackers = new Dictionary<ObjectState, SliderTracker>();
+        var spinners = new Dictionary<ObjectState, SpinnerTracker>();
 
         foreach (var hitObject in playable.HitObjects.Cast<OsuHitObject>().OrderBy(o => o.StartTime))
         {
@@ -145,6 +154,16 @@ public sealed class Simulator(IHitPolicy policy)
                     Tail = state.Nested.FirstOrDefault(n => n.HitObject is SliderTailCircle)
                 };
             }
+
+            if (hitObject is Spinner)
+            {
+                spinners[state] = new SpinnerTracker(state, clockRate)
+                {
+                    // Nested order is significant: the leading ticks are ordinary, the
+                    // trailing ones award bonus, and they are consumed in order.
+                    Ticks = state.Nested.Where(n => n.HitObject is SpinnerTick).ToArray()
+                };
+            }
         }
 
         // Only drawable hit circles receive presses: plain circles and slider heads. Slider
@@ -155,7 +174,7 @@ public sealed class Simulator(IHitPolicy policy)
                             .OrderBy(s => s.HitObject.StartTime)
                             .ToList();
 
-        return new Layout(flat, topLevel, pressable, trackers);
+        return new Layout(flat, topLevel, pressable, trackers, spinners);
     }
 
     /// <summary>
@@ -166,7 +185,8 @@ public sealed class Simulator(IHitPolicy policy)
         List<ObjectState> Flat,
         List<ObjectState> TopLevel,
         List<ObjectState> Pressable,
-        Dictionary<ObjectState, SliderTracker> Trackers);
+        Dictionary<ObjectState, SliderTracker> Trackers,
+        Dictionary<ObjectState, SpinnerTracker> Spinners);
 
     private void press(Layout layout, double time, Vector2 cursor, OsuAction action, IReadOnlyList<OsuAction> pressed)
     {
@@ -206,9 +226,19 @@ public sealed class Simulator(IHitPolicy policy)
         }
     }
 
-    private void sweep(List<ObjectState> flat, Dictionary<ObjectState, SliderTracker> trackers, double time, Vector2 cursor, IReadOnlyList<OsuAction> pressed)
+    private void sweep(Layout layout, double time, Vector2 cursor, IReadOnlyList<OsuAction> pressed)
     {
-        foreach (var state in flat)
+        var trackers = layout.Trackers;
+
+        // Spinners resolve their own ticks and result, so they are stepped whole rather
+        // than object by object.
+        foreach (var spinner in layout.Spinners.Values)
+        {
+            if (!spinner.State.AllJudged)
+                spinner.Resolve(time, ref sequence);
+        }
+
+        foreach (var state in layout.Flat)
         {
             if (state.Judged)
                 continue;
@@ -230,6 +260,10 @@ public sealed class Simulator(IHitPolicy policy)
 
                 case SliderTick or SliderRepeat or SliderTailCircle:
                     trackers[state.Parent!].TryJudgeNested(state, time, ref sequence);
+                    break;
+
+                // Handled by their spinner above, not individually.
+                case Spinner or SpinnerTick:
                     break;
 
                 case HitCircle circle:
