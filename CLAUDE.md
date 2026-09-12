@@ -50,6 +50,22 @@ stories in that register on request.
 paths, walk the hit objects, dump JSON: per-object angle, jump distance, strain time,
 stack offsets, slider travel, decoded replay frames. Then never touch C# again.
 
+The shim is not write-once, and the line count will grow: steps 4-6 need slider travel,
+per-object strain and difficulty attributes that step 1 does not. What is frozen is the
+*direction* — C# does extraction, simulation and score arithmetic, never analysis — and
+that its JSON output is versioned.
+
+One thing does get reimplemented: **the input-to-judgement state machine**. Lazer produces
+judgements in the drawable layer (`DrawableHitObject.UpdateAfterChildren` runs every frame,
+`DrawableHitCircle` only registers a press `if (IsHovered)`, notelock reads the live
+drawable pool), so getting it from lazer means hosting a game loop. The port boundary:
+
+- **Never reimplemented** — stack offsets, slider path approximation, beatmap conversion,
+  `ApplyDefaults`, mod application, hit-window *values*, score arithmetic. `ScoreProcessor`
+  runs unloaded with no host, so the ordered judgement list goes straight back into it.
+- **Reimplemented** — the judgement loop only. Notelock is 106 lines of pure logic. Slider
+  tracking and spinner accumulation are the fiddly parts.
+
 This is deliberate. Do **not** port the geometry. Porting means owning edge-case fidelity
 to someone else's implementation forever — collinear fallback thresholds, stack leniency,
 path extension, path approximation tolerance. Those don't crash; they shift positions a
@@ -83,8 +99,25 @@ against hit objects produces those exact numbers, that simultaneously proves obj
 association, hit windows, stack offsets, slider path, slider tail judgement and mod
 handling. Off by a single 100 → something is broken and every bin built on top is
 plausible-looking garbage. The ground truth ships inside the input file: no API, no
-osu-tools, nothing to construct. Run it over the whole local Replays folder and iterate to
-100%. The failures teach the parts of the ruleset that aren't documented anywhere —
+osu-tools, nothing to construct — and for lazer replays it is richer than the legacy five
+counts, since version 30000001+ carries a JSON blob with full `statistics` and
+`maximum_statistics` including `slider_tail_hit` and `large_tick_hit`. Total score is the
+weak assertion, not the strong one: it is int32-truncated and means different things for
+lazer and stable scores. Assert counts and max combo.
+
+There is no local Replays folder. The corpus is lazer's exports, and beatmaps are not
+reachable by path at all — the `.osr` header carries the beatmap's MD5 while lazer's file
+store is addressed by SHA-256, and only the realm database holds the mapping. Build that
+index first, from a *copy* of the realm, and never traverse or brute-force hash the file
+store.
+
+Aim for exact reproduction, but do not treat every shortfall as a bug. Key state changes
+are evaluated at exact replay frame timestamps, so hit circles should reproduce
+deterministically. Slider tracking samples the cursor every update and spinner rotation
+accumulates per update, so both are host-rate dependent in the real client. Stage the work
+— circles, then sliders, then spinners — and make the deliverable a *mismatch taxonomy*:
+every residual assigned to a named cause with a minimal reproducing test. The match rate is
+one number; the taxonomy is the knowledge. The failures teach the parts of the ruleset that aren't documented anywhere —
 notelock especially (object n+1 cannot be judged before n resolves), and lazer slider tail
 vs Classic.
 
@@ -117,6 +150,11 @@ about other people's data.
 Rotation and scale invariance come free by never classifying on absolute position:
 
 - **Angle** at object n formed by (n-1, n, n+1). Rotation-invariant by construction.
+  Note lazer's own `OsuDifficultyHitObject.Angle` is `Math.Abs(Math.Atan2(det, dot))` and,
+  for slider-preceded objects, `Math.Min(angle, sliderAngle)` — an unsigned difficulty
+  heuristic, not the feature wanted here. Take *positions* from lazer (`StackedPosition`,
+  `LazyEndPosition`), which is the part with the edge cases, and compute the signed angle
+  here. Emit lazer's value alongside as a cross-check.
 - **Spacing** in circle radii, not osu!pixels, so CS drops out.
 - **Rhythm** as Δt / beat length, giving 1/2, 1/4, 1/3 snap rather than milliseconds.
 - **Required cursor velocity** = spacing / strain time, in radii per ms. This is the axis
@@ -139,13 +177,16 @@ implementation of rotation-invariant featurization, open source, maintained, and
 produces the star rating that would be compared against.
 
 Available per-object after extraction: signed hit error; cursor position, velocity,
-acceleration, jerk; aim error at hit time normalized by CS radius; key state (tap
-intervals, K1/K2 alternation); frametime distribution; object geometry; per-object
-aim/speed/rhythm strain.
+acceleration, jerk; aim error at hit time normalized by CS radius; tap intervals;
+frametime distribution; object geometry; per-object aim/speed/rhythm strain.
+
+**K1 vs K2 alternation is not recoverable from lazer replays.** `OsuReplayFrame.ToLegacy`
+only ever emits `Left1`, `Right1` and `Smoke`, so the second key is destroyed on encode.
+Tap intervals survive; handedness of the tap does not. Only stable-format replays retain
+it, and they are 15 of 1009 in the local corpus.
 
 Conditioning worth running: aim error bucketed by jump angle × spacing × BPM; tap interval
-regularity by position within a stream; hit error drift across map length; K1 vs K2 error
-asymmetry; cursor velocity profile in the 200ms before a miss vs the same pattern class
+regularity by position within a stream; hit error drift across map length; cursor velocity profile in the 200ms before a miss vs the same pattern class
 when hit.
 
 ## The oracle — top-50 replays
@@ -189,6 +230,10 @@ section, it's the map, not the player.
   temporal resolution varies with the player's rig, and interpolation happens at roughly
   the precision being measured. Characterize this before building anything on derivatives
   — jerk especially will be mostly artifact if handled carelessly.
+- **Replays end when the play ends.** A failed or abandoned play simply has no frames past
+  that point, and lazer judges nothing after it. Simulating to the end of the beatmap
+  invents a miss for every remaining object — which looks like a catastrophic ruleset bug
+  and is not one.
 - **Read error vs aim error can look identical in the data.** A misread usually shows the
   cursor travelling confidently to the wrong place; an aim error shows it travelling to
   the right place imprecisely. That separation is inference, and it's where a model will
@@ -197,43 +242,43 @@ section, it's the map, not the player.
   scattering around zero) but the *cause* — the map snapped to a music layer the player
   wasn't tracking — is not recoverable from the beatmap alone.
 
-## Licensing lines to hold
+## Licensing
 
-These are cheap to hold now and a per-layer rewrite to fix later. None of it bites on
-paperwork; it bites on architecture, and all of it gets decided in week one.
+**This project is non-commercial only.** That decision settles most of what used to be a
+long section here, because nearly every constraint in it existed to keep a commercial
+option open.
 
-- `ppy/osu` and `osu-framework` are **MIT** — fine commercially, keep the copyright and
-  licence notice.
-- **No osu-framework in the pipeline.** It depends on BASS, which is free for
-  non-commercial use only and needs a paid un4seen licence commercially. The JSON-shim
-  approach avoids this entirely — but verify early that referencing
-  `osu.Game.Rulesets.Osu` doesn't drag framework audio in.
-- **No ppy assets in the UI.** `ppy/osu-resources` is CC-BY-NC 4.0, and NC restricts *use*,
-  not just distribution — server-side rendering with default skin assets is as much a
-  problem as shipping them. It's a transitive NuGet dependency of `osu.Game`, so check at
-  build time whether anything is actually *loaded* rather than merely referenced. Cheap to
-  avoid with an independent visual language from day one; a rewrite if the look is built
-  around ppy's sprites.
-- **Never ship audio or beatmap files.** Beatmaps are user submissions of third-party
-  music; ppy claims no rights over distribution, so the burden is entirely ours. Only the
+- `ppy/osu` and `osu-framework` are **MIT** — keep the copyright and licence notice.
+- **osu-framework is in the build, unavoidably.** `osu.Game` references it directly, and
+  `PathApproximator` — the piecewise-linear approximator that *is* the slider path for
+  every gameplay purpose — lives there, not in `ppy/osu`. It pulls BASS transitively, and
+  `osu.Game` pulls `ppy/osu-resources` (CC-BY-NC) too. Under non-commercial use both are
+  fine: BASS is free for non-commercial use and the NC clause is satisfied rather than
+  tripped.
+- **Still never construct a `GameHost`, `AudioManager` or `OsuGameBase`** — but for
+  engineering reasons now, not licensing ones. A hosted game loop makes extraction
+  framerate-coupled, which is the one property the extraction layer cannot have, and drags
+  realm, SQLite, the skin manager and the beatmap manager into a process whose job is to
+  read two files. `HostGuardTests` asserts this by checking `/proc/self/maps`.
+- **Never ship audio or beatmap files.** This one is unchanged and unconditional. Beatmaps
+  are user submissions of third-party music, ppy claims no rights over distribution, so the
+  burden is entirely ours — and none of that depends on commercial status. Only the
   Featured Artist catalogue is blanket-cleared, and even there, tracks by a featured artist
-  that aren't in their listing aren't licensed. The canvas-viewer design dodges this
-  cleanly as long as audio is user-supplied local files or synthesized clicks.
-- **Naming.** "osu!" and "ppy" are trademarks; ppy asks to be contacted for clearance.
-  Trivially cheap to change now, expensive after a domain and users.
-- **Top-50 corpus** is other players' data through an API anyone with an account can use,
-  with no contract protecting access. That's a business risk, not a legal one — the right
-  move is an email to ppy.
-
-Hold those and going commercial later costs a rename and an email. The general caveat on
-NC licences is that nobody agrees where "commercial" starts (ads, donations, Patreon are
-all genuinely contested); if real money shows up, that's when to pay someone who does this
-for a living.
+  that aren't in their listing aren't licensed. Tests build beatmaps in code rather than
+  carrying fixtures.
+- **ppy assets in the UI** are now permitted, but an independent visual language is still
+  the better call for a tool that should look like its own thing.
+- **Naming.** "osu!" and "ppy" are trademarks and ppy asks to be contacted for clearance.
+  Lower stakes for a non-commercial tool, but a rename is still cheap.
+- **Top-50 corpus.** Other players' data through an API anyone with an account can use. An
+  email to ppy before pulling at volume is good manners.
 
 ## Non-goals
 
 - LLM pattern classification.
 - VLM on gameplay frames as a perception layer.
 - Video rendering (danser-go / o!rdr) as the output medium.
-- Porting lazer's geometry to Python.
+- Porting lazer's geometry, in any language. The viewer draws the shim's precomputed
+  polyline and never recomputes curves — reimplementing them in JS is the same non-goal
+  wearing a different hat.
 - The replay viewer before steps 1–6 are done.
