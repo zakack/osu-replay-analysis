@@ -35,6 +35,13 @@ public sealed class Simulator(IHitPolicy policy)
 
     private int sequence;
 
+    /// <summary>
+    /// Override the sampling step. Set to <see cref="ReplaySampler.OracleMatchStep"/> when
+    /// diffing against the oracle, so a divergence means a rule was ported wrong rather than
+    /// that two machines sampled at different rates.
+    /// </summary>
+    public double? StepOverride { get; set; }
+
     /// <summary>Trace tracking state for the slider containing this time, for diagnosis.</summary>
     public (double Time, Action<string> Write)? TraceAround { get; set; }
 
@@ -69,7 +76,7 @@ public sealed class Simulator(IHitPolicy policy)
         var trackers = layout.Trackers;
         // Rate mods stretch the client's wall-clock frame time across more beatmap time,
         // so the sampling step has to be scaled the same way the recorder scales its own.
-        var sampler = new ReplaySampler(score.Replay, ModUtils.CalculateRateWithMods(score.ScoreInfo.Mods));
+        var sampler = new ReplaySampler(score.Replay, ModUtils.CalculateRateWithMods(score.ScoreInfo.Mods), StepOverride);
 
         // Stop exactly when the replay stops. Gameplay ends with the frames: a completed
         // play keeps recording past the final object anyway, while a failed or abandoned one

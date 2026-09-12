@@ -159,7 +159,9 @@ public static class OracleDiff
             var playable = new FlatWorkingBeatmap(target.BeatmapPath)
                 .GetPlayableBeatmap(new OsuRuleset().RulesetInfo, score.ScoreInfo.Mods);
 
-            var simulation = new Simulator().Run(playable, score);
+            // Match the oracle's cadence, not the production default. Otherwise every diff
+            // mixes rule defects with the fact that two machines sampled at different rates.
+            var simulation = new Simulator { StepOverride = ReplaySampler.OracleMatchStep }.Run(playable, score);
             var divergences = Compare(run, simulation);
             compared++;
             totalDivergences += divergences.Count;
@@ -205,7 +207,7 @@ public static class OracleDiff
         }
 
         output.WriteLine();
-        output.WriteLine($"compared {compared} of {targets.Count} targets");
+        output.WriteLine($"compared {compared} of {targets.Count} targets at the oracle-matched step of {ReplaySampler.OracleMatchStep:F2}ms");
         output.WriteLine($"  simulation agrees with the live game  {agreed}");
         output.WriteLine($"  simulation diverges from it           {compared - agreed}");
         output.WriteLine($"  total diverging judgements            {totalDivergences}");

@@ -111,12 +111,14 @@ store is addressed by SHA-256, and only the realm database holds the mapping. Bu
 index first, from a *copy* of the realm, and never traverse or brute-force hash the file
 store.
 
-When the header and the oracle disagree about a parameter, follow the oracle. The sampling
-rate that decides slider tracking can be tuned to agree with more `.osr` headers (2ms scored
-177 of 513 against 16.7ms's 150) while agreeing with the actual ruleset far less (13 of 47
-against 33 of 47). Fitting to the header is absorbing the replay's 60Hz information loss
-into a physical parameter: it improves a number by making the simulation less faithful. Keep
-the parameter honest and leave the header gap in the taxonomy where it belongs.
+The oracle settles *rules*, not *parameters*. Whether `TryJudgeNestedObject` was ported
+correctly is a question about semantics, and a divergence there is a defect. How often the
+judgement loop is evaluated is a property of the machine, and the oracle's machine is a
+headless test host, not a player's. Those need different references and different numbers:
+the header is the only evidence about real clients, so it sets the production sampling step,
+while oracle diffs run at whatever step matches the host, so that a divergence means a rule
+is wrong rather than that two machines sampled differently. Never let one substitute for the
+other, and keep both numbers written down with what they were measured against.
 
 Build the differential oracle early, not late. Host lazer's real gameplay headlessly, play
 the replay, and record what it judged object by object. The header gives totals, which tell

@@ -28,7 +28,7 @@ public readonly record struct GameplayFrame(double Time, Vector2 Cursor, IReadOn
 /// when the jump already exceeds 1.2 of those, so it is a floor on resolution during lag
 /// and a seek guard — not the sampling rate.
 /// </summary>
-public sealed class ReplaySampler(Replay replay, double clockRate = 1)
+public sealed class ReplaySampler(Replay replay, double clockRate = 1, double? stepOverride = null)
 {
     /// <summary>
     /// Stand-in for the host's frame time, and a genuinely free parameter.
@@ -45,7 +45,7 @@ public sealed class ReplaySampler(Replay replay, double clockRate = 1)
     /// rate-adjusted replay it covers more beatmap time per frame — the recorder itself
     /// scales its own threshold by the clock rate for exactly this reason.
     /// </summary>
-    private double step => HostFrameTime * clockRate;
+    private double step => (stepOverride ?? HostFrameTime) * clockRate;
 
     public static readonly double HostFrameTime =
         double.TryParse(Environment.GetEnvironmentVariable("ORA_HOST_STEP_MS"), out double configured) && configured > 0
@@ -53,26 +53,35 @@ public sealed class ReplaySampler(Replay replay, double clockRate = 1)
             : default_host_frame_time;
 
     /// <summary>
-    /// One 60fps step, matching <c>FrameStabilityContainer</c>'s cap, which in practice
-    /// means evaluating at replay frame boundaries — 60Hz is also what the recorder wrote.
+    /// Two references disagree about this value, and they are not measuring the same thing:
     ///
-    /// This deliberately is not the value that best matches the .osr headers. Two references
-    /// disagree, and they are measuring different things:
-    ///
-    ///   step      agrees with the header    agrees with the live game
+    ///   step      agrees with the header    agrees with the oracle
     ///   16.7ms    150 of 513                33 of 47
     ///   2ms       177 of 513                13 of 47
     ///   0.5ms     —                         13 of 47
+    ///   0.25ms    —                         13 of 47
     ///
-    /// Fitting to the header scores better and is wrong. The header came from a play that
-    /// saw the true cursor; the replay only preserves it at 60Hz, so sampling finer than the
-    /// reference does not recover that information — it invents tracking moments the client
-    /// never had, and happens to cancel some of the loss. The differential oracle, which
-    /// runs the actual ruleset, says frame-boundary sampling is what lazer does. Fidelity to
-    /// the reference wins over a fitted score, and the header gap stays where it belongs: in
-    /// the taxonomy, as replay-versus-play divergence that no step size can close.
+    /// The header came from a real client at an unknown, probably high, frame rate, and is
+    /// the only evidence there is about real clients. The oracle runs the real ruleset but
+    /// under a headless test host whose update cadence is its own, not a player's. So the
+    /// header sets this default, and <see cref="OracleMatchStep"/> is used when diffing
+    /// against the oracle, where the point is to isolate rule bugs rather than to model a
+    /// machine.
+    ///
+    /// Why the oracle behaves like a 16.7ms sampler is not established. Sampling its
+    /// gameplay clock from the test scene gives a 0.38ms median with a long tail and no
+    /// clustering at 60fps, but that cannot see inside <c>FrameStabilityContainer</c>'s
+    /// catch-up loop, which runs many clock advances inside a single host frame. Treat the
+    /// number as measured and the mechanism as open.
     /// </summary>
-    private const double default_host_frame_time = 1000.0 / 60;
+    private const double default_host_frame_time = 2.0;
+
+    /// <summary>
+    /// The step at which this simulation agrees with the differential oracle best. Used only
+    /// for oracle diffs, so that a divergence there means a rule was ported wrong rather
+    /// than that two machines sampled at different rates.
+    /// </summary>
+    public const double OracleMatchStep = 1000.0 / 60;
 
     private readonly List<OsuReplayFrame> frames = replay.Frames.Cast<OsuReplayFrame>().ToList();
 

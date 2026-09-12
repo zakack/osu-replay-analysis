@@ -27,8 +27,84 @@ namespace Oracle;
 [TestFixture]
 public partial class HostFrameRateTests : RateAdjustedBeatmapTestScene
 {
+    /// <summary>
+    /// The measurement that matters: how the clock steps during a real replay, where
+    /// SetFrameFromTime clamps to each frame's span and frame stability can cap an advance.
+    /// The idle-clock measurement below is not representative of that.
+    /// </summary>
     [Test]
-    public void MeasureGameplayClockStep()
+    public void MeasureGameplayClockStepDuringRealReplay()
+    {
+        var deltas = new List<double>();
+        ScoreAccessibleOracleReplayPlayer player = null!;
+        Score score = null!;
+        IBeatmap beatmap = null!;
+
+        AddStep("load a real replay", () =>
+        {
+            var targets = System.Text.Json.JsonSerializer.Deserialize<List<Target>>(
+                File.ReadAllText(RepoPaths.Build("oracle-targets.json")))!;
+
+            var target = targets[0];
+            var index = Extract.BeatmapIndex.Read(RepoPaths.Build("beatmap-index.json"));
+
+            score = Extract.ReplayLoader.Decode(target.ReplayPath, index);
+            beatmap = new FlatWorkingBeatmap(target.BeatmapPath).Beatmap;
+            beatmap.BeatmapInfo.Ruleset = new OsuRuleset().RulesetInfo;
+        });
+
+        AddStep("set beatmap", () =>
+        {
+            Beatmap.Value = CreateWorkingBeatmap(beatmap);
+            Ruleset.Value = new OsuRuleset().RulesetInfo;
+            SelectedMods.Value = score.ScoreInfo.Mods;
+        });
+
+        AddStep("push player", () => LoadScreen(player = new ScoreAccessibleOracleReplayPlayer(score)));
+
+        AddUntilStep("wait for running", () => player.IsCurrentScreen()
+                                               && player.ChildrenOfType<GameplayClockContainer>().SingleOrDefault()?.IsRunning == true);
+
+        AddUntilStep("sample deltas mid-play", () =>
+        {
+            double elapsed = player.ChildrenOfType<GameplayClockContainer>().Single().ElapsedFrameTime;
+
+            if (elapsed > 0)
+                deltas.Add(elapsed);
+
+            return deltas.Count >= 300;
+        });
+
+        AddStep("report", () =>
+        {
+            deltas.Sort();
+
+            int atSixtyFps = deltas.Count(d => Math.Abs(d - 1000.0 / 60) < 0.5);
+            int subMillisecond = deltas.Count(d => d < 1);
+
+            TestContext.Out.WriteLine($"REAL REPLAY clock step over {deltas.Count} frames:");
+            TestContext.Out.WriteLine($"  median {deltas[deltas.Count / 2]:F3} ms");
+            TestContext.Out.WriteLine($"  p10    {deltas[deltas.Count / 10]:F3} ms");
+            TestContext.Out.WriteLine($"  p90    {deltas[deltas.Count * 9 / 10]:F3} ms");
+            TestContext.Out.WriteLine($"  mean   {deltas.Average():F3} ms");
+            TestContext.Out.WriteLine($"  within 0.5ms of a 60fps step: {atSixtyFps} ({100.0 * atSixtyFps / deltas.Count:F1}%)");
+            TestContext.Out.WriteLine($"  sub-millisecond:              {subMillisecond} ({100.0 * subMillisecond / deltas.Count:F1}%)");
+        });
+    }
+
+    private sealed record Target(string ReplayPath, string BeatmapPath);
+
+    private partial class ScoreAccessibleOracleReplayPlayer(Score score) : ReplayPlayer(score, new PlayerConfiguration
+    {
+        AllowPause = false,
+        ShowResults = false
+    })
+    {
+        protected override bool PauseOnFocusLost => false;
+    }
+
+    [Test]
+    public void MeasureIdleGameplayClockStep()
     {
         var deltas = new List<double>();
         ReplayPlayer player = null!;
