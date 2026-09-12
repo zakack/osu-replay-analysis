@@ -11,19 +11,33 @@ namespace Sim;
 public readonly record struct GameplayFrame(double Time, Vector2 Cursor, IReadOnlyList<OsuAction> Actions);
 
 /// <summary>
-/// Reproduces the cadence at which lazer actually samples a replay.
+/// Reproduces the cadence at which lazer actually samples a replay, which decides every
+/// judgement that depends on continuous cursor state rather than a single instant.
 ///
-/// Two mechanisms combine to produce it, and getting either wrong changes results.
-/// <see cref="osu.Game.Rulesets.Replays.FramedReplayInputHandler.SetFrameFromTime"/> snaps
-/// the clock to precisely a replay frame's time whenever one is crossed, so key state
-/// changes are always evaluated exactly on a frame boundary where interpolation is exact.
-/// <c>FrameStabilityContainer</c> then caps any single advance at one 60fps step, so long
-/// gaps between frames are still sampled at a bounded rate — which is what makes slider
-/// tracking and spinner rotation come out close to the client rather than wildly off.
+/// Two mechanisms combine. <c>FramedReplayInputHandler.SetFrameFromTime</c> refuses
+/// mid-frame times while the replay is in an "important section" — a button is held and the
+/// next frame is close — so during any slider the clock lands only on replay frame times,
+/// where interpolation is exact. Outside those sections the clock advances at the host's
+/// frame rate, which is far finer than 60fps on real hardware;
+/// <c>FrameStabilityContainer</c> only caps a single advance at one 60fps step, so that is
+/// a floor on resolution, not the resolution itself.
 /// </summary>
 public sealed class ReplaySampler(Replay replay)
 {
-    private const double sixty_frame_time = 1000.0 / 60;
+    /// <summary>
+    /// Matches <c>FramedReplayInputHandler.AllowedImportantTimeSpan</c>: a held button only
+    /// forces frame-exact playback while the next frame is this close.
+    /// </summary>
+    private const double important_time_span = 1000.0 / 60 * 1.2;
+
+    /// <summary>
+    /// Step size outside important sections, matching <c>FrameStabilityContainer</c>'s
+    /// 60fps cap. A real client steps finer than this, but outside an important section no
+    /// key is held, so nothing that depends on continuous cursor state is being judged —
+    /// only miss sweeps, which a 60fps grid resolves identically. Stepping at 1ms here was
+    /// measured as 16x the work for no gain in agreement.
+    /// </summary>
+    private const double host_frame_time = 1000.0 / 60;
 
     private readonly List<OsuReplayFrame> frames = replay.Frames.Cast<OsuReplayFrame>().ToList();
 
@@ -49,10 +63,17 @@ public sealed class ReplaySampler(Replay replay)
         while (time < until)
         {
             double nextFrameTime = index + 1 < frames.Count ? frames[index + 1].Time : double.PositiveInfinity;
-            double proposed = Math.Min(nextFrameTime, time + sixty_frame_time);
+
+            // While a button is held and the next frame is near, mid-frame times are
+            // rejected outright by the replay handler, so gameplay advances frame to frame.
+            bool important = frames[index].Actions.Count > 0 && nextFrameTime - time <= important_time_span;
+
+            double proposed = important
+                ? nextFrameTime
+                : Math.Min(nextFrameTime, time + host_frame_time);
 
             if (double.IsPositiveInfinity(proposed))
-                proposed = Math.Min(until, time + sixty_frame_time);
+                proposed = Math.Min(until, time + host_frame_time);
 
             time = proposed;
 

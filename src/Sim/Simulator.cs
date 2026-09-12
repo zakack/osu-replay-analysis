@@ -1,4 +1,3 @@
-using System.Linq;
 using osu.Game.Beatmaps;
 using osu.Game.Rulesets.Objects;
 using osu.Game.Rulesets.Osu;
@@ -14,7 +13,11 @@ namespace Sim;
 public sealed record SimulationResult(
     IReadOnlyList<ObjectState> Objects,
     Dictionary<HitResult, int> Statistics,
-    int MaxCombo);
+    int MaxCombo)
+{
+    /// <summary>Judgements in the order they were applied, which is the order scoring needs.</summary>
+    public IEnumerable<ObjectState> InJudgementOrder => Objects.Where(o => o.Judged).OrderBy(o => o.Order);
+}
 
 /// <summary>
 /// Turns replay input into an ordered list of judgements.
@@ -22,95 +25,195 @@ public sealed record SimulationResult(
 /// This is the only part of lazer's behaviour reimplemented rather than called, because
 /// lazer produces judgements in the drawable layer and hosting that layer would make
 /// extraction framerate-coupled. Everything it consumes — stacked positions, hit windows,
-/// slider paths, mod-adjusted difficulty — comes from lazer itself, and the judgements it
-/// emits go back to lazer's ScoreProcessor for scoring.
+/// slider paths, mod-adjusted difficulty — comes from lazer itself.
 /// </summary>
 public sealed class Simulator(IHitPolicy policy)
 {
     public Simulator() : this(new StartTimeOrderedPolicy()) { }
 
+    private int sequence;
+
     public SimulationResult Run(IBeatmap playable, Score score)
     {
-        var objects = playable.HitObjects
-                              .Cast<OsuHitObject>()
-                              .OrderBy(o => o.StartTime)
-                              .Select((o, i) => new ObjectState(o, i))
-                              .ToArray();
+        sequence = 0;
 
+        var layout = build(playable);
+        var flat = layout.Flat;
+        var trackers = layout.Trackers;
         var sampler = new ReplaySampler(score.Replay);
 
-        // Stop when the replay stops. A failed or abandoned play simply has no frames past
-        // the point it ended, and lazer judges nothing after that — so running on to the end
-        // of the beatmap would invent a miss for every remaining object. The miss window is
-        // added so that objects the player genuinely dropped at the very end still resolve.
-        double until = sampler.LastFrameTime + OsuHitWindows.MISS_WINDOW;
+        // Stop exactly when the replay stops. Gameplay ends with the frames: a completed
+        // play keeps recording past the final object anyway, while a failed or abandoned one
+        // simply stops, and lazer judges nothing after that. Running even a miss window
+        // longer invents judgements around the point of failure.
+        double until = sampler.LastFrameTime;
 
         IReadOnlyList<OsuAction> held = [];
 
         foreach (var frame in sampler.Sample(until))
         {
             // Input is delivered before drawables update, so a press lands before the
-            // automatic miss sweep of the same instant. A circle struck on the exact
-            // millisecond its window closes is a hit, not a miss.
+            // automatic sweep of the same instant.
             foreach (var action in frame.Actions)
             {
                 if (!held.Contains(action))
-                    press(objects, frame.Time, frame.Cursor);
+                    press(layout, frame.Time, frame.Cursor, action, frame.Actions);
             }
 
             held = frame.Actions;
 
-            sweepMisses(objects, frame.Time);
+            // SliderInputManager is a child component, so its Update runs before the nested
+            // objects' UpdateAfterChildren. Tracking for this instant is therefore settled
+            // before anything reads it.
+            foreach (var tracker in trackers.Values)
+            {
+                if (tracker.IsAlive(frame.Time) && !tracker.State.AllJudged)
+                    tracker.Update(frame.Time, frame.Cursor, frame.Actions);
+            }
+
+            sweep(flat, trackers, frame.Time, frame.Cursor, frame.Actions);
         }
 
-        return summarise(objects);
+        return summarise(flat);
     }
 
-    private void press(IReadOnlyList<ObjectState> objects, double time, Vector2 cursor)
+    /// <summary>
+    /// Flatten to the order lazer enumerates alive objects in: each top-level object
+    /// followed by its nested objects. Notelock walks this list, so the order is load-bearing.
+    /// </summary>
+    private static Layout build(IBeatmap playable)
     {
-        // Input propagates front to back, and the hit object container orders by descending
-        // start time, so the earliest unjudged object under the cursor receives the press.
-        // Once one does, the press is consumed even if notelock refuses the hit.
-        foreach (var state in objects)
+        var flat = new List<ObjectState>();
+        var topLevel = new List<ObjectState>();
+        var trackers = new Dictionary<ObjectState, SliderTracker>();
+
+        foreach (var hitObject in playable.HitObjects.Cast<OsuHitObject>().OrderBy(o => o.StartTime))
+        {
+            var state = new ObjectState(hitObject, null, flat.Count);
+            flat.Add(state);
+            topLevel.Add(state);
+
+            foreach (var nested in hitObject.NestedHitObjects.Cast<OsuHitObject>())
+            {
+                var nestedState = new ObjectState(nested, state, flat.Count);
+                state.Nested.Add(nestedState);
+                flat.Add(nestedState);
+            }
+
+            if (hitObject is Slider)
+            {
+                trackers[state] = new SliderTracker(state)
+                {
+                    Head = state.Nested.First(n => n.HitObject is SliderHeadCircle),
+                    TicksAndRepeats = state.Nested.Where(n => n.HitObject is SliderTick or SliderRepeat).ToArray(),
+                    Tail = state.Nested.FirstOrDefault(n => n.HitObject is SliderTailCircle)
+                };
+            }
+        }
+
+        // Only drawable hit circles receive presses: plain circles and slider heads. Slider
+        // repeats and tails derive from HitCircle in the model but not in the drawable tree,
+        // and they carry empty hit windows — letting them take a press would swallow input
+        // meant for a real circle.
+        var pressable = flat.Where(StartTimeOrderedPolicy.IsBlocker)
+                            .OrderBy(s => s.HitObject.StartTime)
+                            .ToList();
+
+        return new Layout(flat, topLevel, pressable, trackers);
+    }
+
+    /// <summary>
+    /// The three orderings the loop needs: every object for the sweep, top-level objects for
+    /// notelock's nested enumeration, and the press targets sorted by start time.
+    /// </summary>
+    private sealed record Layout(
+        List<ObjectState> Flat,
+        List<ObjectState> TopLevel,
+        List<ObjectState> Pressable,
+        Dictionary<ObjectState, SliderTracker> Trackers);
+
+    private void press(Layout layout, double time, Vector2 cursor, OsuAction action, IReadOnlyList<OsuAction> pressed)
+    {
+        // Input propagates front to back and the hit object container orders by descending
+        // start time, so the earliest unjudged circle under the cursor receives the press.
+        // Once one does the press is consumed, even if notelock then refuses the hit.
+        foreach (var state in layout.Pressable)
         {
             if (state.Judged)
                 continue;
 
-            var hitObject = state.HitObject;
+            var hitCircle = (HitCircle)state.HitObject;
 
-            if (time < hitObject.StartTime - hitObject.TimePreempt)
+            if (time < hitCircle.StartTime - hitCircle.TimePreempt)
                 break;
 
-            if (Vector2.Distance(cursor, hitObject.StackedPosition) > hitObject.Radius)
+            if (Vector2.Distance(cursor, hitCircle.StackedPosition) > hitCircle.Radius)
                 continue;
 
-            var result = hitObject.HitWindows.ResultFor(time - hitObject.StartTime);
-            var action = policy.CheckHittable(state, time, result, objects);
+            // Lazer records the pressing key on any hovered press, hit or not, and slider
+            // tracking reads it back off the head.
+            state.HitAction ??= action;
 
-            if (action == ClickAction.Hit && result != HitResult.None)
+            var result = hitCircle.HitWindows.ResultFor(time - hitCircle.StartTime);
+            var clickAction = policy.CheckHittable(state, time, result, layout.TopLevel);
+
+            if (clickAction == ClickAction.Hit && result != HitResult.None)
             {
-                state.Apply(result, time);
-                policy.HandleHit(state, objects, time);
+                state.Apply(result, time, ref sequence);
+                policy.HandleHit(state, layout.TopLevel, time, ref sequence);
+
+                if (state.Parent != null && layout.Trackers.TryGetValue(state.Parent, out var tracker))
+                    tracker.PostProcessHeadJudgement(time, cursor, pressed, ref sequence);
             }
 
             return;
         }
     }
 
-    private static void sweepMisses(IReadOnlyList<ObjectState> objects, double time)
+    private void sweep(List<ObjectState> flat, Dictionary<ObjectState, SliderTracker> trackers, double time, Vector2 cursor, IReadOnlyList<OsuAction> pressed)
     {
-        foreach (var state in objects)
+        foreach (var state in flat)
         {
             if (state.Judged)
                 continue;
 
-            double offset = time - state.HitObject.GetEndTime();
+            switch (state.HitObject)
+            {
+                case Slider slider:
+                    // The slider resolves once its tail has, and only past its end time. Its
+                    // own judgement is ignored for scoring, but it still carries combo state.
+                    if (trackers[state].Tail is { Judged: true } && time >= slider.EndTime)
+                    {
+                        if (state.Nested.Any(n => n.Result.IsHit()))
+                            state.HitForcefully(time, ref sequence);
+                        else
+                            state.MissForcefully(time, ref sequence);
+                    }
 
-            if (offset < 0)
-                break;
+                    break;
 
-            if (!state.HitObject.HitWindows.CanBeHit(offset))
-                state.Apply(HitResult.Miss, time);
+                case SliderTick or SliderRepeat or SliderTailCircle:
+                    trackers[state.Parent!].TryJudgeNested(state, time, ref sequence);
+                    break;
+
+                case HitCircle circle:
+                {
+                    double offset = time - circle.StartTime;
+
+                    if (offset < 0)
+                        continue;
+
+                    if (!circle.HitWindows.CanBeHit(offset))
+                    {
+                        state.MissForcefully(time, ref sequence);
+
+                        if (state.Parent != null && trackers.TryGetValue(state.Parent, out var tracker))
+                            tracker.PostProcessHeadJudgement(time, cursor, pressed, ref sequence);
+                    }
+
+                    break;
+                }
+            }
         }
     }
 
@@ -120,7 +223,7 @@ public sealed class Simulator(IHitPolicy policy)
         int combo = 0;
         int maxCombo = 0;
 
-        foreach (var state in objects.Where(o => o.Judged).OrderBy(o => o.JudgementTime).ThenBy(o => o.Index))
+        foreach (var state in objects.Where(o => o.Judged).OrderBy(o => o.Order))
         {
             statistics[state.Result] = statistics.GetValueOrDefault(state.Result) + 1;
 

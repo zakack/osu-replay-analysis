@@ -17,7 +17,7 @@ public enum Outcome
 {
     Match,
     Mismatch,
-    OutOfScopeSliders,
+    ObjectCountMismatch,
     OutOfScopeSpinners,
     OutOfScopeClassic,
     NoGroundTruth,
@@ -35,8 +35,19 @@ public sealed record VerificationResult(
 
 public static class Verification
 {
-    /// <summary>Judgement types a circles-only stage is expected to account for.</summary>
-    private static readonly HitResult[] compared = [HitResult.Great, HitResult.Ok, HitResult.Meh, HitResult.Miss];
+    /// <summary>
+    /// Every judgement type a circles-and-sliders stage should account for. Slider tails and
+    /// large ticks are compared too, because lazer replays carry them in the statistics blob
+    /// and they are the sharpest signal on whether tracking is right.
+    /// </summary>
+    private static readonly HitResult[] compared =
+    [
+        HitResult.Great, HitResult.Ok, HitResult.Meh, HitResult.Miss,
+        HitResult.LargeTickHit, HitResult.LargeTickMiss, HitResult.SliderTailHit,
+        // A dropped slider tail becomes IgnoreMiss, not LargeTickMiss, so leaving these out
+        // hides exactly the failure sliders are most likely to produce.
+        HitResult.IgnoreHit, HitResult.IgnoreMiss
+    ];
 
     public static VerificationResult Verify(ReplayRecord record, IReadOnlyDictionary<string, IndexEntry> index)
     {
@@ -55,18 +66,33 @@ public static class Verification
             var working = new FlatWorkingBeatmap(index[record.BeatmapMd5].Path);
             var playable = working.GetPlayableBeatmap(new OsuRuleset().RulesetInfo, mods);
 
-            if (playable.HitObjects.Any(o => o is Slider))
-                return scoped(record, Outcome.OutOfScopeSliders);
-
             if (playable.HitObjects.Any(o => o is Spinner))
                 return scoped(record, Outcome.OutOfScopeSpinners);
 
+            // Separate a generation problem from a judgement one. If our object counts do
+            // not match the score's maximum statistics, the beatmap was converted
+            // differently and no amount of judgement work will reconcile the totals.
+            var maximums = score.ScoreInfo.MaximumStatistics;
             var expected = groundTruth(score);
 
             if (expected == null)
                 return scoped(record, Outcome.NoGroundTruth);
 
             var simulation = new Simulator().Run(playable, score);
+
+            if (maximums.Count > 0)
+            {
+                var generated = simulation.Objects.GroupBy(o => o.HitObject.CreateJudgement().MaxResult)
+                                          .ToDictionary(g => g.Key, g => g.Count());
+
+                var wrong = compared.Where(r => maximums.ContainsKey(r) && maximums[r] != generated.GetValueOrDefault(r)).ToArray();
+
+                if (wrong.Length > 0)
+                {
+                    string counts = string.Join(" ", wrong.Select(r => $"{r}:{maximums[r]}->{generated.GetValueOrDefault(r)}"));
+                    return new VerificationResult(record.Path, Outcome.ObjectCountMismatch, counts, null, null, 0, 0);
+                }
+            }
             var actual = compared.ToDictionary(r => r, r => simulation.Statistics.GetValueOrDefault(r));
 
             bool statisticsMatch = compared.All(r => expected.GetValueOrDefault(r) == actual[r]);
@@ -75,10 +101,27 @@ public static class Verification
             if (statisticsMatch && comboMatches)
                 return new VerificationResult(record.Path, Outcome.Match, null, expected, actual, score.ScoreInfo.MaxCombo, simulation.MaxCombo);
 
+            // An object left unjudged is a different failure from one judged wrongly: it
+            // means the loop never reached a state where the object could resolve, which
+            // points at ordering or termination rather than at the ruleset.
+            int unjudged = simulation.Objects.Count(o => !o.Judged);
+            string unjudgedNote = unjudged > 0 ? $" [unjudged:{unjudged}]" : string.Empty;
+
             string detail = !statisticsMatch
                 ? string.Join(" ", compared.Where(r => expected.GetValueOrDefault(r) != actual[r])
                                            .Select(r => $"{r}:{expected.GetValueOrDefault(r)}->{actual[r]}"))
                 : $"combo:{score.ScoreInfo.MaxCombo}->{simulation.MaxCombo}";
+
+            detail += unjudgedNote;
+
+            var dropReasons = simulation.Objects.Where(o => o.DropReason != null)
+                                        .GroupBy(o => o.DropReason!)
+                                        .OrderByDescending(g => g.Count())
+                                        .Select(g => $"{g.Key}x{g.Count()}")
+                                        .ToArray();
+
+            if (dropReasons.Length > 0)
+                detail += $" [tails lost: {string.Join(",", dropReasons)}]";
 
             return new VerificationResult(record.Path, Outcome.Mismatch, detail, expected, actual, score.ScoreInfo.MaxCombo, simulation.MaxCombo);
         }
