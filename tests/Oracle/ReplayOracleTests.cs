@@ -159,7 +159,11 @@ public partial class ReplayOracleTests : RateAdjustedBeatmapTestScene
                 r.HitObject.StartTime,
                 r.Type.ToString()) { TimeAbsolute = r.TimeAbsolute }).ToArray();
 
-            bool stalled = !currentPlayer.GameplayState.HasCompleted;
+            // Not simply "the screen did not end". A replay can run out of frames close
+            // enough to the last object that the fail sweep carries it over the end of the
+            // beatmap, so the play both fails and completes. What matters for a diff is that
+            // the reference stopped having input, which is these two and not HasCompleted.
+            bool stalled = currentPlayer.Failed || currentPlayer.WaitingOnFrames;
 
             var run = new OracleRun(replayPath, beatmapPath, judgements)
             {

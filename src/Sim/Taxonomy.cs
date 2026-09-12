@@ -104,6 +104,22 @@ public static class Taxonomy
         return (year, month, day);
     }
 
+    /// <summary>
+    /// Whether this score was set under the pre-<c>0f078ee550</c> hit windows, regardless of
+    /// what else is true about it.
+    ///
+    /// <see cref="Classify"/> reports one cause, and a replay can have two: a play that ended
+    /// early on an old client is filed as <see cref="Cause.EndedEarly"/>, because that is the
+    /// confound which has to be removed before the window question can be asked at all. This
+    /// keeps the other half visible rather than letting the ordering swallow it.
+    /// </summary>
+    public static bool OnLegacyHitWindows(VerificationResult result)
+    {
+        var build = ParseBuild(result.ClientVersion);
+
+        return build == null || build.Value.CompareTo(FlooredHitWindowsFrom) < 0;
+    }
+
     public static Cause Classify(VerificationResult result)
     {
         switch (result.Outcome)
@@ -124,9 +140,7 @@ public static class Taxonomy
         if (result.Unjudged > 0)
             return Cause.EndedEarly;
 
-        var build = ParseBuild(result.ClientVersion);
-
-        if (build == null || build.Value.CompareTo(FlooredHitWindowsFrom) < 0)
+        if (OnLegacyHitWindows(result))
             return Cause.LegacyHitWindows;
 
         if (result.Expected != null && result.Actual != null

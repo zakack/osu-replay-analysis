@@ -259,8 +259,15 @@ public static class OracleDiff
 
             if (run.StalledAt != null)
             {
-                output.WriteLine($"  replay ends {lastFrameTime:F0}ms, reference froze {run.StalledAt:F0}ms "
+                output.WriteLine($"  replay ends {lastFrameTime:F0}ms, reference stopped {run.StalledAt:F0}ms "
                                  + $"({(run.Failed ? $"failed at health {run.HealthAtFailure:F3}" : "out of frames")})");
+            }
+
+            // Report this wherever it happened, not only on a run flagged as truncated. The
+            // exclusion is driven by judgement times against the last frame, so it can bite
+            // on a run that reached the end of the beatmap anyway.
+            if (comparison.BeyondFrames > 0 || comparison.BeyondReference > 0)
+            {
                 output.WriteLine($"  past the last frame: reference judged {comparison.BeyondFrames} objects the simulation did not, "
                                  + $"simulation judged {comparison.BeyondReference} the reference did not");
             }
@@ -306,7 +313,7 @@ public static class OracleDiff
                          (totalJudgements > 0 ? $"  ({100.0 * totalDivergences / totalJudgements:F3}%)" : string.Empty));
         if (truncated > 0)
         {
-            output.WriteLine($"  reference froze before the beatmap ended    {truncated}");
+            output.WriteLine($"  reference ran out of replay input           {truncated}");
             output.WriteLine($"  judgements past the last replay frame       {totalBeyondFrames} (excluded above)");
         }
 

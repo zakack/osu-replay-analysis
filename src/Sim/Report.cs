@@ -36,8 +36,17 @@ public static class Report
         {
             var group = byCause.GetValueOrDefault(cause) ?? [];
 
-            if (group.Length > 0)
-                output.WriteLine($"  {group.Length,5}  {cause}");
+            if (group.Length == 0)
+                continue;
+
+            output.WriteLine($"  {group.Length,5}  {cause}");
+
+            // A cause that is not the whole story. Classification reports one, and ordering
+            // decides which, so say when a second one also applies rather than hiding it.
+            int alsoLegacy = cause == Cause.LegacyHitWindows ? 0 : group.Count(Taxonomy.OnLegacyHitWindows);
+
+            if (alsoLegacy > 0)
+                output.WriteLine($"  {alsoLegacy,5}    of which also on a legacy hit-window client");
         }
 
         // The question the taxonomy exists to answer: on a modern client, for a play that
