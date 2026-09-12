@@ -108,21 +108,47 @@ public partial class ReplayOracleTests : RateAdjustedBeatmapTestScene
         // The framework's per-step timeout is wall-clock and not settable, and a dense map
         // takes longer than it allows even at the headless host's many-times-realtime pace.
         // Waiting in chunks of beatmap time keeps every individual step well inside it.
-        // HasCompleted covers passing, failing and quitting, so a replay that ends early
-        // short-circuits the remaining chunks rather than burning through all of them.
+        //
+        // GameplayState.HasCompleted alone is not enough to stop on. It is HasPassed ||
+        // HasFailed || HasQuit, and a replay of a failed play reaches none of the three:
+        // ReplayPlayer.PerformFail overrides the base and deliberately never sets HasFailed,
+        // because a replay gets an indicator and a button rather than the fail sequence.
+        // ReachedAnEnd covers the two replay-only endings as well.
         for (int chunk = 1; chunk <= 160; chunk++)
         {
             double target = chunk * 5000.0;
 
             AddUntilStep($"reach {target / 1000:F0}s", () =>
-                currentPlayer.GameplayState.HasCompleted
+                currentPlayer.ReachedAnEnd
                 || currentPlayer.ChildrenOfType<GameplayClockContainer>().Single().CurrentTime >= target);
         }
 
-        AddAssert("gameplay completed", () =>
+        // Both replay-only endings freeze gameplay time rather than ending the screen, so
+        // settle before recording. Running out of frames stops the gameplay clock outright;
+        // a failure ramps the track frequency to zero over a second, and objects keep being
+        // judged the whole way down. Waiting for time to actually stop moving captures that
+        // tail instead of cutting it off mid-sweep.
+        double previousTime = double.NaN;
+        int samplesWithoutProgress = 0;
+
+        AddUntilStep("gameplay time settles", () =>
         {
-            double reached = currentPlayer.ChildrenOfType<GameplayClockContainer>().Single().CurrentTime;
-            Assert.That(currentPlayer.GameplayState.HasCompleted, Is.True, $"clock only reached {reached:F0}ms");
+            if (currentPlayer.GameplayState.HasCompleted)
+                return true;
+
+            double now = currentPlayer.FrameStableTime;
+
+            samplesWithoutProgress = now == previousTime ? samplesWithoutProgress + 1 : 0;
+            previousTime = now;
+
+            return samplesWithoutProgress >= 20 && currentPlayer.ReachedAnEnd;
+        });
+
+        AddAssert("gameplay reached an end", () =>
+        {
+            Assert.That(currentPlayer.ReachedAnEnd, Is.True,
+                $"neither completed, failed nor ran out of frames; frame-stable clock only reached {currentPlayer.FrameStableTime:F0}ms");
+
             return true;
         });
 
@@ -131,10 +157,24 @@ public partial class ReplayOracleTests : RateAdjustedBeatmapTestScene
             var judgements = results.Select(r => new OracleJudgement(
                 r.HitObject.GetType().Name,
                 r.HitObject.StartTime,
-                r.Type.ToString())).ToArray();
+                r.Type.ToString()) { TimeAbsolute = r.TimeAbsolute }).ToArray();
 
-            OracleStore.Write(new OracleRun(replayPath, beatmapPath, judgements));
-            TestContext.Out.WriteLine($"recorded {judgements.Length} judgements for {Path.GetFileName(replayPath)}");
+            bool stalled = !currentPlayer.GameplayState.HasCompleted;
+
+            var run = new OracleRun(replayPath, beatmapPath, judgements)
+            {
+                StalledAt = stalled ? currentPlayer.FrameStableTime : null,
+                HealthAtFailure = currentPlayer.HealthAtFailure,
+                Failed = currentPlayer.Failed
+            };
+
+            OracleStore.Write(run);
+
+            TestContext.Out.WriteLine($"recorded {judgements.Length} judgements for {Path.GetFileName(replayPath)}"
+                                      + (stalled
+                                          ? $" ({(currentPlayer.Failed ? "failed" : "out of frames")} at {run.StalledAt:F0}ms,"
+                                            + $" health at failure {run.HealthAtFailure:F3})"
+                                          : string.Empty));
         });
 
         AddStep("exit player", () => currentPlayer.Exit());
@@ -148,6 +188,48 @@ public partial class ReplayOracleTests : RateAdjustedBeatmapTestScene
     })
     {
         public new osu.Game.Rulesets.Scoring.ScoreProcessor ScoreProcessor => base.ScoreProcessor;
+
+        /// <summary>True once the replay has run out of frames. Lazer binds this to
+        /// <c>GameplayClockContainer.Stop()</c>, so it is also the moment gameplay time
+        /// freezes for good.</summary>
+        public bool WaitingOnFrames => DrawableRuleset?.FrameStableClock.WaitingOnFrames.Value == true;
+
+        /// <summary>
+        /// True once the health processor has failed this replay.
+        ///
+        /// <see cref="Player.GameplayState"/> cannot answer this: <see cref="PerformFail"/>
+        /// is overridden here to show an indicator instead of running the fail sequence, and
+        /// never sets <c>HasFailed</c>. What it does do is call
+        /// <c>ScoreProcessor.FailScore</c>, which moves the rank to F, so the rank is the
+        /// signal that survives.
+        /// </summary>
+        public bool Failed => ScoreProcessor.Rank.Value == ScoreRank.F;
+
+        /// <summary>
+        /// Every way this screen can stop producing judgements. The last two do not end the
+        /// screen at all, they just stop time: out of frames stops the gameplay clock, and a
+        /// failure hands the track frequency to <c>ReplayFailIndicator</c>, which sweeps it
+        /// to zero over a second and leaves it there pending a click this host will never
+        /// make.
+        /// </summary>
+        public bool ReachedAnEnd => GameplayState.HasCompleted || WaitingOnFrames || Failed;
+
+        /// <summary>The clock judgements are actually made against, which is not the one the
+        /// gameplay clock container exposes.</summary>
+        public double FrameStableTime => DrawableRuleset?.FrameStableClock.CurrentTime ?? 0;
+
+        /// <summary>Health as it stood when the play was failed. Read afterwards it is
+        /// meaningless: the fail sweep keeps judging for a second and hits can lift it back
+        /// above zero.</summary>
+        public double? HealthAtFailure { get; private set; }
+
+        protected override void PerformFail()
+        {
+            HealthAtFailure ??= HealthProcessor.Health.Value;
+            base.PerformFail();
+        }
+
+        public double LastFrameTime => Score.Replay.Frames.LastOrDefault()?.Time ?? double.NaN;
 
         protected override bool PauseOnFocusLost => false;
     }

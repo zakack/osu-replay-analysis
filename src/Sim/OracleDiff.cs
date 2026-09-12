@@ -8,9 +8,36 @@ namespace Sim;
 
 public sealed record OracleTarget(string ReplayPath, string BeatmapPath);
 
-public sealed record OracleJudgement(string ObjectType, double StartTime, string Result);
+public sealed record OracleJudgement(string ObjectType, double StartTime, string Result)
+{
+    /// <summary>When the game awarded this, not when the object starts. Zero on recordings
+    /// made before the field existed.</summary>
+    public double TimeAbsolute { get; init; }
+}
 
-public sealed record OracleRun(string ReplayPath, string BeatmapPath, IReadOnlyList<OracleJudgement> Judgements);
+public sealed record OracleRun(string ReplayPath, string BeatmapPath, IReadOnlyList<OracleJudgement> Judgements)
+{
+    /// <summary>
+    /// Where the live game stopped judging, when it stopped before the beatmap ended. Null
+    /// when the run played to a genuine end.
+    ///
+    /// A replay of a failed play ends twice over. It carries no frames past the play that
+    /// wrote it, and lazer's own playback does not end the screen there — it either stops
+    /// the gameplay clock for want of frames, or fails the play and lets
+    /// <c>ReplayFailIndicator</c> sweep the track frequency to zero. Either way time
+    /// freezes, and nothing after this point was ever offered to the reference.
+    /// </summary>
+    public double? StalledAt { get; init; }
+
+    /// <summary>
+    /// Health at the instant the play was failed, which is not the reason it failed: a mod
+    /// fail condition such as Sudden Death ends the play at whatever health it was at.
+    /// </summary>
+    public double? HealthAtFailure { get; init; }
+
+    /// <summary>Whether the health processor failed the replay during playback.</summary>
+    public bool Failed { get; init; }
+}
 
 /// <summary>
 /// Diffs the simulation against a recording of what the real game judged.
@@ -80,10 +107,18 @@ public static class OracleDiff
     public sealed record Divergence(string ObjectType, double StartTime, string Reference, string Simulated);
 
     /// <summary>
+    /// The outcome of one diff. Judgements the simulation made past the point the reference
+    /// froze are counted apart from divergences: the reference did not judge them
+    /// differently, it never saw them, so folding them in would report a truncated replay as
+    /// dozens of defects.
+    /// </summary>
+    public sealed record Comparison(IReadOnlyList<Divergence> Divergences, int BeyondReference, int BeyondFrames);
+
+    /// <summary>
     /// Pair the two judgement streams by object identity rather than by position, so one
     /// extra or missing judgement does not cascade into every later object looking wrong.
     /// </summary>
-    public static IReadOnlyList<Divergence> Compare(OracleRun run, SimulationResult simulation)
+    public static Comparison Compare(OracleRun run, SimulationResult simulation, double lastFrameTime)
     {
         // A queue per key rather than one entry: 2B maps can carry two objects of the same
         // type at the same start time, and a dictionary would silently drop one of them.
@@ -101,6 +136,18 @@ public static class OracleDiff
 
         var divergences = new List<Divergence>();
 
+        // Past the last replay frame the reference is not a reference. Lazer keeps judging
+        // there — a failed replay hands the track to ReplayFailIndicator, which takes a full
+        // second to sweep the frequency to zero, and every object resolving in that second is
+        // judged against no input at all and misses. That is the host's fail UI, not the
+        // ruleset, and counting it as disagreement would say the port is wrong for declining
+        // to invent misses the play never had.
+        //
+        // The boundary is when the game awarded the judgement, not when the object started.
+        // An object can begin before the last frame and still only reach its miss window
+        // after it, and that one is just as far out of reach as the objects that start later.
+        int beyondFrames = 0;
+
         foreach (var judgement in run.Judgements)
         {
             var key = (judgement.ObjectType, judgement.StartTime);
@@ -109,18 +156,33 @@ public static class OracleDiff
                 ? queue.Dequeue()
                 : "<not judged>";
 
-            if (simulatedResult != judgement.Result)
+            if (simulatedResult == judgement.Result)
+                continue;
+
+            if (judgement.TimeAbsolute > lastFrameTime)
+                beyondFrames++;
+            else
                 divergences.Add(new Divergence(judgement.ObjectType, judgement.StartTime, judgement.Result, simulatedResult));
         }
 
-        // Anything left was judged by the simulation and not by the game at all.
+        // Anything left was judged by the simulation and not by the game at all. Past the
+        // stall that is expected rather than wrong, so it is counted, not listed.
+        int beyondReference = 0;
+
         foreach (var ((type, startTime), queue) in simulated)
         {
             while (queue.Count > 0)
-                divergences.Add(new Divergence(type, startTime, "<not judged>", queue.Dequeue()));
+            {
+                string result = queue.Dequeue();
+
+                if (startTime > run.StalledAt)
+                    beyondReference++;
+                else
+                    divergences.Add(new Divergence(type, startTime, "<not judged>", result));
+            }
         }
 
-        return divergences.OrderBy(d => d.StartTime).ToArray();
+        return new Comparison(divergences.OrderBy(d => d.StartTime).ToArray(), beyondReference, beyondFrames);
     }
 
     public static IReadOnlyList<VerificationResult> ReadVerification(string source) =>
@@ -154,6 +216,8 @@ public static class OracleDiff
     {
         int compared = 0;
         int agreed = 0;
+        int truncated = 0;
+        int totalBeyondFrames = 0;
         int totalDivergences = 0;
         int totalJudgements = 0;
 
@@ -174,7 +238,9 @@ public static class OracleDiff
             // Match the oracle's cadence, not the production default. Otherwise every diff
             // mixes rule defects with the fact that two machines sampled at different rates.
             var simulation = new Simulator { StepOverride = ReplaySampler.OracleMatchStep }.Run(playable, score);
-            var divergences = Compare(run, simulation);
+            double lastFrameTime = score.Replay.Frames.Count > 0 ? score.Replay.Frames[^1].Time : double.PositiveInfinity;
+            var comparison = Compare(run, simulation, lastFrameTime);
+            var divergences = comparison.Divergences;
             compared++;
             totalDivergences += divergences.Count;
             totalJudgements += run.Judgements.Count;
@@ -182,9 +248,22 @@ public static class OracleDiff
             if (divergences.Count == 0)
                 agreed++;
 
+            if (run.StalledAt != null)
+                truncated++;
+
+            totalBeyondFrames += comparison.BeyondFrames;
+
             output.WriteLine();
             output.WriteLine(Path.GetFileName(target.ReplayPath));
             output.WriteLine($"  reference judgements {run.Judgements.Count}, divergences {divergences.Count}");
+
+            if (run.StalledAt != null)
+            {
+                output.WriteLine($"  replay ends {lastFrameTime:F0}ms, reference froze {run.StalledAt:F0}ms "
+                                 + $"({(run.Failed ? $"failed at health {run.HealthAtFailure:F3}" : "out of frames")})");
+                output.WriteLine($"  past the last frame: reference judged {comparison.BeyondFrames} objects the simulation did not, "
+                                 + $"simulation judged {comparison.BeyondReference} the reference did not");
+            }
 
             // Three-way, because the two comparisons answer different questions. Against the
             // live game: is the reimplemented loop faithful? Against the header: does replaying
@@ -225,6 +304,12 @@ public static class OracleDiff
         output.WriteLine($"  simulation diverges from it           {compared - agreed}");
         output.WriteLine($"  diverging judgements                  {totalDivergences} of {totalJudgements}" +
                          (totalJudgements > 0 ? $"  ({100.0 * totalDivergences / totalJudgements:F3}%)" : string.Empty));
+        if (truncated > 0)
+        {
+            output.WriteLine($"  reference froze before the beatmap ended    {truncated}");
+            output.WriteLine($"  judgements past the last replay frame       {totalBeyondFrames} (excluded above)");
+        }
+
         output.WriteLine();
         output.WriteLine("Every target here is a mismatch against the .osr header. The ones where the");
         output.WriteLine("simulation agrees with the live game are not defects here: replaying a replay");

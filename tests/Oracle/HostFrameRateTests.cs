@@ -45,7 +45,10 @@ public partial class HostFrameRateTests : RateAdjustedBeatmapTestScene
             var targets = System.Text.Json.JsonSerializer.Deserialize<List<Target>>(
                 File.ReadAllText(RepoPaths.Build("oracle-targets.json")))!;
 
-            var target = targets[0];
+            // The longest available replay, not simply the first. This measurement needs a
+            // few hundred gameplay frames, and a target list can legitimately hold replays
+            // that fail after a few seconds and freeze there.
+            var target = targets.MaxBy(t => new FileInfo(t.ReplayPath).Length)!;
             var index = Extract.BeatmapIndex.Read(RepoPaths.Build("beatmap-index.json"));
 
             score = Extract.ReplayLoader.Decode(target.ReplayPath, index);
