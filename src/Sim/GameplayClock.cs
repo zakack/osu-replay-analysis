@@ -53,13 +53,26 @@ public sealed class ReplaySampler(Replay replay, double clockRate = 1)
             : default_host_frame_time;
 
     /// <summary>
-    /// Fitted against the corpus, not derived. Exact-match counts out of 513 in-scope
-    /// replays: 16.7ms gave 150, 8ms gave 167, 4ms gave 173, 2ms gave 177, 1ms gave 173.
-    /// The curve turns over, so this is a real optimum rather than diminishing returns —
-    /// sampling finer than the client did invents tracking moments it never had, the same
-    /// way sampling coarser misses ones it did.
+    /// One 60fps step, matching <c>FrameStabilityContainer</c>'s cap, which in practice
+    /// means evaluating at replay frame boundaries — 60Hz is also what the recorder wrote.
+    ///
+    /// This deliberately is not the value that best matches the .osr headers. Two references
+    /// disagree, and they are measuring different things:
+    ///
+    ///   step      agrees with the header    agrees with the live game
+    ///   16.7ms    150 of 513                33 of 47
+    ///   2ms       177 of 513                13 of 47
+    ///   0.5ms     —                         13 of 47
+    ///
+    /// Fitting to the header scores better and is wrong. The header came from a play that
+    /// saw the true cursor; the replay only preserves it at 60Hz, so sampling finer than the
+    /// reference does not recover that information — it invents tracking moments the client
+    /// never had, and happens to cancel some of the loss. The differential oracle, which
+    /// runs the actual ruleset, says frame-boundary sampling is what lazer does. Fidelity to
+    /// the reference wins over a fitted score, and the header gap stays where it belongs: in
+    /// the taxonomy, as replay-versus-play divergence that no step size can close.
     /// </summary>
-    private const double default_host_frame_time = 2.0;
+    private const double default_host_frame_time = 1000.0 / 60;
 
     private readonly List<OsuReplayFrame> frames = replay.Frames.Cast<OsuReplayFrame>().ToList();
 

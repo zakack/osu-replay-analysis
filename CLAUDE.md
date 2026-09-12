@@ -111,6 +111,13 @@ store is addressed by SHA-256, and only the realm database holds the mapping. Bu
 index first, from a *copy* of the realm, and never traverse or brute-force hash the file
 store.
 
+When the header and the oracle disagree about a parameter, follow the oracle. The sampling
+rate that decides slider tracking can be tuned to agree with more `.osr` headers (2ms scored
+177 of 513 against 16.7ms's 150) while agreeing with the actual ruleset far less (13 of 47
+against 33 of 47). Fitting to the header is absorbing the replay's 60Hz information loss
+into a physical parameter: it improves a number by making the simulation less faithful. Keep
+the parameter honest and leave the header gap in the taxonomy where it belongs.
+
 Build the differential oracle early, not late. Host lazer's real gameplay headlessly, play
 the replay, and record what it judged object by object. The header gives totals, which tell
 you a run is wrong and nothing about where; the oracle names the object and the millisecond.

@@ -21,6 +21,12 @@ public sealed record OracleRun(string ReplayPath, string BeatmapPath, IReadOnlyL
 /// </summary>
 public static class OracleDiff
 {
+    /// <summary>
+    /// Rough ceiling on replay size. The file is mostly compressed frames, so size tracks
+    /// length closely enough to exclude marathons without decoding every candidate first.
+    /// </summary>
+    private const long max_replay_bytes = 48 * 1024;
+
     private static readonly JsonSerializerOptions options = new()
     {
         WriteIndented = true,
@@ -43,9 +49,13 @@ public static class OracleDiff
     {
         var beatmapByReplay = corpus.ToDictionary(r => r.Path, r => r.BeatmapPath);
 
+        // Skip replays the oracle cannot record in bounded time. Playback speed under the
+        // headless host is many times realtime on ordinary maps but drops towards realtime
+        // on dense marathon ones, and a single stuck target can outlast the whole run.
         var candidates = results
                          .Where(r => r.Outcome == Outcome.Mismatch && r.Expected != null && r.Actual != null)
                          .Where(r => beatmapByReplay.GetValueOrDefault(r.ReplayPath) != null)
+                         .Where(r => new FileInfo(r.ReplayPath).Length <= max_replay_bytes)
                          .OrderBy(r => r.Expected!.Sum(kv => Math.Abs(kv.Value - r.Actual!.GetValueOrDefault(kv.Key))))
                          .ThenBy(r => r.ReplayPath, StringComparer.Ordinal)
                          .ToArray();

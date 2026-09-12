@@ -105,9 +105,26 @@ public partial class ReplayOracleTests : RateAdjustedBeatmapTestScene
                 currentPlayer.Seek(0);
         });
 
+        // The framework's per-step timeout is wall-clock and not settable, and a dense map
+        // takes longer than it allows even at the headless host's many-times-realtime pace.
+        // Waiting in chunks of beatmap time keeps every individual step well inside it.
         // HasCompleted covers passing, failing and quitting, so a replay that ends early
-        // still terminates the run rather than hanging until the NUnit timeout.
-        AddUntilStep("wait for completion", () => currentPlayer.GameplayState.HasCompleted);
+        // short-circuits the remaining chunks rather than burning through all of them.
+        for (int chunk = 1; chunk <= 160; chunk++)
+        {
+            double target = chunk * 5000.0;
+
+            AddUntilStep($"reach {target / 1000:F0}s", () =>
+                currentPlayer.GameplayState.HasCompleted
+                || currentPlayer.ChildrenOfType<GameplayClockContainer>().Single().CurrentTime >= target);
+        }
+
+        AddAssert("gameplay completed", () =>
+        {
+            double reached = currentPlayer.ChildrenOfType<GameplayClockContainer>().Single().CurrentTime;
+            Assert.That(currentPlayer.GameplayState.HasCompleted, Is.True, $"clock only reached {reached:F0}ms");
+            return true;
+        });
 
         AddStep("record", () =>
         {
