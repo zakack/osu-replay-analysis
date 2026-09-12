@@ -52,9 +52,11 @@ public sealed class ReplaySampler(Replay replay, double clockRate = 1)
             : default_host_frame_time;
 
     /// <summary>
-    /// Fitted against the corpus, not derived. Measured exact-match counts out of 513
-    /// in-scope replays: 16.7ms gave 150, 8ms gave 167, 4ms gave 173, 2ms gave 177. The
-    /// curve flattens while the cost doubles each halving, so 2ms is where it stops paying.
+    /// Fitted against the corpus, not derived. Exact-match counts out of 513 in-scope
+    /// replays: 16.7ms gave 150, 8ms gave 167, 4ms gave 173, 2ms gave 177, 1ms gave 173.
+    /// The curve turns over, so this is a real optimum rather than diminishing returns —
+    /// sampling finer than the client did invents tracking moments it never had, the same
+    /// way sampling coarser misses ones it did.
     /// </summary>
     private const double default_host_frame_time = 2.0;
 

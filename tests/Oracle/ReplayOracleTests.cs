@@ -19,6 +19,14 @@ namespace Oracle;
 ///
 /// The replay header only ever gave totals. A count that is two short says nothing about
 /// which slider went wrong or when; this says exactly which one.
+///
+/// One caveat on how far to trust it. The oracle samples at the headless test host's frame
+/// rate, not at the rate of whatever machine set the score. For judgements decided by a
+/// single instant — hit windows, notelock, ordering — it is authoritative, and a divergence
+/// is a defect in the port. For judgements decided by continuous cursor state, chiefly
+/// slider tracking, the oracle is one draw from the same distribution the original play
+/// drew from, so agreeing with it means the rules are right, not that the outcome was
+/// inevitable.
 /// </summary>
 [HeadlessTest]
 [TestFixture]
