@@ -78,6 +78,17 @@ public static class Verification
         HitResult.SmallBonus, HitResult.LargeBonus
     ];
 
+    /// <summary>
+    /// Simulate the Classic branch anyway rather than skipping it.
+    ///
+    /// Off by default, because Classic swaps in the legacy hit policy and changes slider
+    /// judgement, and none of that is ported. On for measuring what that costs: a reference
+    /// corpus pulled from any ranked leaderboard is overwhelmingly Classic, so "we cannot use
+    /// those" is an expensive conclusion to reach by assumption. Run it and read the
+    /// taxonomy instead.
+    /// </summary>
+    public static bool IncludeClassic { get; set; }
+
     public static VerificationResult Verify(ReplayRecord record, IReadOnlyDictionary<string, IndexEntry> index)
     {
         try
@@ -91,7 +102,7 @@ public static class Verification
             // judgement. It is a different ruleset branch, not a variation, so it waits.
             string clientVersion = score.ScoreInfo.ClientVersion;
 
-            if (mods.Any(m => m is OsuModClassic))
+            if (!IncludeClassic && mods.Any(m => m is OsuModClassic))
                 return scoped(record, Outcome.OutOfScopeClassic) with { ClientVersion = clientVersion };
 
             var working = new FlatWorkingBeatmap(index[record.BeatmapMd5].Path);

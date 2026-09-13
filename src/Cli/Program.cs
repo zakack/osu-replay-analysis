@@ -19,8 +19,9 @@ if (args.Length == 0)
     Console.Error.WriteLine("usage: ora <command> [args]");
     Console.Error.WriteLine("  smoke <beatmap.osu>   load a beatmap to playable form and report the host-guard result");
     Console.Error.WriteLine("  index [lazer-root]    build the beatmap MD5 index from a copy of lazer's realm");
-    Console.Error.WriteLine("  survey <dir>...       triage a replay corpus: format, ruleset, pairing, decodability");
+    Console.Error.WriteLine("  survey [--out p] <dir>...  triage a replay corpus: format, ruleset, pairing, decodability");
     Console.Error.WriteLine("  verify                simulate the corpus and report the match rate and mismatch taxonomy");
+    Console.Error.WriteLine("  verify-classic        the same, but simulate Classic scores too, to measure what not porting it costs");
     Console.Error.WriteLine("  oracle-list [n]       pick mismatching replays for the differential oracle to record");
     Console.Error.WriteLine("  oracle-diff           diff the simulation against the oracle's recordings, object by object");
     Console.Error.WriteLine("  trace <replay> <ms>   dump per-sample slider tracking state around a time");
@@ -88,7 +89,26 @@ switch (args[0])
 
     case "survey":
     {
-        var directories = args.Skip(1).ToArray();
+        // Surveying a subdirectory used to overwrite the main corpus, which is a quiet way
+        // to lose it: the next command reads an empty map list and reports having done
+        // nothing rather than failing.
+        string destination = "build/corpus.json";
+        var rest = args.Skip(1).ToList();
+        int flag = rest.IndexOf("--out");
+
+        if (flag >= 0)
+        {
+            if (flag + 1 >= rest.Count)
+            {
+                Console.Error.WriteLine("survey: --out expects a path");
+                return 2;
+            }
+
+            destination = rest[flag + 1];
+            rest.RemoveRange(flag, 2);
+        }
+
+        var directories = rest.ToArray();
 
         if (directories.Length == 0)
         {
@@ -99,13 +119,16 @@ switch (args[0])
         var index = BeatmapIndex.Read("build/beatmap-index.json");
         var report = CorpusSurvey.Run(directories, index);
         CorpusSurvey.Print(report, Console.Out);
-        CorpusSurvey.Write(report, "build/corpus.json");
-        Console.WriteLine("written: build/corpus.json");
+        CorpusSurvey.Write(report, destination);
+        Console.WriteLine($"written: {destination}");
         return 0;
     }
 
+    case "verify-classic":
     case "verify":
     {
+        Verification.IncludeClassic = args[0] == "verify-classic";
+
         var index = BeatmapIndex.Read("build/beatmap-index.json");
         var corpus = CorpusSurvey.ReadRecords("build/corpus.json");
 
