@@ -30,9 +30,27 @@ if (args.Length == 0)
     Console.Error.WriteLine("  flam <replay> [out]   build a self-contained page that clicks the map and your taps");
     Console.Error.WriteLine("  rhythm [gap] [tol]... extract rhythmic groups and constant-snap runs across the corpus");
     Console.Error.WriteLine("  geometry              extract per-object geometry, cross-checking the angle against lazer");
+    Console.Error.WriteLine("    both take --corpus <path> and --out <path>");
     Console.Error.WriteLine("  tail-sweep [ms]...    trim the end off replays that stopped early and report the drift");
     Console.Error.WriteLine("  sweep [ms]...         shift every replay frame time and report the drift in click judgements");
     return 2;
+}
+
+// Shared by the extractors: which corpus to read and where to write. The reference set is a
+// second corpus, not an addition to the first, and mixing them in one file would put other
+// people's replays into every local result by default.
+static (string Corpus, string Out) paths(string[] args, string fallbackOut)
+{
+    string corpus = "build/corpus.json";
+    string destination = fallbackOut;
+
+    for (int i = 1; i < args.Length - 1; i++)
+    {
+        if (args[i] == "--corpus") corpus = args[i + 1];
+        if (args[i] == "--out") destination = args[i + 1];
+    }
+
+    return (corpus, destination);
 }
 
 switch (args[0])
@@ -248,17 +266,19 @@ switch (args[0])
         // and runs are constant-snap stretches inside them; both thresholds are arguments
         // because they decide how long each gets to be, and every number downstream inherits
         // that, so run more than one value and keep what survives all of them.
-        double groupGap = args.Length > 1 ? double.Parse(args[1], CultureInfo.InvariantCulture) : Rhythm.DefaultGroupGap;
-        double[] tolerances = args.Length > 2
-            ? args[2..].Select(a => double.Parse(a, CultureInfo.InvariantCulture)).ToArray()
-            : [Rhythm.DefaultTolerance];
+        var (corpusPath, rhythmOut) = paths(args, "build/rhythm.csv");
+        var numbers = args.Skip(1).Where(a => double.TryParse(a, NumberStyles.Float, CultureInfo.InvariantCulture, out _))
+                          .Select(a => double.Parse(a, CultureInfo.InvariantCulture)).ToArray();
+
+        double groupGap = numbers.Length > 0 ? numbers[0] : Rhythm.DefaultGroupGap;
+        double[] tolerances = numbers.Length > 1 ? numbers[1..] : [Rhythm.DefaultTolerance];
 
         var index = BeatmapIndex.Read("build/beatmap-index.json");
-        var corpus = CorpusSurvey.ReadRecords("build/corpus.json").Where(r => r.Paired).ToArray();
+        var corpus = CorpusSurvey.ReadRecords(corpusPath).Where(r => r.Paired).ToArray();
 
         Directory.CreateDirectory("build");
 
-        using var writer = new StreamWriter("build/rhythm.csv");
+        using var writer = new StreamWriter(rhythmOut);
         writer.WriteLine(Rhythm.CsvHeader);
 
         int done = 0, failed = 0;
@@ -292,7 +312,7 @@ switch (args[0])
 
         Console.WriteLine($"extracted {done} replays, group gap {groupGap:0.###} beats, "
                           + $"tolerance {string.Join(", ", tolerances.Select(t => $"{t:0.####}"))}, {failed} failed");
-        Console.WriteLine("written: build/rhythm.csv");
+        Console.WriteLine($"written: {rhythmOut}");
         return 0;
     }
 
@@ -301,12 +321,13 @@ switch (args[0])
         // Per-object geometry across the corpus. Almost everything comes from lazer; the
         // signed angle is ours, and lazer's unsigned one rides along so a divergence in
         // magnitude says the arithmetic is wrong rather than the inputs.
+        var (corpusPath, geometryOut) = paths(args, "build/geometry.csv");
         var index = BeatmapIndex.Read("build/beatmap-index.json");
-        var corpus = CorpusSurvey.ReadRecords("build/corpus.json").Where(r => r.Paired).ToArray();
+        var corpus = CorpusSurvey.ReadRecords(corpusPath).Where(r => r.Paired).ToArray();
 
         Directory.CreateDirectory("build");
 
-        using var writer = new StreamWriter("build/geometry.csv");
+        using var writer = new StreamWriter(geometryOut);
         writer.WriteLine(Geometry.CsvHeader);
 
         int done = 0, failed = 0;
@@ -359,7 +380,7 @@ switch (args[0])
         Console.WriteLine($"extracted {done} replays, {failed} failed");
         Console.WriteLine($"angle cross-check (slider-free turns): {checkedAngles - diverged} of {checkedAngles} agree with lazer"
                           + (diverged > 0 ? $", worst divergence {worst:0.#####} rad" : string.Empty));
-        Console.WriteLine("written: build/geometry.csv");
+        Console.WriteLine($"written: {geometryOut}");
         return 0;
     }
 

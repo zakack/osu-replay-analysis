@@ -20,12 +20,19 @@ separately and has no legacy field for large ticks at all. Rather than reconcile
 client this project does not target, skip them — and because the filter runs on the
 listing, the skipped ones cost nothing to download.
 
-The lazer share of a leaderboard rises sharply with map age, from around 2% on old maps
-to 20% on recent ones, so breadth across maps is cheaper than depth on any one of them.
+Matched on mods, by default to no mod. An unfiltered leaderboard is dominated by
+difficulty-increasing mods because those pay more, which makes it the wrong comparison
+for a player who does not use them: replay times are recorded in beatmap time, so a
+double-time run's spread is a rate-scaled quantity, and hard rock moves the hit windows
+outright. Comparing across that measures the mod.
+
+Filtering to no mod fixes the lazer supply too, and for the same underlying reason that
+map age does. No-mod scores sit lower on a leaderboard and are therefore more recent, so
+a no-mod board runs about half lazer where an unfiltered one runs a fifth.
 
 Usage: OSU_API_CLIENT/OSU_API_KEY in the environment, then
 
-    python3 tools/reference/fetch.py [map-count] [--include-stable]
+    python3 tools/reference/fetch.py [map-count] [--mods NM] [--include-stable]
 """
 import collections, csv, json, os, sys, time, urllib.error, urllib.parse, urllib.request
 
@@ -91,6 +98,7 @@ def targets(limit):
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     lazer_only = "--include-stable" not in sys.argv
+    mod_filter = sys.argv[sys.argv.index("--mods") + 1] if "--mods" in sys.argv else "NM"
     count = int(args[0]) if args else 30
     os.makedirs(OUT, exist_ok=True)
 
@@ -105,7 +113,8 @@ def main():
             print(f"  lookup failed for {checksum[:8]}", flush=True)
             continue
 
-        listing = call(f"https://osu.ppy.sh/api/v2/beatmaps/{beatmap['id']}/scores", bearer)
+        listing = call(f"https://osu.ppy.sh/api/v2/beatmaps/{beatmap['id']}/scores", bearer,
+                       {"mods[]": mod_filter} if mod_filter else None)
         scores = (listing or {}).get("scores", [])
         lazer = sum(1 for s in scores
                     if "CL" not in [m.get("acronym") for m in s.get("mods", []) if isinstance(m, dict)])
@@ -114,12 +123,12 @@ def main():
 
         for score in scores:
             key = str(score["id"])
-            mods = [m.get("acronym") for m in score.get("mods", []) if isinstance(m, dict)]
+            score_mods = [m.get("acronym") for m in score.get("mods", []) if isinstance(m, dict)]
 
             if key in manifest:
                 skipped += 1
                 continue
-            if lazer_only and "CL" in mods:
+            if lazer_only and "CL" in score_mods:
                 stable += 1
                 continue
             if not score.get("has_replay"):
@@ -138,12 +147,13 @@ def main():
 
             manifest[key] = {
                 "file": name,
+                "filter": mod_filter,
                 "beatmap_id": beatmap["id"],
                 "beatmap_md5": checksum,
                 "version": beatmap["version"],
                 "user_id": score.get("user_id"),
                 "username": score.get("user", {}).get("username"),
-                "mods": mods,
+                "mods": score_mods,
                 "rank": score.get("rank"),
                 "pp": score.get("pp"),
                 "accuracy": score.get("accuracy"),
