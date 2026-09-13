@@ -1,3 +1,4 @@
+using System.Globalization;
 using Extract;
 using osu.Game.Beatmaps;
 using osu.Game.Rulesets.Osu;
@@ -26,6 +27,7 @@ if (args.Length == 0)
     Console.Error.WriteLine("  versions              print the lazer build that wrote each score in the corpus");
     Console.Error.WriteLine("  offsets <replay>      per click-judged object: result, hit offset, distance to the great edge");
     Console.Error.WriteLine("  flam <replay> [out]   build a self-contained page that clicks the map and your taps");
+    Console.Error.WriteLine("  rhythm [gap] [tol]... extract rhythmic groups and constant-snap runs across the corpus");
     Console.Error.WriteLine("  tail-sweep [ms]...    trim the end off replays that stopped early and report the drift");
     Console.Error.WriteLine("  sweep [ms]...         shift every replay frame time and report the drift in click judgements");
     return 2;
@@ -213,6 +215,60 @@ switch (args[0])
 
         Console.WriteLine(Flam.Summarise(track));
         Console.WriteLine($"written: {destination}");
+        return 0;
+    }
+
+    case "rhythm":
+    {
+        // Rhythmic structure across the corpus, with no geometry in it. Groups are gestures
+        // and runs are constant-snap stretches inside them; both thresholds are arguments
+        // because they decide how long each gets to be, and every number downstream inherits
+        // that, so run more than one value and keep what survives all of them.
+        double groupGap = args.Length > 1 ? double.Parse(args[1], CultureInfo.InvariantCulture) : Rhythm.DefaultGroupGap;
+        double[] tolerances = args.Length > 2
+            ? args[2..].Select(a => double.Parse(a, CultureInfo.InvariantCulture)).ToArray()
+            : [Rhythm.DefaultTolerance];
+
+        var index = BeatmapIndex.Read("build/beatmap-index.json");
+        var corpus = CorpusSurvey.ReadRecords("build/corpus.json").Where(r => r.Paired).ToArray();
+
+        Directory.CreateDirectory("build");
+
+        using var writer = new StreamWriter("build/rhythm.csv");
+        writer.WriteLine(Rhythm.CsvHeader);
+
+        int done = 0, failed = 0;
+
+        foreach (var record in corpus)
+        {
+            try
+            {
+                var score = ReplayLoader.Decode(record.Path, index);
+                var playable = new FlatWorkingBeatmap(index[record.BeatmapMd5].Path)
+                    .GetPlayableBeatmap(new OsuRuleset().RulesetInfo, score.ScoreInfo.Mods);
+
+                var timeline = Rhythm.Build(playable, score);
+
+                foreach (double tolerance in tolerances)
+                    Rhythm.WriteCsv(Path.GetFileName(record.Path), playable, timeline, groupGap, tolerance, writer);
+
+                done++;
+            }
+            catch (Exception e)
+            {
+                failed++;
+
+                if (failed <= 5)
+                    Console.Error.WriteLine($"  {Path.GetFileName(record.Path)}: {e.GetType().Name}: {e.Message}");
+            }
+
+            if (done % 100 == 0 && done > 0)
+                Console.Error.WriteLine($"  {done} of {corpus.Length}");
+        }
+
+        Console.WriteLine($"extracted {done} replays, group gap {groupGap:0.###} beats, "
+                          + $"tolerance {string.Join(", ", tolerances.Select(t => $"{t:0.####}"))}, {failed} failed");
+        Console.WriteLine("written: build/rhythm.csv");
         return 0;
     }
 
