@@ -28,6 +28,7 @@ if (args.Length == 0)
     Console.Error.WriteLine("  offsets <replay>      per click-judged object: result, hit offset, distance to the great edge");
     Console.Error.WriteLine("  flam <replay> [out]   build a self-contained page that clicks the map and your taps");
     Console.Error.WriteLine("  rhythm [gap] [tol]... extract rhythmic groups and constant-snap runs across the corpus");
+    Console.Error.WriteLine("  geometry              extract per-object geometry, cross-checking the angle against lazer");
     Console.Error.WriteLine("  tail-sweep [ms]...    trim the end off replays that stopped early and report the drift");
     Console.Error.WriteLine("  sweep [ms]...         shift every replay frame time and report the drift in click judgements");
     return 2;
@@ -269,6 +270,73 @@ switch (args[0])
         Console.WriteLine($"extracted {done} replays, group gap {groupGap:0.###} beats, "
                           + $"tolerance {string.Join(", ", tolerances.Select(t => $"{t:0.####}"))}, {failed} failed");
         Console.WriteLine("written: build/rhythm.csv");
+        return 0;
+    }
+
+    case "geometry":
+    {
+        // Per-object geometry across the corpus. Almost everything comes from lazer; the
+        // signed angle is ours, and lazer's unsigned one rides along so a divergence in
+        // magnitude says the arithmetic is wrong rather than the inputs.
+        var index = BeatmapIndex.Read("build/beatmap-index.json");
+        var corpus = CorpusSurvey.ReadRecords("build/corpus.json").Where(r => r.Paired).ToArray();
+
+        Directory.CreateDirectory("build");
+
+        using var writer = new StreamWriter("build/geometry.csv");
+        writer.WriteLine(Geometry.CsvHeader);
+
+        int done = 0, failed = 0;
+        int checkedAngles = 0, diverged = 0;
+        double worst = 0;
+
+        foreach (var record in corpus)
+        {
+            try
+            {
+                var score = ReplayLoader.Decode(record.Path, index);
+                var playable = new FlatWorkingBeatmap(index[record.BeatmapMd5].Path)
+                    .GetPlayableBeatmap(new OsuRuleset().RulesetInfo, score.ScoreInfo.Mods);
+
+                var rows = Geometry.Extract(playable, score);
+                Geometry.WriteCsv(Path.GetFileName(record.Path), rows, writer);
+
+                // The differential check, run on every row rather than sampled. Lazer's Angle
+                // is minimum-ed against a slider angle, so only the slider-free turns are a
+                // fair comparison; there the two must agree in magnitude.
+                foreach (var row in rows)
+                {
+                    if (row is { AngleComparable: true, SignedAngle: { } mine, LazerAngle: { } theirs })
+                    {
+                        checkedAngles++;
+                        double delta = Math.Abs(Math.Abs(mine) - theirs);
+
+                        if (delta > 1e-4)
+                        {
+                            diverged++;
+                            worst = Math.Max(worst, delta);
+                        }
+                    }
+                }
+
+                done++;
+            }
+            catch (Exception e)
+            {
+                failed++;
+
+                if (failed <= 5)
+                    Console.Error.WriteLine($"  {Path.GetFileName(record.Path)}: {e.GetType().Name}: {e.Message}");
+            }
+
+            if (done % 100 == 0 && done > 0)
+                Console.Error.WriteLine($"  {done} of {corpus.Length}");
+        }
+
+        Console.WriteLine($"extracted {done} replays, {failed} failed");
+        Console.WriteLine($"angle cross-check (slider-free turns): {checkedAngles - diverged} of {checkedAngles} agree with lazer"
+                          + (diverged > 0 ? $", worst divergence {worst:0.#####} rad" : string.Empty));
+        Console.WriteLine("written: build/geometry.csv");
         return 0;
     }
 

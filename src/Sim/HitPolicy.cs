@@ -3,6 +3,7 @@ using osu.Game.Rulesets.Osu;
 using osu.Game.Rulesets.Osu.Objects;
 using osu.Game.Rulesets.Osu.UI;
 using osu.Game.Rulesets.Scoring;
+using osuTK;
 
 namespace Sim;
 
@@ -46,6 +47,24 @@ public sealed class ObjectState(OsuHitObject hitObject, ObjectState? parent, int
 
     /// <summary>For a dropped slider tail, which tracking condition failed.</summary>
     public string? DropReason { get; set; }
+
+    /// <summary>
+    /// Where the cursor was at the press that hit this object, in stacked play coordinates.
+    /// Null for anything not struck.
+    ///
+    /// The one geometric quantity the 60Hz recorder does not degrade. A button change forces
+    /// a replay frame, so this is a recorded position rather than an interpolation between
+    /// samples, and the same is true of the time it was recorded at. Everything else in the
+    /// feature set is either interpolated or derived from the beatmap.
+    /// </summary>
+    public Vector2? CursorAtHit { get; set; }
+
+    /// <summary>
+    /// For a slider, where the cursor was at the last sample inside its duration. Interpolated
+    /// between 60Hz frames rather than recorded at a press, so it is softer evidence than
+    /// <see cref="CursorAtHit"/> and should not carry a finding on its own.
+    /// </summary>
+    public Vector2? CursorAtEnd { get; set; }
 
     public bool AllJudged => Judged && Nested.All(n => n.AllJudged);
 

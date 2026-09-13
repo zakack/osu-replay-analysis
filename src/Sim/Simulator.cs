@@ -263,6 +263,10 @@ public sealed class Simulator(IHitPolicy policy)
 
             if (clickAction == ClickAction.Hit && result != HitResult.None)
             {
+                // Recorded here rather than in Apply, because this is the only path that has
+                // a cursor to record: every other judgement is a sweep forcing a miss on an
+                // object whose window has passed, and there was no press to take a position from.
+                state.CursorAtHit = cursor;
                 state.Apply(result, time, ref sequence);
                 policy.HandleHit(state, layout.TopLevel, time, ref sequence);
 

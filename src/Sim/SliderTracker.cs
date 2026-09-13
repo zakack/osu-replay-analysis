@@ -78,6 +78,13 @@ public sealed class SliderTracker(ObjectState sliderState)
         bool expanded = Tracking;
         bool inArea = IsCursorInFollowArea(time, cursor, expanded);
 
+        // Where the cursor actually was when the slider ran out. The jump out of a slider
+        // starts from here, not from the tail: a player who cuts it short leaves early and
+        // covers less ground than the map implies, one who follows it to the visual extent
+        // covers more, and the tail position makes both look identical.
+        if (time <= slider.GetEndTime())
+            State.CursorAtEnd = cursor;
+
         UpdateTracking(time, pressed, inArea);
 
         if (Trace != null)
