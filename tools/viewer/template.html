@@ -1,0 +1,1153 @@
+<title>Reference Lap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #E7E9E8;
+    --panel: #F3F5F4;
+    --panel-2: #DFE3E2;
+    --line: #CBD2D1;
+    --text: #161D21;
+    --dim: #5C6A72;
+    --faint: #8896A0;
+
+    /* The scope well does not change with the theme. A screen is a screen, and the
+       error colours are calibrated against this one ground. */
+    --scope: #05080A;
+    --scope-line: #16202A;
+
+    --early: #3D9BE9;
+    --true: #93A6B0;
+    --late: #F0994A;
+    --miss: #E2504E;
+    --accent: #7A6BE0;
+
+    --shadow: 0 1px 2px rgba(16, 24, 30, .10), 0 8px 24px rgba(16, 24, 30, .06);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0B0E11;
+      --panel: #12171B;
+      --panel-2: #1A2126;
+      --line: #232D34;
+      --text: #D8DFE4;
+      --dim: #8293A0;
+      --faint: #5E6E79;
+      --accent: #9B8DF0;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .35);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0B0E11;
+    --panel: #12171B;
+    --panel-2: #1A2126;
+    --line: #232D34;
+    --text: #D8DFE4;
+    --dim: #8293A0;
+    --faint: #5E6E79;
+    --accent: #9B8DF0;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .35);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--text);
+    font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 22px 20px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ---- masthead ---------------------------------------------------------- */
+
+  .masthead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px 24px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 23px;
+    font-weight: 700;
+    letter-spacing: -.015em;
+    text-wrap: balance;
+  }
+
+  .sub {
+    margin: 3px 0 0;
+    color: var(--dim);
+    font-size: 13px;
+    max-width: 62ch;
+  }
+
+  .lede { color: var(--text); font-weight: 500; }
+
+  .stamp {
+    display: flex;
+    gap: 22px;
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stamp div { display: flex; flex-direction: column; gap: 2px; }
+
+  .k {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  .v { font-size: 16px; font-weight: 600; }
+
+  /* ---- main grid --------------------------------------------------------- */
+
+  .deck {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 272px;
+    gap: 16px;
+    align-items: start;
+  }
+
+  @media (max-width: 880px) {
+    .deck { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  .scope-wrap {
+    background: var(--scope);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  #scope { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; }
+
+  .scope-tag {
+    position: absolute;
+    top: 9px;
+    left: 11px;
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: #45555F;
+    pointer-events: none;
+  }
+
+  /* ---- transport --------------------------------------------------------- */
+
+  .transport { display: flex; flex-direction: column; gap: 9px; margin-top: 10px; }
+
+  #strip {
+    display: block;
+    width: 100%;
+    height: 74px;
+    cursor: crosshair;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    touch-action: none;
+  }
+
+  #strip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  button {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .05em;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 6px 11px;
+    cursor: pointer;
+  }
+
+  button:hover { background: var(--panel-2); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+
+  #play { min-width: 74px; }
+
+  .clock {
+    margin-left: auto;
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    color: var(--dim);
+  }
+
+  .clock b { color: var(--text); font-weight: 600; }
+
+  /* ---- rail -------------------------------------------------------------- */
+
+  .rail { display: flex; flex-direction: column; gap: 12px; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 12px 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .card > .k { margin-bottom: -2px; }
+
+  .readout {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+  }
+
+  .readout span:first-child { color: var(--dim); }
+  .readout span:last-child { font-weight: 600; }
+
+  .judge {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+  }
+
+  #j-error { font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
+  #j-word { font-size: 12px; color: var(--dim); }
+
+  /* How the reference field did on the same object: one glyph each, sorted early to
+     late, so the row reads as a tiny distribution rather than a list of names. */
+  .ref-line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: -3px;
+  }
+
+  .glyphs {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: .1em;
+  }
+
+  .glyphs span { cursor: default; }
+
+  .ref-mean {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+    color: var(--dim);
+    white-space: nowrap;
+  }
+
+  /* The roster is a comparison table, so every row keeps the same three tracks. */
+  .roster { display: flex; flex-direction: column; gap: 1px; }
+
+  .who {
+    display: grid;
+    grid-template-columns: 12px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 9px;
+    padding: 5px 4px;
+    border: 0;
+    border-radius: 2px;
+    background: none;
+    width: 100%;
+    text-align: left;
+    font-family: Archivo, sans-serif;
+    font-size: 12.5px;
+    letter-spacing: 0;
+    cursor: pointer;
+  }
+
+  .who:hover { background: var(--panel-2); }
+
+  .swatch { width: 10px; height: 10px; border-radius: 50%; }
+
+  .who-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .who-sd {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 11.5px;
+    color: var(--dim);
+  }
+
+  .who[aria-pressed="false"] { opacity: .42; }
+  .who[aria-pressed="false"] .swatch { background: var(--faint) !important; }
+
+  /* ---- error legend ------------------------------------------------------ */
+
+  .legend { display: flex; flex-direction: column; gap: 6px; }
+
+  .ramp { height: 8px; border-radius: 2px; }
+
+  .ramp-ends {
+    display: flex;
+    justify-content: space-between;
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 10px;
+    color: var(--faint);
+  }
+
+  /* ---- footnote ---------------------------------------------------------- */
+
+  .foot {
+    color: var(--dim);
+    font-size: 12.5px;
+    max-width: 74ch;
+    border-top: 1px solid var(--line);
+    padding-top: 13px;
+  }
+
+  .foot code {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 11.5px;
+    color: var(--text);
+  }
+
+  kbd {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: var(--text);
+    background: var(--panel);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+
+<div class="shell">
+  <header class="masthead">
+    <div>
+      <h1>Reference Lap</h1>
+      <p class="sub">
+        <span class="lede" id="map-name">&nbsp;</span><br>
+        Your cursor against five top-50 players on the same beatmap. The seek bar below is
+        the play&rsquo;s hit error, one mark per object.
+      </p>
+    </div>
+    <div class="stamp">
+      <div><span class="k">Your spread</span><span class="v" id="s-you">&mdash;</span></div>
+      <div><span class="k">Reference</span><span class="v" id="s-ref">&mdash;</span></div>
+      <div><span class="k">Accuracy</span><span class="v" id="s-acc">&mdash;</span></div>
+    </div>
+  </header>
+
+  <div class="deck">
+    <div>
+      <div class="scope-wrap">
+        <canvas id="scope"></canvas>
+        <div class="scope-tag" id="scope-tag"></div>
+      </div>
+
+      <div class="transport">
+        <canvas id="strip" tabindex="0" aria-label="Hit error over time. Click or drag to seek."></canvas>
+        <div class="controls">
+          <button id="play" aria-pressed="false">Play</button>
+          <button data-step="-1" title="Previous frame">&#9664;&#9664;</button>
+          <button data-step="1" title="Next frame">&#9654;&#9654;</button>
+          <button data-rate=".25" aria-pressed="false">0.25&times;</button>
+          <button data-rate=".5" aria-pressed="false">0.5&times;</button>
+          <button data-rate="1" aria-pressed="true">1&times;</button>
+          <button id="brake" aria-pressed="true" title="Ease to a halt on every miss (M)">Stop on miss</button>
+          <span class="clock"><b id="t-now">0:00.000</b> / <span id="t-end">0:00</span></span>
+        </div>
+      </div>
+    </div>
+
+    <aside class="rail">
+      <div class="card">
+        <span class="k">Last judgement</span>
+        <div class="judge">
+          <span id="j-error">&mdash;</span>
+          <span id="j-word">waiting</span>
+        </div>
+        <div class="ref-line">
+          <span class="glyphs" id="j-glyphs"></span>
+          <span class="ref-mean" id="j-ref">reference</span>
+        </div>
+        <div class="readout"><span>combo</span><span id="j-combo">0</span></div>
+        <div class="readout"><span>objects judged</span><span id="j-count">0 / 0</span></div>
+      </div>
+
+      <div class="card">
+        <span class="k">Cursors</span>
+        <div class="roster" id="roster"></div>
+      </div>
+
+      <div class="card legend">
+        <span class="k">Hit error</span>
+        <div class="ramp" id="ramp"></div>
+        <div class="ramp-ends"><span>&minus;50 ms early</span><span>0</span><span>late +50 ms</span></div>
+      </div>
+    </aside>
+  </div>
+
+  <p class="foot">
+    Slider bodies are lazer&rsquo;s own piecewise-linear path, shipped by the extraction shim
+    rather than refitted here &mdash; the curve is never recomputed in the browser. The ball
+    walks that polyline by arc length, the one piece of arithmetic left to the viewer, checked
+    against lazer&rsquo;s nested object positions on 36,676 of them before any of this was
+    written. Cursor samples are the recorded 60&nbsp;Hz frames, interpolated between;
+    a button change forces a frame, so every press time and press position is exact.
+    <br><br>
+    <kbd>Space</kbd> play &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> step one frame &middot;
+    <kbd>Shift</kbd> + arrows jump a second &middot; <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> speed
+    &middot; <kbd>M</kbd> stop on miss
+  </p>
+</div>
+
+<script type="application/json" id="payload">/*__PAYLOAD__*/</script>
+<script>
+(function () {
+  "use strict";
+
+  var DATA = JSON.parse(document.getElementById("payload").textContent);
+  var SCENE = DATA.scene;
+  var OBJ = SCENE.objects;
+  var PF = SCENE.playfield;
+  var RADIUS = SCENE.beatmap.radius;
+  var PREEMPT = SCENE.beatmap.timePreempt;
+
+  // ---- colour -------------------------------------------------------------
+  // Read from CSS so the two themes and the ramp cannot drift apart.
+  var css = getComputedStyle(document.documentElement);
+  function tok(name, fallback) {
+    var v = css.getPropertyValue(name).trim();
+    return v || fallback;
+  }
+  var EARLY = hex(tok("--early", "#3D9BE9"));
+  var TRUE_ = hex(tok("--true", "#93A6B0"));
+  var LATE = hex(tok("--late", "#F0994A"));
+  var MISS = hex(tok("--miss", "#E2504E"));
+  var FULL_SCALE = 50; // ms at which the ramp saturates
+
+  function hex(h) {
+    h = h.replace("#", "");
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+  function mix(a, b, k) {
+    return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+  }
+  function rgba(c, a) {
+    return "rgba(" + (c[0] | 0) + "," + (c[1] | 0) + "," + (c[2] | 0) + "," + a + ")";
+  }
+  function errorColour(e) {
+    if (e === null || e === undefined) return MISS;
+    var k = Math.min(1, Math.abs(e) / FULL_SCALE);
+    return mix(TRUE_, e < 0 ? EARLY : LATE, k);
+  }
+
+  document.getElementById("ramp").style.background =
+    "linear-gradient(90deg," + rgba(EARLY, 1) + "," + rgba(TRUE_, 1) + "," + rgba(LATE, 1) + ")";
+
+  // ---- timing -------------------------------------------------------------
+
+  var START = OBJ.length ? OBJ[0].t : 0;
+  var END = 0;
+  for (var i = 0; i < OBJ.length; i++) {
+    END = Math.max(END, OBJ[i].endTime != null ? OBJ[i].endTime : OBJ[i].t);
+  }
+  END += 600;
+
+  var judged = [];
+  for (i = 0; i < OBJ.length; i++) {
+    var o = OBJ[i];
+    if (o.result === "Unjudged") continue;
+
+    // Three kinds, and conflating any two of them misreports the play. The scene document
+    // omits null fields, so "no error" arrives as undefined rather than null — but an
+    // absent error means two different things. A spinner never had a click to be early or
+    // late on; a missed circle had one it never received. Only the second belongs on the
+    // error axis, and only the second should stop playback.
+    var kind = o.type === "spinner" ? "spin" : o.error == null ? "miss" : "click";
+
+    // A miss has no click either, and its hitTime is when lazer stopped waiting — a hit
+    // window past the object, which would put the mark on the next object's beat and halt
+    // playback after the thing you wanted to see. The object's own time is the miss.
+    judged.push({
+      t: kind === "click" && o.hitTime != null ? o.hitTime : o.t,
+      e: kind === "click" ? o.error : null,
+      end: o.endTime != null ? o.endTime : null,
+      r: o.result,
+      i: o.i,
+      k: kind
+    });
+  }
+  judged.sort(function (a, b) { return a.t - b.t; });
+
+  // ---- cursors ------------------------------------------------------------
+
+  function Track(frames, name, colour) {
+    this.f = frames;
+    this.n = frames.length / 4;
+    this.name = name;
+    this.colour = colour;
+    this.on = true;
+  }
+
+  // Largest index whose time is at or before t. Frames are sorted by construction.
+  Track.prototype.seek = function (t) {
+    var lo = 0, hi = this.n - 1, f = this.f;
+    if (this.n === 0 || t < f[0]) return -1;
+    while (lo < hi) {
+      var mid = (lo + hi + 1) >> 1;
+      if (f[mid * 4] <= t) lo = mid; else hi = mid - 1;
+    }
+    return lo;
+  };
+
+  Track.prototype.at = function (t) {
+    var i = this.seek(t);
+    if (i < 0) return null;
+    var f = this.f;
+    if (i >= this.n - 1) return { x: f[i * 4 + 1], y: f[i * 4 + 2], k: f[i * 4 + 3] };
+    var t0 = f[i * 4], t1 = f[i * 4 + 4];
+    var u = t1 > t0 ? (t - t0) / (t1 - t0) : 0;
+    return {
+      x: f[i * 4 + 1] + (f[i * 4 + 5] - f[i * 4 + 1]) * u,
+      y: f[i * 4 + 2] + (f[i * 4 + 6] - f[i * 4 + 2]) * u,
+      k: f[i * 4 + 3]
+    };
+  };
+
+  var you = new Track(SCENE.frames, "you", null);
+  var ghosts = DATA.ghosts.map(function (g) { return new Track(g.frames, g.name, null); });
+  DATA.ghosts.forEach(function (g, n) { ghosts[n].sd = g.sd; });
+
+  // ---- slider geometry ----------------------------------------------------
+  // Walking the shipped polyline by arc length. Nothing here recomputes a curve.
+
+  function positionAlong(path, target) {
+    var n = path.length / 2;
+    if (n === 0) return null;
+    if (target <= 0) return { x: path[0], y: path[1] };
+    var run = 0;
+    for (var i = 1; i < n; i++) {
+      var ax = path[(i - 1) * 2], ay = path[(i - 1) * 2 + 1];
+      var bx = path[i * 2], by = path[i * 2 + 1];
+      var seg = Math.hypot(bx - ax, by - ay);
+      if (run + seg >= target) {
+        var u = seg > 0 ? (target - run) / seg : 0;
+        return { x: ax + (bx - ax) * u, y: ay + (by - ay) * u };
+      }
+      run += seg;
+    }
+    return { x: path[(n - 1) * 2], y: path[(n - 1) * 2 + 1] };
+  }
+
+  // Lazer's own arithmetic: progress runs 0..1 within a span and mirrors on odd spans.
+  function spanProgress(o, t) {
+    var span = Math.min(Math.floor((t - o.t) / o.spanDuration), o.spans - 1);
+    var p = ((t - o.t) - span * o.spanDuration) / o.spanDuration;
+    return span % 2 === 1 ? 1 - p : p;
+  }
+
+  // ---- canvas -------------------------------------------------------------
+
+  var scope = document.getElementById("scope");
+  var sx = scope.getContext("2d");
+  var strip = document.getElementById("strip");
+  var tx = strip.getContext("2d");
+  var view = { s: 1, ox: 0, oy: 0, w: 0, h: 0 };
+
+  function fit(canvas, ctx, cssHeight) {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = canvas.clientWidth;
+    var h = cssHeight || canvas.clientHeight;
+    canvas.width = Math.max(1, Math.round(w * dpr));
+    canvas.height = Math.max(1, Math.round(h * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { w: w, h: h };
+  }
+
+  function layout() {
+    var box = fit(scope, sx, null);
+    // A margin around the playfield, because the cursor legitimately travels outside it.
+    var pad = 0.085;
+    var s = Math.min(box.w / (PF.width * (1 + pad * 2)), box.h / (PF.height * (1 + pad * 2)));
+    view = {
+      s: s,
+      ox: (box.w - PF.width * s) / 2,
+      oy: (box.h - PF.height * s) / 2,
+      w: box.w,
+      h: box.h
+    };
+    fit(strip, tx, strip.clientHeight);
+  }
+
+  function px(x) { return view.ox + x * view.s; }
+  function py(y) { return view.oy + y * view.s; }
+
+  // ---- playfield ----------------------------------------------------------
+
+  var first = 0;
+  function draw(t) {
+    sx.clearRect(0, 0, view.w, view.h);
+    sx.fillStyle = tok("--scope", "#05080A");
+    sx.fillRect(0, 0, view.w, view.h);
+
+    // The playfield edge, so positions have a frame of reference.
+    sx.strokeStyle = tok("--scope-line", "#16202A");
+    sx.lineWidth = 1;
+    sx.strokeRect(px(0) + .5, py(0) + .5, PF.width * view.s, PF.height * view.s);
+
+    // Objects, oldest first so later ones sit on top.
+    var r = RADIUS * view.s;
+    for (var i = 0; i < OBJ.length; i++) {
+      var o = OBJ[i];
+      var end = o.endTime != null ? o.endTime : o.t;
+      if (o.t - PREEMPT > t) break;
+      if (end + 240 < t) continue;
+      drawObject(o, t, r);
+    }
+
+    for (var g = 0; g < ghosts.length; g++) {
+      if (ghosts[g].on) drawCursor(ghosts[g], t, false);
+    }
+    if (you.on) drawCursor(you, t, true);
+  }
+
+  function fadeIn(o, t) {
+    // Approach fade, matching the preempt the beatmap actually carries.
+    var a = (t - (o.t - PREEMPT)) / (PREEMPT * .55);
+    return Math.max(0, Math.min(1, a));
+  }
+
+  function drawObject(o, t, r) {
+    var end = o.endTime != null ? o.endTime : o.t;
+    var alpha = fadeIn(o, t);
+    if (t > end) alpha *= Math.max(0, 1 - (t - end) / 240);
+    if (alpha <= .01) return;
+
+    var c = o.result === "Miss" ? MISS : (o.error != null ? errorColour(o.error) : TRUE_);
+
+    if (o.type === "slider" && o.path) {
+      sx.lineCap = "round";
+      sx.lineJoin = "round";
+      sx.beginPath();
+      sx.moveTo(px(o.path[0]), py(o.path[1]));
+      for (var v = 1; v < o.path.length / 2; v++) sx.lineTo(px(o.path[v * 2]), py(o.path[v * 2 + 1]));
+      sx.strokeStyle = rgba(c, .13 * alpha);
+      sx.lineWidth = r * 2;
+      sx.stroke();
+      sx.strokeStyle = rgba(c, .5 * alpha);
+      sx.lineWidth = 1.25;
+      sx.stroke();
+
+      if (t >= o.t && t <= end && o.spanDuration > 0) {
+        var p = spanProgress(o, t);
+        var ball = positionAlong(o.path, o.distance * p);
+        if (ball) {
+          sx.beginPath();
+          sx.arc(px(ball.x), py(ball.y), r * .62, 0, 6.2832);
+          sx.fillStyle = rgba(c, .22 * alpha);
+          sx.fill();
+          sx.strokeStyle = rgba(c, .9 * alpha);
+          sx.lineWidth = 1.5;
+          sx.stroke();
+        }
+      }
+    }
+
+    if (o.type === "spinner") {
+      var span = end - o.t;
+      var left = span > 0 ? Math.max(0, Math.min(1, (end - t) / span)) : 0;
+      var cx = px(PF.width / 2), cy = py(PF.height / 2);
+      var outer = Math.min(PF.height * view.s, PF.width * view.s) * .42;
+
+      // A fixed guide and a ring closing in on it, so the shrink reads as time left
+      // rather than as an object of unknown size.
+      sx.beginPath();
+      sx.arc(cx, cy, outer, 0, 6.2832);
+      sx.strokeStyle = rgba(c, .18 * alpha);
+      sx.lineWidth = 1;
+      sx.stroke();
+
+      sx.beginPath();
+      sx.arc(cx, cy, Math.max(2, outer * left), 0, 6.2832);
+      sx.strokeStyle = rgba(c, .7 * alpha);
+      sx.lineWidth = 1.75;
+      sx.stroke();
+
+      if (o.spinsRequired != null && t >= o.t && t <= end) {
+        sx.font = "500 11px 'IBM Plex Mono', monospace";
+        sx.textAlign = "center";
+        sx.fillStyle = rgba(c, .6 * alpha);
+        sx.fillText(o.spinsRequired + " spins", cx, cy + 4);
+      }
+      return;
+    }
+
+    // The head ring. Circles and slider heads are the same object to a player.
+    sx.beginPath();
+    sx.arc(px(o.x), py(o.y), r, 0, 6.2832);
+    sx.strokeStyle = rgba(c, .85 * alpha);
+    sx.lineWidth = 2;
+    sx.stroke();
+
+    // Approach ring, only while the object is still coming.
+    if (t < o.t) {
+      var k = (o.t - t) / PREEMPT;
+      sx.beginPath();
+      sx.arc(px(o.x), py(o.y), r * (1 + 2.6 * k), 0, 6.2832);
+      sx.strokeStyle = rgba(c, .3 * alpha);
+      sx.lineWidth = 1;
+      sx.stroke();
+    }
+
+    // Where the press actually landed, which is recorded exactly rather than interpolated.
+    if (o.hx != null && t >= o.hitTime && t < o.hitTime + 420) {
+      var f = 1 - (t - o.hitTime) / 420;
+      sx.beginPath();
+      sx.arc(px(o.hx), py(o.hy), 2.4, 0, 6.2832);
+      sx.fillStyle = rgba(c, .9 * f);
+      sx.fill();
+    }
+  }
+
+  var timed = judged.filter(function (j) { return j.k !== "spin"; });
+
+  function nearestError(t) {
+    var lo = 0, hi = timed.length - 1, best = null;
+    if (!timed.length || t < timed[0].t) return null;
+    while (lo < hi) {
+      var mid = (lo + hi + 1) >> 1;
+      if (timed[mid].t <= t) lo = mid; else hi = mid - 1;
+    }
+    best = timed[lo];
+    return t - best.t < 900 ? best : null;
+  }
+
+  function drawCursor(track, t, isYou) {
+    var trail = isYou ? 280 : 150;
+    var i = track.seek(t);
+    if (i < 0) return;
+    var f = track.f;
+
+    sx.lineCap = "round";
+    sx.lineJoin = "round";
+
+    // Trail, coloured by the error of the judgement it is walking away from.
+    var j = nearestError(t);
+    var base = isYou ? errorColour(j ? j.e : 0) : hex(tok("--faint", "#5E6E79"));
+    for (var q = i; q > 0; q--) {
+      var t0 = f[q * 4];
+      if (t - t0 > trail) break;
+      var a = (1 - (t - t0) / trail) * (isYou ? .85 : .34);
+      sx.beginPath();
+      sx.moveTo(px(f[(q - 1) * 4 + 1]), py(f[(q - 1) * 4 + 2]));
+      sx.lineTo(px(f[q * 4 + 1]), py(f[q * 4 + 2]));
+      sx.strokeStyle = rgba(base, a);
+      sx.lineWidth = isYou ? 2 : 1.1;
+      sx.stroke();
+    }
+
+    var p = track.at(t);
+    if (!p) return;
+    sx.beginPath();
+    sx.arc(px(p.x), py(p.y), isYou ? 4.5 : 3, 0, 6.2832);
+    sx.fillStyle = rgba(base, isYou ? 1 : .6);
+    sx.fill();
+
+    // A held button reads as a ring around the cursor.
+    if (p.k) {
+      sx.beginPath();
+      sx.arc(px(p.x), py(p.y), isYou ? 8 : 6, 0, 6.2832);
+      sx.strokeStyle = rgba(base, isYou ? .75 : .35);
+      sx.lineWidth = isYou ? 1.6 : 1;
+      sx.stroke();
+    }
+  }
+
+  // ---- the strip, which is both the seek bar and the error chart -----------
+
+  function drawStrip(t) {
+    var w = strip.clientWidth, h = strip.clientHeight;
+    tx.clearRect(0, 0, w, h);
+
+    var mid = h / 2;
+    var scale = (h / 2 - 9) / FULL_SCALE;
+
+    // Zero line and the two window edges the play was judged against.
+    tx.strokeStyle = rgba(hex(tok("--line", "#232D34")), 1);
+    tx.lineWidth = 1;
+    [SCENE.hitWindows.great, -SCENE.hitWindows.great].forEach(function (edge) {
+      var y = Math.round(mid + edge * scale) + .5;
+      tx.beginPath();
+      tx.moveTo(0, y);
+      tx.lineTo(w, y);
+      tx.stroke();
+    });
+
+    tx.strokeStyle = rgba(hex(tok("--faint", "#5E6E79")), .55);
+    tx.beginPath();
+    tx.moveTo(0, Math.round(mid) + .5);
+    tx.lineTo(w, Math.round(mid) + .5);
+    tx.stroke();
+
+    for (var i = 0; i < judged.length; i++) {
+      var j = judged[i];
+      var x = ((j.t - START) / (END - START)) * w;
+
+      // A spinner occupies time without having a timing. Drawn as the span it covers, so
+      // the gap in the error trace is explained rather than just empty.
+      if (j.k === "spin") {
+        var x2 = ((( j.end != null ? j.end : j.t) - START) / (END - START)) * w;
+        tx.fillStyle = rgba(hex(tok("--faint", "#5E6E79")), .16);
+        tx.fillRect(x, 3, Math.max(1.5, x2 - x), h - 6);
+        continue;
+      }
+
+      if (j.k === "miss") {
+        tx.fillStyle = rgba(MISS, .95);
+        tx.fillRect(x - 1, 3, 2, h - 6);
+        continue;
+      }
+      var y = mid + Math.max(-FULL_SCALE, Math.min(FULL_SCALE, j.e)) * scale;
+      tx.fillStyle = rgba(errorColour(j.e), .78);
+      tx.fillRect(x - .75, y - .75, 1.5, 1.5);
+    }
+
+    var hx = ((t - START) / (END - START)) * w;
+    tx.strokeStyle = braking ? rgba(MISS, 1) : rgba(hex(tok("--accent", "#9B8DF0")), 1);
+    tx.lineWidth = braking ? 2 : 1.5;
+    tx.beginPath();
+    tx.moveTo(hx, 0);
+    tx.lineTo(hx, h);
+    tx.stroke();
+  }
+
+  // ---- readouts -----------------------------------------------------------
+
+  function clock(ms) {
+    var s = Math.max(0, ms) / 1000;
+    var m = Math.floor(s / 60);
+    var rest = (s - m * 60).toFixed(3);
+    return m + ":" + (rest < 10 ? "0" : "") + rest;
+  }
+
+  var elError = document.getElementById("j-error");
+  var elWord = document.getElementById("j-word");
+  var elCombo = document.getElementById("j-combo");
+  var elCount = document.getElementById("j-count");
+  var elNow = document.getElementById("t-now");
+  var elGlyphs = document.getElementById("j-glyphs");
+  var elRef = document.getElementById("j-ref");
+
+  // Every reference player's error on one object, sorted early to late. Sorting rather
+  // than keeping roster order makes the row a distribution you can read at a glance;
+  // the name stays on the glyph's tooltip for when you want to know who.
+  function referenceOn(index) {
+    return DATA.ghosts.map(function (g) {
+      var e = g.errors[index];
+      return { name: g.name, e: e == null ? null : e };
+    }).sort(function (a, b) {
+      if (a.e == null) return 1;
+      if (b.e == null) return -1;
+      return a.e - b.e;
+    });
+  }
+
+  function drawReference(index) {
+    var rows = referenceOn(index);
+    var sum = 0, n = 0;
+    elGlyphs.textContent = "";
+
+    rows.forEach(function (r) {
+      var s = document.createElement("span");
+      s.textContent = r.e == null ? "\u00d7" : r.e < 0 ? "\u2212" : r.e > 0 ? "+" : "\u00b7";
+      s.style.color = rgba(errorColour(r.e), 1);
+      s.title = r.name + (r.e == null ? " missed" :
+        ": " + (r.e > 0 ? "+" : "") + r.e.toFixed(0) + " ms");
+      elGlyphs.appendChild(s);
+      if (r.e != null) { sum += r.e; n++; }
+    });
+
+    elRef.textContent = n
+      ? "reference " + (sum / n > 0 ? "+" : "") + (sum / n).toFixed(1) + " ms"
+      : "reference \u2014";
+  }
+
+  function readout(t) {
+    var n = 0, combo = 0, best = null;
+    for (var i = 0; i < judged.length; i++) {
+      if (judged[i].t > t) break;
+      n++;
+      combo = judged[i].r === "Miss" ? 0 : combo + 1;
+      best = judged[i];
+    }
+    elCount.textContent = n + " / " + judged.length;
+    elCombo.textContent = combo;
+    elNow.textContent = clock(t);
+
+    if (!best) {
+      elError.textContent = "\u2014";
+      elError.style.color = "";
+      elWord.textContent = "waiting";
+      elGlyphs.textContent = "";
+      elRef.textContent = "reference";
+      return;
+    }
+
+    if (best.k !== "spin") drawReference(best.i);
+    if (best.k === "spin") {
+      elError.textContent = "spin";
+      elError.style.color = rgba(hex(tok("--dim", "#8293A0")), 1);
+      elWord.textContent = best.r.toLowerCase() + " · no timing";
+      elGlyphs.textContent = "";
+      elRef.textContent = "a spinner has no hit error";
+      return;
+    }
+
+    if (best.e == null) {
+      elError.textContent = "miss";
+      elError.style.color = rgba(MISS, 1);
+      elWord.textContent = best.r.toLowerCase();
+      return;
+    }
+    elError.textContent = (best.e > 0 ? "+" : "") + best.e.toFixed(0) + " ms";
+    elError.style.color = rgba(errorColour(best.e), 1);
+    elWord.textContent = (Math.abs(best.e) < 1 ? "dead on" : best.e < 0 ? "early" : "late") +
+      " · " + best.r.toLowerCase();
+  }
+
+  // ---- transport ----------------------------------------------------------
+
+  var t = START;
+  var rate = 1;
+  var playing = false;
+  var last = 0;
+
+  // Coming to rest on a miss rather than sailing past it. The brake runs over the last
+  // half second of approach so the moment arrives instead of being announced, and the
+  // playhead turns the miss colour while it is easing off.
+  var BRAKE_MS = 520;
+  var braking = false;
+
+  // On by default only where it stays a pleasure. Easing to a halt on a clean run marks
+  // the one thing that went wrong; doing it twenty times is being stopped on the way to
+  // somewhere, so a messy play starts with the brake off and the button offers it.
+  var BRAKE_BY_DEFAULT = 3;
+  var brakeOn = false;
+
+  var missAt = judged.filter(function (j) { return j.k === "miss"; })
+                     .map(function (j) { return j.t; });
+
+  // Strictly ahead, so resuming from a stop does not immediately catch the same miss.
+  function nextMiss(from) {
+    for (var i = 0; i < missAt.length; i++) if (missAt[i] > from + 3) return missAt[i];
+    return null;
+  }
+
+  function render() {
+    draw(t);
+    drawStrip(t);
+    readout(t);
+  }
+
+  function tick(now) {
+    try {
+      if (playing) {
+        var dt = last ? now - last : 0;
+        last = now;
+
+        var advance = dt * rate;
+        var stopped = false;
+        braking = false;
+
+        if (brakeOn) {
+          var m = nextMiss(t);
+          if (m !== null && m - t < BRAKE_MS) {
+            braking = true;
+            var u = Math.max(0, (m - t) / BRAKE_MS);
+            // Quadratic, with a floor so the approach converges rather than crawling.
+            advance *= Math.max(.05, u * u);
+            // Only once the clock is actually running. The first frame after pressing
+            // play has no elapsed time, so without this a play from anywhere inside the
+            // braking window would read as a stalled approach and jump straight to the miss.
+            if (dt > 0 && (m - t <= .75 || advance < .02)) { t = m; advance = 0; stopped = true; }
+          }
+        }
+
+        t += advance;
+        if (t >= END) { t = END; stopped = true; }
+
+        if (stopped) { braking = false; setPlaying(false); }
+        else render();
+      }
+    } catch (err) {
+      // Stop the clock without re-entering render, which is where a throw comes from.
+      console.error("viewer:", err);
+      playing = false;
+      last = 0;
+      playBtn.textContent = "Play";
+      playBtn.setAttribute("aria-pressed", "false");
+    }
+    requestAnimationFrame(tick);
+  }
+
+  var playBtn = document.getElementById("play");
+  function setPlaying(on) {
+    playing = on;
+    last = 0;
+    playBtn.textContent = on ? "Pause" : "Play";
+    playBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    if (!on) render();
+  }
+
+  playBtn.addEventListener("click", function () { setPlaying(!playing); });
+
+  var brakeBtn = document.getElementById("brake");
+  function setBrake(on) {
+    brakeOn = on;
+    brakeBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    brakeBtn.textContent = missAt.length === 1
+      ? "Stop on the miss"
+      : "Stop on miss (" + missAt.length + ")";
+  }
+  brakeBtn.addEventListener("click", function () { setBrake(!brakeOn); });
+  setBrake(missAt.length > 0 && missAt.length <= BRAKE_BY_DEFAULT);
+  if (!missAt.length) { brakeBtn.disabled = true; brakeBtn.textContent = "No misses"; }
+
+  document.querySelectorAll("[data-rate]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      rate = parseFloat(b.dataset.rate);
+      document.querySelectorAll("[data-rate]").forEach(function (o) {
+        o.setAttribute("aria-pressed", o === b ? "true" : "false");
+      });
+    });
+  });
+
+  function step(dir) {
+    setPlaying(false);
+    var i = you.seek(t);
+    var next = Math.min(Math.max(0, i + dir), you.n - 1);
+    t = you.f[next * 4];
+    render();
+  }
+
+  document.querySelectorAll("[data-step]").forEach(function (b) {
+    b.addEventListener("click", function () { step(parseInt(b.dataset.step, 10)); });
+  });
+
+  function seekAt(clientX) {
+    var r = strip.getBoundingClientRect();
+    var u = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    t = START + u * (END - START);
+    render();
+  }
+
+  var dragging = false;
+  strip.addEventListener("pointerdown", function (e) {
+    dragging = true;
+    strip.setPointerCapture(e.pointerId);
+    setPlaying(false);
+    seekAt(e.clientX);
+  });
+  strip.addEventListener("pointermove", function (e) { if (dragging) seekAt(e.clientX); });
+  strip.addEventListener("pointerup", function () { dragging = false; });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.target.tagName === "INPUT") return;
+    if (e.key === " ") { e.preventDefault(); setPlaying(!playing); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); e.shiftKey ? (setPlaying(false), t = Math.max(START, t - 1000), render()) : step(-1); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); e.shiftKey ? (setPlaying(false), t = Math.min(END, t + 1000), render()) : step(1); }
+    else if (e.key === "m" || e.key === "M") { setBrake(!brakeOn); }
+    else if (e.key === "1" || e.key === "2" || e.key === "3") {
+      var map = { "1": ".25", "2": ".5", "3": "1" };
+      var b = document.querySelector('[data-rate="' + map[e.key] + '"]');
+      if (b) b.click();
+    }
+  });
+
+  // ---- roster -------------------------------------------------------------
+
+  var roster = document.getElementById("roster");
+  function row(track, colour, label, sd) {
+    var b = document.createElement("button");
+    b.className = "who";
+    b.setAttribute("aria-pressed", "true");
+    b.innerHTML = '<span class="swatch"></span><span class="who-name"></span><span class="who-sd"></span>';
+    b.querySelector(".swatch").style.background = colour;
+    b.querySelector(".who-name").textContent = label;
+    b.querySelector(".who-sd").textContent = sd.toFixed(2) + " ms";
+    b.addEventListener("click", function () {
+      track.on = !track.on;
+      b.setAttribute("aria-pressed", track.on ? "true" : "false");
+      render();
+    });
+    roster.appendChild(b);
+  }
+
+  row(you, rgba(TRUE_, 1), "you", DATA.you.sd);
+  ghosts.forEach(function (g) { row(g, rgba(hex(tok("--faint", "#5E6E79")), 1), g.name, g.sd); });
+
+  // ---- header -------------------------------------------------------------
+
+  var counts = {};
+  OBJ.forEach(function (o) { counts[o.result] = (counts[o.result] || 0) + 1; });
+  var greats = counts.Great || 0, oks = counts.Ok || 0, mehs = counts.Meh || 0, misses = counts.Miss || 0;
+  var total = greats + oks + mehs + misses;
+  var acc = total ? (greats + oks / 3 + mehs / 6) / total : 0;
+
+  var refSd = DATA.ghosts.map(function (g) { return g.sd; }).sort(function (a, b) { return a - b; });
+  var median = refSd.length ? refSd[Math.floor(refSd.length / 2)] : 0;
+
+  document.getElementById("map-name").textContent =
+    SCENE.beatmap.artist + " — " + SCENE.beatmap.title + " [" + SCENE.beatmap.difficulty + "]" +
+    (SCENE.mods.length ? "  ·  " + SCENE.mods.join(" ") : "  ·  no mod");
+  document.getElementById("s-you").textContent = DATA.you.sd.toFixed(2) + " ms";
+  document.getElementById("s-ref").textContent = median.toFixed(2) + " ms";
+  document.getElementById("s-acc").textContent = (acc * 100).toFixed(2) + "%";
+  document.getElementById("t-end").textContent = clock(END).slice(0, -4);
+  document.getElementById("scope-tag").textContent =
+    "CS " + SCENE.beatmap.circleSize + " · AR " + SCENE.beatmap.approachRate +
+    " · OD " + SCENE.beatmap.overallDifficulty + " · " + SCENE.frameCount.toLocaleString() + " frames";
+
+  // ---- go -----------------------------------------------------------------
+
+  new ResizeObserver(function () { layout(); render(); }).observe(scope);
+  layout();
+  render();
+  requestAnimationFrame(tick);
+})();
+</script>
