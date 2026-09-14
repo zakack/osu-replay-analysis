@@ -388,6 +388,7 @@
           <button data-rate=".5" aria-pressed="false">0.5&times;</button>
           <button data-rate="1" aria-pressed="true">1&times;</button>
           <button id="brake" aria-pressed="true" title="Ease to a halt on every miss (M)">Stop on miss</button>
+          <button id="markers" aria-pressed="true" title="Leave a marker where each press landed (K)">Hit markers</button>
           <span class="clock"><b id="t-now">0:00.000</b> / <span id="t-end">0:00</span></span>
         </div>
       </div>
@@ -431,7 +432,7 @@
     <br><br>
     <kbd>Space</kbd> play &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> step one frame &middot;
     <kbd>Shift</kbd> + arrows jump a second &middot; <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> speed
-    &middot; <kbd>M</kbd> stop on miss
+    &middot; <kbd>M</kbd> stop on miss &middot; <kbd>K</kbd> hit markers
   </p>
 </div>
 
@@ -548,6 +549,25 @@
       k: f[i * 4 + 3]
     };
   };
+
+  // Which button judged each object. A button change forces a replay frame, so the press
+  // is a recorded sample rather than an interpolated one: the frame at the judgement time
+  // exists, and the bit that is newly down in it is the one that was pressed.
+  function pressedButton(hitTime) {
+    var f = SCENE.frames;
+    for (var k = 0; k < f.length; k += 4) {
+      if (f[k] < hitTime) continue;
+      if (f[k] > hitTime) break;
+      var now = f[k + 3], before = k >= 4 ? f[k - 1] : 0;
+      var fresh = now & ~before;
+      return fresh || now;
+    }
+    return 0;
+  }
+
+  OBJ.forEach(function (o) {
+    if (o.hitTime != null && o.hx != null) o.button = pressedButton(o.hitTime);
+  });
 
   var you = new Track(SCENE.frames, "you", null);
   var ghosts = DATA.ghosts.map(function (g) { return new Track(g.frames, g.name, null); });
@@ -734,13 +754,34 @@
       sx.stroke();
     }
 
-    // Where the press actually landed, which is recorded exactly rather than interpolated.
-    if (o.hx != null && t >= o.hitTime && t < o.hitTime + 420) {
-      var f = 1 - (t - o.hitTime) / 420;
+    // Where the press actually landed. Left behind rather than flashed, because the
+    // interesting thing about a press is usually its relationship to the ones around it.
+    // Borrowed from lazer's own replay analysis overlay, including its best idea: the
+    // marker carries which button fired, as a highlighted half.
+    if (showMarkers && o.hx != null && t >= o.hitTime) {
+      // Persistent, not decorative: a marker dims as it ages so the last few reads as
+      // recent, but it never drops below the point where the shape of the whole run is
+      // still legible on the field.
+      var age = Math.min(1, (t - o.hitTime) / 2600);
+      var fade = (1 - age) * .55 + .45;
+      var mr = Math.max(2.2, r * .13);
+
       sx.beginPath();
-      sx.arc(px(o.hx), py(o.hy), 2.4, 0, 6.2832);
-      sx.fillStyle = rgba(c, .9 * f);
-      sx.fill();
+      sx.arc(px(o.hx), py(o.hy), mr, 0, 6.2832);
+      sx.strokeStyle = rgba(c, .75 * fade);
+      sx.lineWidth = 1.1;
+      sx.stroke();
+
+      // Left button fills the left half, right the right. Both held fills the ring.
+      if (o.button) {
+        var left = (o.button & left_button) !== 0, right = (o.button & right_button) !== 0;
+        sx.beginPath();
+        if (left && right) sx.arc(px(o.hx), py(o.hy), mr, 0, 6.2832);
+        else if (left) sx.arc(px(o.hx), py(o.hy), mr, Math.PI / 2, Math.PI * 1.5);
+        else sx.arc(px(o.hx), py(o.hy), mr, Math.PI * 1.5, Math.PI / 2);
+        sx.fillStyle = rgba(c, .65 * fade);
+        sx.fill();
+      }
     }
   }
 
@@ -1036,6 +1077,14 @@
 
   playBtn.addEventListener("click", function () { setPlaying(!playing); });
 
+  var showMarkers = true;
+  var markerBtn = document.getElementById("markers");
+  markerBtn.addEventListener("click", function () {
+    showMarkers = !showMarkers;
+    markerBtn.setAttribute("aria-pressed", showMarkers ? "true" : "false");
+    render();
+  });
+
   var brakeBtn = document.getElementById("brake");
   function setBrake(on) {
     brakeOn = on;
@@ -1092,6 +1141,7 @@
     else if (e.key === "ArrowLeft") { e.preventDefault(); e.shiftKey ? (setPlaying(false), t = Math.max(START, t - 1000), render()) : step(-1); }
     else if (e.key === "ArrowRight") { e.preventDefault(); e.shiftKey ? (setPlaying(false), t = Math.min(END, t + 1000), render()) : step(1); }
     else if (e.key === "m" || e.key === "M") { setBrake(!brakeOn); }
+    else if (e.key === "k" || e.key === "K") { markerBtn.click(); }
     else if (e.key === "1" || e.key === "2" || e.key === "3") {
       var map = { "1": ".25", "2": ".5", "3": "1" };
       var b = document.querySelector('[data-rate="' + map[e.key] + '"]');
