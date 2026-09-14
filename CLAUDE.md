@@ -347,12 +347,23 @@ option open.
   framerate-coupled, which is the one property the extraction layer cannot have, and drags
   realm, SQLite, the skin manager and the beatmap manager into a process whose job is to
   read two files. `HostGuardTests` asserts this by checking `/proc/self/maps`.
-- **Never ship audio or beatmap files.** This one is unchanged and unconditional. Beatmaps
-  are user submissions of third-party music, ppy claims no rights over distribution, so the
-  burden is entirely ours — and none of that depends on commercial status. Only the
-  Featured Artist catalogue is blanket-cleared, and even there, tracks by a featured artist
-  that aren't in their listing aren't licensed. Tests build beatmaps in code rather than
-  carrying fixtures.
+- **Never ship audio or image assets. Geometry is fine.** The line is drawn at the media,
+  not at the map. Audio is unconditional and unchanged: beatmaps are user submissions of
+  third-party music, ppy claims no rights over distribution, so the burden is entirely ours,
+  none of that depends on commercial status, and only the Featured Artist catalogue is
+  blanket-cleared — and even there, tracks by a featured artist that aren't in their listing
+  aren't licensed. The same goes for every image that arrives with a `.osu`: backgrounds,
+  storyboard sprites, skin elements. None of those ship, ever.
+
+  What *does* ship is the playable geometry — object positions, timing, slider polylines,
+  the whole `scene` document. Nobody is going to sue over the coordinates of a circle, and
+  the project is non-commercial, so contorting the viewer to avoid publishing them buys
+  nothing. Decided 2026-09-14, when the `scene` command made the question concrete: its
+  document is a complete re-encoding of a beatmap's playable geometry, and it is cleared to
+  be embedded in a published artifact.
+
+  Tests still build beatmaps in code rather than carrying fixtures. That is now an
+  engineering preference rather than a licensing requirement, and it is still the right one.
 - **ppy assets in the UI** are now permitted, but an independent visual language is still
   the better call for a tool that should look like its own thing.
 - **Naming.** "osu!" and "ppy" are trademarks and ppy asks to be contacted for clearance.
