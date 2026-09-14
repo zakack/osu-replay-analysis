@@ -19,7 +19,7 @@ from __future__ import annotations
 import csv
 import math
 from collections.abc import Iterable, Iterator, MutableMapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .schema import (FINDINGS_COLUMNS, METRICS, MIN_N_PLAYER, MIN_N_REFERENCE,
                      SCHEMA_VERSION, CellStats)
@@ -324,11 +324,25 @@ class Recoverable:
     reference_mean: float
     share: float
     ratio: float      # against the reference
-    relative: float   # against the player's own baseline for this rhythm
+    relative: float   # against how the player compares to the reference overall
+
+
+# What "damage" means, which is a choice and not a fact. Ranking on timing will always
+# return streams, because streams are where the clicks are and timing is what they cost;
+# ranking a jump map on timing is measuring the wrong failure. The objective has to be
+# nameable, and the caller has to pick it deliberately.
+OBJECTIVES = {
+    # Mean squared hit error: spread and systematic offset together.
+    "timing": ("hitSd", "hitMean", "ms"),
+    # Mean cursor distance from the centre at the moment of the press, in radii.
+    "aim": ("aimMean", None, "radii"),
+    # Misses over and above what the field drops on the same objects.
+    "misses": ("missRate", None, "misses"),
+}
 
 
 def rank(findings: Iterable[Finding], *, scheme: str, stratum: str = "all",
-         detrended: bool = False) -> list[Recoverable]:
+         detrended: bool = False, objective: str = "timing") -> list[Recoverable]:
     """Cells worst-damage-first, by recoverable share of the player's error.
 
     Cells partition the observations within a scheme, so the shares are commensurable and
@@ -336,6 +350,9 @@ def rank(findings: Iterable[Finding], *, scheme: str, stratum: str = "all",
     below reference contribute nothing recoverable and are dropped rather than shown with
     a negative share, which would invite reading the list as a balance sheet.
     """
+    primary, secondary, _ = OBJECTIVES[objective]
+    square = objective == "timing"
+
     spread: dict[tuple, Finding] = {}
     location: dict[tuple, Finding] = {}
 
@@ -343,13 +360,18 @@ def rank(findings: Iterable[Finding], *, scheme: str, stratum: str = "all",
         if f.scheme != scheme or f.stratum != stratum or bool(f.detrended) != detrended:
             continue
         key = (f.cell, f.target, f.fromSlider)
-        if f.metric == "hitSd":
+        if f.metric == primary:
             spread[key] = f
-        elif f.metric == "hitMean":
+        elif secondary and f.metric == secondary:
             location[key] = f
 
-    pool = sum(f.playerN * (f.playerValue ** 2
-                            + (location[k].playerValue ** 2 if k in location else 0.0))
+    def magnitude(value, other):
+        """Squared for timing, where a spread and an offset add as variances; linear for
+        aim and for misses, which are already the quantity a player loses."""
+        return value ** 2 + (other ** 2 if other is not None else 0.0) if square else value
+
+    pool = sum(f.playerN * magnitude(f.playerValue,
+                                     location[k].playerValue if k in location else None)
                for k, f in spread.items())
     if pool <= 0:
         return []
@@ -357,8 +379,8 @@ def rank(findings: Iterable[Finding], *, scheme: str, stratum: str = "all",
     rows = []
     for key, f in spread.items():
         bias = location.get(key)
-        player = f.playerValue ** 2 + (bias.playerValue ** 2 if bias else 0.0)
-        reference = f.referenceValue ** 2 + (bias.referenceValue ** 2 if bias else 0.0)
+        player = magnitude(f.playerValue, bias.playerValue if bias else None)
+        reference = magnitude(f.referenceValue, bias.referenceValue if bias else None)
         excess = f.playerN * (player - reference)
 
         if excess <= 0:
@@ -370,12 +392,42 @@ def rank(findings: Iterable[Finding], *, scheme: str, stratum: str = "all",
             player_sd=f.playerValue, player_mean=bias.playerValue if bias else 0.0,
             reference_sd=f.referenceValue, reference_mean=bias.referenceValue if bias else 0.0,
             share=excess / pool,
-            ratio=math.sqrt(player / reference) if reference > 0 else float("inf"),
-            relative=f.relativeEffect if f.relativeEffect is not None else 1.0,
+            ratio=(math.sqrt(player / reference) if square else player / reference)
+            if reference > 0 else float("inf"),
+            relative=0.0,  # filled below, once the overall ratio is known
         ))
 
+    # How much worse this cell is than the player is *in general*. The findings table's
+    # own relativeEffect cannot serve here: it is a difference rather than a ratio for the
+    # difference-kind metrics, so a miss-rate cell would come back as 0.05 and read as
+    # twenty times better than baseline. This is defined the same way for every objective
+    # — the cell's player-to-reference ratio over the player's whole-scheme ratio — so a
+    # value above one always means "worse here than you are elsewhere".
+    reference_pool = sum(
+        f.playerN * magnitude(f.referenceValue,
+                              location[k].referenceValue if k in location else None)
+        for k, f in spread.items())
+
+    overall = (math.sqrt(pool / reference_pool) if square else pool / reference_pool) \
+        if reference_pool > 0 else 1.0
+
+    rows = [replace(r, relative=r.ratio / overall if overall > 0 else 1.0) for r in rows]
     rows.sort(key=lambda r: -r.share)
     return rows
+
+
+def outliers(rows: list[Recoverable], *, floor: float = 0.01,
+             relative: float = 1.5) -> list[Recoverable]:
+    """Cells where the player is distinctively worse than they generally are.
+
+    A different question from the ranking, and the two disagree on purpose. The ranking
+    asks where the damage is and answers with whatever the player meets most often, which
+    on any corpus is the ordinary stuff. This asks where they are *unusually* bad, which
+    is the question a drill list should be built from — gated by a floor so that a cell
+    with nine clicks and a freak ratio cannot lead it.
+    """
+    return sorted((r for r in rows if r.share >= floor and r.relative >= relative),
+                  key=lambda r: -r.relative)
 
 
 def verdict(rows: list[Recoverable], *, concentrated_share: float = 0.05,
@@ -401,6 +453,15 @@ def verdict(rows: list[Recoverable], *, concentrated_share: float = 0.05,
     top = rows[0]
     named = [r for r in rows
              if r.share >= concentrated_share and r.relative >= concentrated_relative]
+
+    standouts = outliers(rows)
+
+    if not named and standouts:
+        carried = sum(r.share for r in standouts)
+        return (f"localised: no single cell is large enough to dominate, but "
+                f"{len(standouts)} carry {carried:.1%} between them at up to "
+                f"{standouts[0].relative:.2f}x your own baseline. That is a drill list, "
+                f"not a headline.")
 
     if named:
         return (f"concentrated: {len(named)} cell(s) carry at least {concentrated_share:.0%} "

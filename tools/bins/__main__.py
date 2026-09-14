@@ -142,22 +142,37 @@ def rank(args) -> int:
     """Which cells are worth a player's attention, and whether any of them are."""
     rows = list(compare.read(args.findings))
     ordered = compare.rank(rows, scheme=args.scheme, stratum=args.stratum,
-                           detrended=args.detrended)
+                           detrended=args.detrended, objective=args.objective)
+    unit = compare.OBJECTIVES[args.objective][2]
 
-    print(f"{args.scheme}, stratum {args.stratum}"
+    print(f"{args.scheme}, stratum {args.stratum}, objective {args.objective} ({unit})"
           + (" (map bias removed)" if args.detrended else ""))
-    print(f"\n  {'cell':<24}{'tgt':<8}{'fS':<4}{'n':>7}{'you sd':>8}{'bias':>7}"
-          f"{'ref sd':>8}{'vs ref':>8}{'vs you':>8}{'recoverable':>13}")
+    wide = args.objective == "timing"
+    print(f"\n  {'cell':<26}{'tgt':<8}{'fS':<4}{'n':>7}{'you':>9}{'ref':>9}"
+          f"{'vs ref':>8}{'vs you':>8}{'recoverable':>13}")
 
     cumulative = 0.0
     for row in ordered[:args.top]:
         cumulative += row.share
-        print(f"  {row.cell:<24}{row.target:<8}{row.from_slider:<4}{row.n:>7}"
-              f"{row.player_sd:>8.1f}{row.player_mean:>+7.1f}{row.reference_sd:>8.1f}"
-              f"{row.ratio:>8.2f}{row.relative:>8.2f}{row.share * 100:>12.1f}%")
+        you = f"{row.player_sd:.1f}" if wide else f"{row.player_sd:.3f}"
+        ref = f"{row.reference_sd:.1f}" if wide else f"{row.reference_sd:.3f}"
+        print(f"  {row.cell:<26}{row.target:<8}{row.from_slider:<4}{row.n:>7}"
+              f"{you:>9}{ref:>9}{row.ratio:>8.2f}{row.relative:>8.2f}"
+              f"{row.share * 100:>12.1f}%")
 
     print(f"\n  top {min(args.top, len(ordered))} of {len(ordered)} cells "
           f"= {cumulative:.1%} of recoverable error")
+    standouts = compare.outliers(ordered)
+    if standouts:
+        print(f"\n  distinctively worse than you generally are "
+              f"(at least 1% of the damage, 1.5x your baseline):")
+        for row in standouts[:8]:
+            you = f"{row.player_sd:.1f}" if wide else f"{row.player_sd:.3f}"
+            ref = f"{row.reference_sd:.1f}" if wide else f"{row.reference_sd:.3f}"
+            print(f"  {row.cell:<26}{row.target:<8}{row.from_slider:<4}{row.n:>7}"
+                  f"{you:>9}{ref:>9}{row.ratio:>8.2f}{row.relative:>8.2f}"
+                  f"{row.share * 100:>12.1f}%")
+
     print(f"\n{compare.verdict(ordered)}")
     return 0
 
@@ -209,6 +224,8 @@ def main(argv: list[str] | None = None) -> int:
     k.add_argument("--stratum", default="all")
     k.add_argument("--detrended", action="store_true")
     k.add_argument("--top", type=int, default=15)
+    k.add_argument("--objective", default="timing", choices=list(compare.OBJECTIVES),
+                   help="what counts as damage: timing error, aim error, or misses")
     k.set_defaults(run=rank)
 
     s = sub.add_parser("scheme", help="the bin edges in force")

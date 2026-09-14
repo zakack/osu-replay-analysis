@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 DEG = 180 / math.pi
 
@@ -97,9 +97,13 @@ ANGLE = Axis(
 )
 
 # Spacing in circle radii rather than osu!pixels, so CS drops out of the comparison.
+# Above six radii the original top bin held everything from a comfortable jump to a
+# full-playfield leap, which is fine while the question is streams and useless the moment
+# it is jumps. The upper edges were added when the ranking started returning wide-spacing
+# cells and could not say which kind of wide.
 SPACING = Axis(
     "spacing",
-    (0.0, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.5, 6.0, math.inf),
+    (0.0, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.5, 6.0, 8.0, 10.0, math.inf),
     "radii",
 )
 
