@@ -1,0 +1,464 @@
+<title>One Cell, Every Traversal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #E7E9E8; --panel: #F3F5F4; --panel-2: #DFE3E2; --line: #CBD2D1;
+    --text: #161D21; --dim: #5C6A72; --faint: #8896A0;
+    --scope: #05080A; --scope-line: #16202A;
+    --early: #3D9BE9; --true: #93A6B0; --late: #F0994A; --miss: #E2504E;
+    --accent: #7A6BE0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0B0E11; --panel: #12171B; --panel-2: #1A2126; --line: #232D34;
+      --text: #D8DFE4; --dim: #8293A0; --faint: #5E6E79; --accent: #9B8DF0;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0B0E11; --panel: #12171B; --panel-2: #1A2126; --line: #232D34;
+    --text: #D8DFE4; --dim: #8293A0; --faint: #5E6E79; --accent: #9B8DF0;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground); color: var(--text);
+    font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+
+  .shell { max-width: 1180px; margin: 0 auto; padding: 22px 20px 44px;
+           display: flex; flex-direction: column; gap: 18px; }
+
+  .masthead { display: flex; flex-wrap: wrap; align-items: flex-end;
+              justify-content: space-between; gap: 16px 24px;
+              padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+
+  h1 { margin: 0; font-size: 23px; font-weight: 700; letter-spacing: -.015em; text-wrap: balance; }
+  h2 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.005em; }
+
+  .sub { margin: 4px 0 0; color: var(--dim); font-size: 13px; max-width: 64ch; }
+
+  .k { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 10px;
+       font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+
+  .mono { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+          font-variant-numeric: tabular-nums; }
+
+  /* The cell key, spelled out axis by axis. It is the subject of the page, so it is
+     set as a specimen rather than as a caption. */
+  .cellkey { display: flex; flex-wrap: wrap; gap: 0; align-items: stretch;
+             border: 1px solid var(--line); border-radius: 3px; overflow: hidden;
+             background: var(--panel); }
+  .cellkey div { display: flex; flex-direction: column; gap: 2px; padding: 8px 14px; }
+  .cellkey div + div { border-left: 1px solid var(--line); }
+  .cellkey b { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 15px;
+               font-weight: 600; letter-spacing: -.01em; }
+
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+              gap: 1px; background: var(--line); border: 1px solid var(--line);
+              border-radius: 3px; overflow: hidden; }
+  .stat-row div { background: var(--panel); padding: 10px 13px;
+                  display: flex; flex-direction: column; gap: 3px; }
+  .stat-row b { font-family: "IBM Plex Mono", ui-monospace, monospace;
+                font-variant-numeric: tabular-nums; font-size: 19px; font-weight: 600;
+                letter-spacing: -.02em; }
+
+  section { display: flex; flex-direction: column; gap: 11px; }
+
+  .head { display: flex; align-items: baseline; justify-content: space-between;
+          gap: 14px; flex-wrap: wrap; }
+  .head p { margin: 0; color: var(--dim); font-size: 12.5px; max-width: 58ch; }
+
+  .scope-wrap { background: var(--scope); border: 1px solid var(--line);
+                border-radius: 3px; overflow: hidden; position: relative; }
+  #overlay { display: block; width: 100%; height: auto; aspect-ratio: 3 / 2; }
+
+  .sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+           gap: 10px; }
+
+  .tile { background: var(--scope); border: 1px solid var(--line); border-radius: 3px;
+          overflow: hidden; position: relative; }
+  .tile canvas { display: block; width: 100%; height: auto; aspect-ratio: 1 / 1; }
+  .tile .tag { position: absolute; top: 6px; left: 8px; font-family: "IBM Plex Mono", monospace;
+               font-size: 9.5px; letter-spacing: .06em; color: #4A5A65; }
+  .tile .err { position: absolute; bottom: 6px; right: 8px; font-family: "IBM Plex Mono", monospace;
+               font-variant-numeric: tabular-nums; font-size: 11px; font-weight: 600; }
+
+  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  button { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px;
+           font-weight: 500; letter-spacing: .05em; color: var(--text);
+           background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
+           padding: 6px 11px; cursor: pointer; }
+  button:hover { background: var(--panel-2); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+            font-size: 12px; color: var(--dim); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .key-line { width: 22px; height: 0; border-top-width: 2px; border-top-style: solid; }
+
+  .foot { color: var(--dim); font-size: 12.5px; max-width: 76ch;
+          border-top: 1px solid var(--line); padding-top: 13px; }
+  .foot code { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--text); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="shell">
+  <header class="masthead">
+    <div>
+      <h1>One Cell, Every Traversal</h1>
+      <p class="sub" id="sub">&nbsp;</p>
+    </div>
+  </header>
+
+  <div class="cellkey" id="cellkey"></div>
+  <div class="stat-row" id="stats"></div>
+
+  <section>
+    <div class="head">
+      <h2>Every traversal, in the pattern&rsquo;s own frame</h2>
+      <p>
+        Each instance translated to put the turn at the origin and rotated to put the
+        approach along the same bearing, measured in circle radii. This is what
+        rotation-invariant features buy: the same pattern in forty places on the map
+        becomes forty attempts at one thing.
+      </p>
+    </div>
+    <div class="scope-wrap"><canvas id="overlay"></canvas></div>
+    <div class="controls">
+      <button id="who-you" aria-pressed="true">Your paths</button>
+      <button id="who-ref" aria-pressed="true">Reference paths</button>
+      <button id="play" aria-pressed="false">Sweep</button>
+      <span class="legend" style="margin-left:auto">
+        <span><i class="key-line" id="k-you"></i> you, coloured by hit error</span>
+        <span><i class="key-line" id="k-ref"></i> reference</span>
+      </span>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>Where they actually are</h2>
+      <p id="sheet-note">
+        The same instances on the playfield, each cropped to its own three objects.
+        Position on the map is the thing the overlay throws away.
+      </p>
+    </div>
+    <div class="sheet" id="sheet"></div>
+  </section>
+
+  <p class="foot">
+    Cell membership is a property of the beatmap, not of a play: angle, spacing and snap
+    come from the map&rsquo;s own geometry, so these are the same objects for every player
+    and nobody chose which traversals to show. Membership is read from the binning package
+    that produced the findings table, so the picture and the number cannot disagree about
+    what is in the bin. Chirality is preserved rather than folded &mdash; this cell is one
+    handedness band, and mirroring the other one in would erase the asymmetry the signed
+    angle exists to keep.
+  </p>
+</div>
+
+<script type="application/json" id="payload">/*__PAYLOAD__*/</script>
+<script>
+(function () {
+  "use strict";
+
+  var D = JSON.parse(document.getElementById("payload").textContent);
+  var css = getComputedStyle(document.documentElement);
+  function tok(n, f) { return (css.getPropertyValue(n) || "").trim() || f; }
+  function hex(h) {
+    h = h.replace("#", "");
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+  function mix(a, b, k) { return [a[0]+(b[0]-a[0])*k, a[1]+(b[1]-a[1])*k, a[2]+(b[2]-a[2])*k]; }
+  function rgba(c, a) { return "rgba(" + (c[0]|0) + "," + (c[1]|0) + "," + (c[2]|0) + "," + a + ")"; }
+
+  var EARLY = hex(tok("--early", "#3D9BE9")), TRUE_ = hex(tok("--true", "#93A6B0"));
+  var LATE = hex(tok("--late", "#F0994A")), MISS = hex(tok("--miss", "#E2504E"));
+  var FAINT = hex(tok("--faint", "#5E6E79"));
+  var FULL = 50;
+
+  function errColour(e) {
+    if (e === null || e === undefined) return MISS;
+    return mix(TRUE_, e < 0 ? EARLY : LATE, Math.min(1, Math.abs(e) / FULL));
+  }
+
+  document.getElementById("k-you").style.borderTopColor = rgba(TRUE_, 1);
+  document.getElementById("k-ref").style.borderTopColor = rgba(FAINT, .8);
+
+  // ---- header -------------------------------------------------------------
+
+  document.getElementById("sub").textContent =
+    D.beatmap.artist + " — " + D.beatmap.title + " [" + D.beatmap.difficulty + "]  ·  " +
+    D.instances.length + " objects on this beatmap fall in the cell";
+
+  var key = document.getElementById("cellkey");
+  var labels = D.cell.split("|");
+  var units = { angle: "degrees, signed", spacing: "circle radii", snap: "beats",
+                velocity: "radii per ms", runPosition: "index in run" };
+  D.axes.forEach(function (axis, n) {
+    var d = document.createElement("div");
+    d.innerHTML = '<span class="k"></span><b></b>';
+    d.querySelector(".k").textContent = axis + " · " + (units[axis] || "");
+    d.querySelector("b").textContent = labels[n];
+    key.appendChild(d);
+  });
+  [["object", D.target], ["after a slider", D.fromSlider === "1" ? "yes" : "no"]]
+    .forEach(function (p) {
+      var d = document.createElement("div");
+      d.innerHTML = '<span class="k"></span><b></b>';
+      d.querySelector(".k").textContent = p[0];
+      d.querySelector("b").textContent = p[1];
+      key.appendChild(d);
+    });
+
+  var f = D.finding || {};
+  function stat(label, value, note) {
+    var d = document.createElement("div");
+    d.innerHTML = '<span class="k"></span><b></b><span class="k" style="letter-spacing:0;text-transform:none"></span>';
+    var spans = d.querySelectorAll(".k");
+    spans[0].textContent = label;
+    d.querySelector("b").textContent = value;
+    spans[1].textContent = note || "";
+    document.getElementById("stats").appendChild(d);
+  }
+
+  stat("your spread here", (D.spread.you != null ? D.spread.you + " ms" : "—"),
+       D.n.you + " traversals");
+  stat("reference spread", (D.spread.reference != null ? D.spread.reference + " ms" : "—"),
+       D.n.reference + " traversals");
+
+  if (f.hitSd) {
+    stat("corpus-wide ratio", (+f.hitSd.effect).toFixed(2) + "×",
+         "all maps, " + (+f.hitSd.playerN) + " vs " + (+f.hitSd.referenceN) + " clicks");
+    if (f.hitSd.relativeEffect) {
+      stat("against your baseline", (+f.hitSd.relativeEffect).toFixed(2) + "×",
+           "once your own rhythm spread is divided out");
+    }
+  }
+
+  // ---- canvas helpers -----------------------------------------------------
+
+  function fit(canvas, ctx) {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = Math.max(1, Math.round(w * dpr));
+    canvas.height = Math.max(1, Math.round(h * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { w: w, h: h };
+  }
+
+  // ---- the overlay --------------------------------------------------------
+
+  var oc = document.getElementById("overlay"), ox = oc.getContext("2d");
+  var showYou = true, showRef = true, sweeping = false, sweepT = -200;
+
+  var all = [];
+  D.instances.forEach(function (inst) {
+    inst.paths.forEach(function (p) { all.push(p); });
+  });
+
+  // The frame is in radii, so the extent is a property of the cell rather than the map.
+  var EXT = 4.2;
+
+  function place(box, x, y) {
+    var s = Math.min(box.w, box.h) / (EXT * 2);
+    return [box.w / 2 + x * s, box.h / 2 + y * s, s];
+  }
+
+  function drawOverlay() {
+    var box = fit(oc, ox);
+    ox.fillStyle = tok("--scope", "#05080A");
+    ox.fillRect(0, 0, box.w, box.h);
+
+    var o = place(box, 0, 0), s = o[2];
+
+    // Rings at one and two radii, so the eye has a scale without a grid.
+    ox.strokeStyle = tok("--scope-line", "#16202A");
+    ox.lineWidth = 1;
+    [1, 2, 3].forEach(function (r) {
+      ox.beginPath();
+      ox.arc(o[0], o[1], r * s, 0, 6.2832);
+      ox.stroke();
+    });
+
+    // Where the approach comes from and where the exit goes, averaged over instances.
+    var inAvg = [0, 0], outAvg = [0, 0], n = 0;
+    all.forEach(function (p) {
+      inAvg[0] += p["in"][0]; inAvg[1] += p["in"][1];
+      outAvg[0] += p.out[0]; outAvg[1] += p.out[1]; n++;
+    });
+    if (n) {
+      [[inAvg, "from"], [outAvg, "to"]].forEach(function (pair) {
+        var q = place(box, pair[0][0] / n, pair[0][1] / n);
+        ox.beginPath();
+        ox.arc(q[0], q[1], s * 1, 0, 6.2832);
+        ox.strokeStyle = rgba(FAINT, .5);
+        ox.lineWidth = 1.25;
+        ox.stroke();
+        ox.font = "500 10px 'IBM Plex Mono', monospace";
+        ox.fillStyle = rgba(FAINT, .8);
+        ox.textAlign = "center";
+        ox.fillText(pair[1], q[0], q[1] - s * 1.25);
+      });
+    }
+
+    // The turn itself.
+    ox.beginPath();
+    ox.arc(o[0], o[1], s, 0, 6.2832);
+    ox.strokeStyle = rgba(TRUE_, .55);
+    ox.lineWidth = 1.5;
+    ox.stroke();
+
+    ox.lineCap = "round";
+    ox.lineJoin = "round";
+
+    all.forEach(function (p) {
+      if (p.mine && !showYou) return;
+      if (!p.mine && !showRef) return;
+
+      var colour = p.mine ? errColour(p.err) : FAINT;
+      var alpha = p.mine ? .5 : .16;
+
+      ox.beginPath();
+      var started = false;
+      for (var k = 0; k < p.t.length; k += 3) {
+        if (sweeping && p.t[k] > sweepT) break;
+        var q = place(box, p.t[k + 1], p.t[k + 2]);
+        if (!started) { ox.moveTo(q[0], q[1]); started = true; }
+        else ox.lineTo(q[0], q[1]);
+      }
+      ox.strokeStyle = rgba(colour, alpha);
+      ox.lineWidth = p.mine ? 1.4 : 1;
+      ox.stroke();
+    });
+
+    ox.font = "500 10px 'IBM Plex Mono', monospace";
+    ox.fillStyle = rgba(FAINT, .75);
+    ox.textAlign = "left";
+    ox.fillText(sweeping ? (sweepT > 0 ? "+" : "") + sweepT.toFixed(0) + " ms from the tap"
+                         : "whole window", 11, 18);
+  }
+
+  document.getElementById("who-you").addEventListener("click", function () {
+    showYou = !showYou;
+    this.setAttribute("aria-pressed", showYou ? "true" : "false");
+    drawOverlay();
+  });
+  document.getElementById("who-ref").addEventListener("click", function () {
+    showRef = !showRef;
+    this.setAttribute("aria-pressed", showRef ? "true" : "false");
+    drawOverlay();
+  });
+
+  var playBtn = document.getElementById("play");
+  playBtn.addEventListener("click", function () {
+    sweeping = !sweeping;
+    sweepT = -200;
+    this.setAttribute("aria-pressed", sweeping ? "true" : "false");
+    if (!sweeping) drawOverlay();
+  });
+
+  function loop() {
+    try {
+      if (sweeping) {
+        sweepT += 3;
+        if (sweepT > 220) sweepT = -200;
+        drawOverlay();
+        drawTiles();
+      }
+    } catch (e) { console.error("pattern:", e); }
+    requestAnimationFrame(loop);
+  }
+
+  // ---- the contact sheet --------------------------------------------------
+
+  var tiles = [];
+
+  function buildSheet() {
+    var sheet = document.getElementById("sheet");
+    D.instances.slice(0, 24).forEach(function (inst) {
+      var wrap = document.createElement("div");
+      wrap.className = "tile";
+      wrap.innerHTML = '<canvas></canvas><span class="tag"></span><span class="err"></span>';
+
+      var seconds = inst.t / 1000;
+      wrap.querySelector(".tag").textContent =
+        Math.floor(seconds / 60) + ":" + (seconds % 60 < 10 ? "0" : "") + (seconds % 60).toFixed(1);
+
+      var yours = inst.paths.filter(function (p) { return p.mine && p.err != null; });
+      var e = yours.length
+        ? yours.reduce(function (a, p) { return a + p.err; }, 0) / yours.length : null;
+      var tag = wrap.querySelector(".err");
+      tag.textContent = e == null ? "—" : (e > 0 ? "+" : "") + e.toFixed(0);
+      tag.style.color = rgba(errColour(e), 1);
+
+      sheet.appendChild(wrap);
+      tiles.push({ inst: inst, canvas: wrap.querySelector("canvas") });
+    });
+  }
+
+  function drawTiles() {
+    tiles.forEach(function (tile) {
+      var c = tile.canvas, ctx = c.getContext("2d");
+      var box = fit(c, ctx);
+      ctx.fillStyle = tok("--scope", "#05080A");
+      ctx.fillRect(0, 0, box.w, box.h);
+
+      // Crop to the three objects plus a margin, so each tile is the pattern and not
+      // a window onto a map.
+      var pts = tile.inst.objects;
+      var minx = Math.min.apply(null, pts.map(function (p) { return p.x; }));
+      var maxx = Math.max.apply(null, pts.map(function (p) { return p.x; }));
+      var miny = Math.min.apply(null, pts.map(function (p) { return p.y; }));
+      var maxy = Math.max.apply(null, pts.map(function (p) { return p.y; }));
+      var pad = D.beatmap.radius * 2.1;
+      minx -= pad; maxx += pad; miny -= pad; maxy += pad;
+
+      var span = Math.max(maxx - minx, maxy - miny);
+      var s = Math.min(box.w, box.h) / span;
+      var cx = (minx + maxx) / 2, cy = (miny + maxy) / 2;
+
+      function P(x, y) { return [box.w / 2 + (x - cx) * s, box.h / 2 + (y - cy) * s]; }
+
+      pts.forEach(function (p, n) {
+        var q = P(p.x, p.y);
+        ctx.beginPath();
+        ctx.arc(q[0], q[1], D.beatmap.radius * s, 0, 6.2832);
+        ctx.strokeStyle = rgba(n === 1 ? TRUE_ : FAINT, n === 1 ? .75 : .4);
+        ctx.lineWidth = n === 1 ? 1.75 : 1;
+        ctx.stroke();
+      });
+
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      tile.inst.paths.forEach(function (p) {
+        if (p.mine && !showYou) return;
+        if (!p.mine && !showRef) return;
+        ctx.beginPath();
+        var started = false;
+        for (var k = 0; k < p.raw.length; k += 3) {
+          if (sweeping && p.raw[k] > sweepT) break;
+          var q = P(p.raw[k + 1], p.raw[k + 2]);
+          if (!started) { ctx.moveTo(q[0], q[1]); started = true; }
+          else ctx.lineTo(q[0], q[1]);
+        }
+        ctx.strokeStyle = rgba(p.mine ? errColour(p.err) : FAINT, p.mine ? .55 : .2);
+        ctx.lineWidth = p.mine ? 1.3 : 1;
+        ctx.stroke();
+      });
+    });
+  }
+
+  buildSheet();
+  new ResizeObserver(function () { drawOverlay(); drawTiles(); }).observe(oc);
+  drawOverlay();
+  drawTiles();
+  requestAnimationFrame(loop);
+})();
+</script>
