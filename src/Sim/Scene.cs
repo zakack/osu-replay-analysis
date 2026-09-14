@@ -81,6 +81,10 @@ public static class Scene
     /// One top-level object. Positions are stacked play coordinates: the stack offset is
     /// already applied, because the <c>.osu</c> stores pre-stack positions and a viewer that
     /// drew those would put every stacked pattern in the wrong place.
+    ///
+    /// <paramref name="Result"/> on a slider is its <em>head's</em> judgement, which is the
+    /// one a tap produced. The slider's own result — the one that decides whether the combo
+    /// survived — is the tail's, in <paramref name="Nested"/>.
     /// </summary>
     public sealed record SceneObject(
         int I,
@@ -103,12 +107,19 @@ public static class Scene
         double? Velocity,
         int? SpinsRequired,
         IReadOnlyList<float>? Path,
-        IReadOnlyList<SceneNested>? Nested);
+        IReadOnlyList<SceneNested>? Nested,
+        bool? Catmull);
 
     /// <summary>
     /// A slider's nested objects. <paramref name="Progress"/> is the fraction of one span
-    /// they sit at, which is null for head and tail because those are the span endpoints and
-    /// lazer does not store one for them.
+    /// they sit at: lazer stores one on ticks and repeats, and the head and tail get theirs
+    /// derived, since they are the span endpoints and the cross-check needs every slider to
+    /// carry at least two points it can walk to.
+    ///
+    /// <paramref name="Error"/> is judgement time minus object time, which is a tap error
+    /// only on the head. On a tail it is the tracking leniency — around -35ms on a slider
+    /// that was held — and on a tick it is the sampling step. Do not colour a cursor trail
+    /// from these the way you would from a circle's.
     /// </summary>
     public sealed record SceneNested(
         string Type,
@@ -145,6 +156,15 @@ public static class Scene
             var combo = hitObject as IHasComboInformation;
             var clicked = clickState(hitObject, byObject);
 
+            // A spinner has a judgement but not a click. It resolves at its end time, so its
+            // TimeOffset is the length of the whole spin — 3,634ms on one map in the corpus —
+            // and the cursor position at that moment is wherever the spin finished, not where
+            // anything was aimed. The result is real and stays; the click timing does not
+            // exist, and emitting it would give a viewer colouring a trail by hit error one
+            // object three and a half seconds wrong, flattening the scale for every genuine
+            // click on the map.
+            var timing = hitObject is Spinner ? null : clicked;
+
             objects.Add(new SceneObject(
                 index++,
                 hitObject switch { Slider => "slider", Spinner => "spinner", _ => "circle" },
@@ -155,10 +175,10 @@ public static class Scene
                 combo?.IndexInCurrentCombo ?? 0,
                 combo?.NewCombo ?? false,
                 result(clicked),
-                clicked?.TimeOffset is { } e ? round(e) : null,
-                clicked?.JudgementTime is { } j ? round(j) : null,
-                clicked?.CursorAtHit is { } c ? round(c.X) : null,
-                clicked?.CursorAtHit is { } c2 ? round(c2.Y) : null,
+                timing?.TimeOffset is { } e ? round(e) : null,
+                timing?.JudgementTime is { } j ? round(j) : null,
+                timing?.CursorAtHit is { } c ? round(c.X) : null,
+                timing?.CursorAtHit is { } c2 ? round(c2.Y) : null,
                 hitObject switch
                 {
                     Slider slider => round(slider.EndTime),
@@ -168,10 +188,18 @@ public static class Scene
                 (hitObject as Slider)?.SpanCount(),
                 hitObject is Slider s1 ? round(s1.SpanDuration) : null,
                 hitObject is Slider s2 ? round(s2.Path.Distance) : null,
-                hitObject is Slider s3 ? progress(s3.Velocity) : null,
+                hitObject is Slider s3 ? fine(s3.Velocity) : null,
                 (hitObject as Spinner)?.SpinsRequired,
                 hitObject is Slider s4 ? polyline(s4) : null,
-                hitObject is Slider s5 ? nested(s5, byObject) : null));
+                hitObject is Slider s5 ? nested(s5, byObject) : null,
+                // Whether this path is the one legacy curve type whose optimisation leaves
+                // the polyline genuinely shorter than the distance lazer reports. Named here
+                // so the cross-check can exclude it for what it is, rather than by noticing
+                // the shortfall — which is also the symptom of a dropped vertex, a wrong
+                // truncation and a mis-scaled path, the three bugs the check exists to catch.
+                hitObject is Slider s6
+                    ? s6.Path.ControlPoints.Any(c => c.Type?.Type == SplineType.Catmull)
+                    : null));
         }
 
         return new Document(
@@ -185,9 +213,9 @@ public static class Scene
                 playable.Metadata.Artist,
                 playable.Metadata.Title,
                 playable.BeatmapInfo.DifficultyName,
-                playable.Difficulty.CircleSize,
-                playable.Difficulty.ApproachRate,
-                playable.Difficulty.OverallDifficulty,
+                round((double)playable.Difficulty.CircleSize),
+                round((double)playable.Difficulty.ApproachRate),
+                round((double)playable.Difficulty.OverallDifficulty),
                 round(circle.Radius),
                 round(circle.TimePreempt),
                 round(circle.TimeFadeIn)),
@@ -208,10 +236,16 @@ public static class Scene
     /// <c>[x0, y0, x1, y1, ...]</c>.
     ///
     /// <see cref="SliderPath.CalculatedPath"/> is the piecewise-linear approximation after
-    /// <c>calculateLength</c> has trimmed or extended its last vertex to match the
-    /// <c>pixelLength</c> from the <c>.osu</c>, so it needs neither. Vertices are relative to
-    /// the slider's position; adding the stacked position puts them in the same space as the
-    /// cursor frames.
+    /// <c>calculateLength</c> has reconciled it with the <c>pixelLength</c> from the
+    /// <c>.osu</c>, so it needs neither. Vertices are relative to the slider's position;
+    /// adding the stacked position puts them in the same space as the cursor frames.
+    ///
+    /// The reconciliation is not symmetric, and a viewer sizing a buffer from the control
+    /// point count will be wrong about one half of it. Extending moves the last vertex along
+    /// its own direction and never appends one. Truncating <em>deletes</em> every vertex at
+    /// or past the cut before repositioning the survivor, so three control points can emit
+    /// two vertices — and because the test is <c>&gt;=</c>, cutting to exactly a vertex's own
+    /// cumulative length deletes it and re-synthesises it at the same coordinates.
     /// </summary>
     private static float[] polyline(Slider slider)
     {
@@ -250,8 +284,17 @@ public static class Scene
                 round(part.StackedPosition.Y),
                 part switch
                 {
-                    SliderTick tick => progress(tick.PathProgress),
-                    SliderRepeat repeat => progress(repeat.PathProgress),
+                    SliderTick tick => fine(tick.PathProgress),
+                    SliderRepeat repeat => fine(repeat.PathProgress),
+                    // Lazer stores no PathProgress on the endpoints, but it does place them
+                    // at ones it computed: the head at the path start, and the tail at
+                    // Position + CurvePositionAt(1), which is the far end on an odd number of
+                    // spans and back at the start on an even one. Deriving the two is what
+                    // puts every slider under the cross-check rather than only those carrying
+                    // a tick or a repeat — five sliders in six have neither, and before this
+                    // a whole replay could report "0 of 0 reproduced" and exit clean.
+                    SliderHeadCircle => 0.0,
+                    SliderTailCircle => (double)(slider.SpanCount() % 2),
                     _ => null
                 },
                 result(state),
@@ -292,9 +335,13 @@ public static class Scene
             if (frame.Actions.Contains(OsuAction.LeftButton)) buttons |= left_button;
             if (frame.Actions.Contains(OsuAction.RightButton)) buttons |= right_button;
 
+            // Widen before rounding, not after. Position is a float, so round(float) returns
+            // one and the implicit conversion into this double[] reopens every digit the
+            // rounding closed: -64.54f becomes -64.54000091552734, and System.Text.Json
+            // writes all of it. Measured at roughly a third of the whole document.
             flat[i * 4] = round(frame.Time);
-            flat[i * 4 + 1] = round(frame.Position.X);
-            flat[i * 4 + 2] = round(frame.Position.Y);
+            flat[i * 4 + 1] = round((double)frame.Position.X);
+            flat[i * 4 + 2] = round((double)frame.Position.Y);
             flat[i * 4 + 3] = buttons;
         }
 
@@ -328,7 +375,7 @@ public static class Scene
     private static double round(double value) => Math.Round(value, 2);
 
     /// <summary>
-    /// Six decimals, for the two quantities that are ratios rather than pixels.
+    /// Six decimals, for the two quantities that are not pixels.
     ///
     /// Path progress is a fraction of a span, so two decimals is not the sub-pixel precision
     /// it is everywhere else — it is a third of a percent of the slider's whole length, which
@@ -337,7 +384,7 @@ public static class Scene
     /// around 0.5, where two decimals is a one percent error that a viewer integrating it
     /// over a slider's duration spends as a couple of pixels at the tail.
     /// </summary>
-    private static double progress(double value) => Math.Round(value, 6);
+    private static double fine(double value) => Math.Round(value, 6);
 
     public static void Write(Document document, string destination)
     {
@@ -421,16 +468,12 @@ public static class Scene
             if (scene.Path is not { Count: >= 4 } path || scene.Distance is not { } distance || scene.Nested == null)
                 continue;
 
-            // Length the polyline actually carries. Short of the distance means lazer dropped
-            // vertices it still counts, which is a known cause rather than a divergence.
-            double carried = 0;
-
-            for (int i = 1; i < path.Count / 2; i++)
-                carried += Vector2.Distance(
-                    new Vector2(path[(i - 1) * 2], path[(i - 1) * 2 + 1]),
-                    new Vector2(path[i * 2], path[i * 2 + 1]));
-
-            bool optimised = distance - carried > 0.01;
+            // Catmull, and only Catmull, leaves the polyline genuinely shorter than the
+            // distance. Classifying by the path type rather than by measuring the shortfall
+            // matters: the shortfall is also what a dropped vertex or a mis-scaled path looks
+            // like, so measuring it would route exactly the bugs this check exists to catch
+            // into the bucket that cannot fail.
+            bool optimised = scene.Catmull == true;
 
             if (optimised)
                 optimisedSliders++;

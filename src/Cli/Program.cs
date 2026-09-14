@@ -274,6 +274,12 @@ switch (args[0])
             return 2;
         }
 
+        // How far a Catmull-optimised path is allowed to be out before it stops counting as
+        // the known residual. Measured at 0.29px on the one affected slider in 8,466; a pixel
+        // leaves room for a longer path to accumulate more of the same without leaving room
+        // for a different bug to hide behind the same exemption.
+        const double catmull_residual_limit = 1.0;
+
         var index = BeatmapIndex.Read("build/beatmap-index.json");
         var score = ReplayLoader.Decode(args[1], index);
         var header = ReplayLoader.ReadHeader(args[1]);
@@ -309,6 +315,18 @@ switch (args[0])
         Console.WriteLine($"path walk cross-check: {check.Checked - check.Diverged} of {check.Checked} nested positions reproduced"
                           + (check.Diverged > 0 ? $", worst divergence {check.Worst:0.###} px" : string.Empty));
 
+        // A check that compared nothing is not a check that passed. Every slider now carries
+        // at least a head and a tail to walk to, so zero comparisons on a document with
+        // sliders means the oracle stopped being wired up, not that there was nothing to ask.
+        // Both buckets count: on a map whose sliders are all Catmull every comparison lands
+        // in the bounded one, and that is a check that ran, not a check that was skipped.
+        if (check.Checked + check.OptimisedChecked == 0 && document.Objects.Any(o => o.Path != null))
+        {
+            Console.Error.WriteLine("scene: the path walk cross-check compared nothing on a document that has sliders. "
+                                    + "Refusing to report a pass it did not earn.");
+            return 1;
+        }
+
         // Not a failure: lazer drops vertices from an optimised Catmull path and counts their
         // length anyway, so the walk cannot land exactly. Reported so the residual stays
         // visible and bounded instead of being absorbed into a wider tolerance.
@@ -316,6 +334,16 @@ switch (args[0])
         {
             Console.WriteLine($"  plus {check.OptimisedChecked} on {check.OptimisedSliders} Catmull-optimised slider(s), "
                               + $"within {check.OptimisedWorst:0.###} px");
+        }
+
+        // Excluded is not unbounded. The known residual is a third of a pixel; a Catmull path
+        // drifting by more than a follow circle's hundredth is a different problem wearing
+        // the same exemption, and it should stop the run like any other divergence.
+        if (check.OptimisedWorst > catmull_residual_limit)
+        {
+            Console.Error.WriteLine($"scene: a Catmull-optimised slider is out by {check.OptimisedWorst:0.###} px, "
+                                    + $"past the {catmull_residual_limit:0.#} px this exemption covers.");
+            return 1;
         }
 
         Console.WriteLine($"written: {destination}");
