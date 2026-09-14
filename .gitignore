@@ -4,3 +4,5 @@ resources/
 bin/
 obj/
 *.user
+__pycache__/
+*.pyc
