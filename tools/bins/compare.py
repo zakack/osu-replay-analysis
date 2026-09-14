@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import csv
 import math
-from collections.abc import Iterable, MutableMapping
+from collections.abc import Iterable, Iterator, MutableMapping
 from dataclasses import dataclass
 
 from .schema import (FINDINGS_COLUMNS, METRICS, MIN_N_PLAYER, MIN_N_REFERENCE,
@@ -267,7 +267,148 @@ def write(findings: Iterable[Finding], destination: str) -> None:
                              for column in FINDINGS_COLUMNS])
 
 
+def read(path: str) -> Iterator[Finding]:
+    """Read a findings CSV back into Findings, so ranking is a pass over the artifact
+    rather than a second trip through the corpus."""
+    with open(path, newline="") as handle:
+        for row in csv.DictReader(handle):
+            yield Finding(
+                schemaVersion=int(row["schemaVersion"]), scheme=row["scheme"],
+                stratum=row["stratum"], cell=row["cell"], target=row["target"],
+                fromSlider=row["fromSlider"], metric=row["metric"],
+                playerN=int(row["playerN"]), playerValue=float(row["playerValue"]),
+                referenceN=int(row["referenceN"]), referenceValue=float(row["referenceValue"]),
+                effect=float(row["effect"]), effectKind=row["effectKind"],
+                z=float(row["z"]),
+                controlEffect=float(row["controlEffect"]) if row["controlEffect"] else None,
+                relativeEffect=float(row["relativeEffect"]) if row["relativeEffect"] else None,
+                detrended=int(row["detrended"]))
+
+
 def _format(value: object) -> str:
     if value is None:
         return ""
     return f"{value:.6g}" if isinstance(value, float) else str(value)
+
+
+# ---------------------------------------------------------------------------------------
+# Ranking
+# ---------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Recoverable:
+    """How much of a player's total timing error lives in one cell, and is recoverable.
+
+    Effect size is the wrong thing to rank on, and the corpus shows it plainly: sorted by
+    effect, the worst cells are seventy-click slider exits worth two thousandths of the
+    player's error. What a player wants to know is not where they are worst but where the
+    damage is, which is the effect *weighted by how often they meet it*.
+
+    The quantity is mean squared error, so a systematic offset and a spread both count and
+    count commensurably — being ten milliseconds early every time is as much error as
+    scattering by ten, and only the fix differs. `share` is this cell's excess as a
+    fraction of the player's whole mean-square pool, which makes it readable as "hitting
+    reference level here removes this much of your total error".
+    """
+
+    scheme: str
+    stratum: str
+    cell: str
+    target: str
+    from_slider: str
+    n: int
+    player_sd: float
+    player_mean: float
+    reference_sd: float
+    reference_mean: float
+    share: float
+    ratio: float      # against the reference
+    relative: float   # against the player's own baseline for this rhythm
+
+
+def rank(findings: Iterable[Finding], *, scheme: str, stratum: str = "all",
+         detrended: bool = False) -> list[Recoverable]:
+    """Cells worst-damage-first, by recoverable share of the player's error.
+
+    Cells partition the observations within a scheme, so the shares are commensurable and
+    a cumulative total means what it looks like. Cells where the player is already at or
+    below reference contribute nothing recoverable and are dropped rather than shown with
+    a negative share, which would invite reading the list as a balance sheet.
+    """
+    spread: dict[tuple, Finding] = {}
+    location: dict[tuple, Finding] = {}
+
+    for f in findings:
+        if f.scheme != scheme or f.stratum != stratum or bool(f.detrended) != detrended:
+            continue
+        key = (f.cell, f.target, f.fromSlider)
+        if f.metric == "hitSd":
+            spread[key] = f
+        elif f.metric == "hitMean":
+            location[key] = f
+
+    pool = sum(f.playerN * (f.playerValue ** 2
+                            + (location[k].playerValue ** 2 if k in location else 0.0))
+               for k, f in spread.items())
+    if pool <= 0:
+        return []
+
+    rows = []
+    for key, f in spread.items():
+        bias = location.get(key)
+        player = f.playerValue ** 2 + (bias.playerValue ** 2 if bias else 0.0)
+        reference = f.referenceValue ** 2 + (bias.referenceValue ** 2 if bias else 0.0)
+        excess = f.playerN * (player - reference)
+
+        if excess <= 0:
+            continue
+
+        rows.append(Recoverable(
+            scheme=scheme, stratum=stratum, cell=f.cell, target=f.target,
+            from_slider=f.fromSlider, n=f.playerN,
+            player_sd=f.playerValue, player_mean=bias.playerValue if bias else 0.0,
+            reference_sd=f.referenceValue, reference_mean=bias.referenceValue if bias else 0.0,
+            share=excess / pool,
+            ratio=math.sqrt(player / reference) if reference > 0 else float("inf"),
+            relative=f.relativeEffect if f.relativeEffect is not None else 1.0,
+        ))
+
+    rows.sort(key=lambda r: -r.share)
+    return rows
+
+
+def verdict(rows: list[Recoverable], *, concentrated_share: float = 0.05,
+            concentrated_relative: float = 1.2) -> str:
+    """Whether this player has a pattern problem or a baseline problem.
+
+    The system has to be able to say "nothing specific here", or it will always find
+    something and always be believed. A finding is worth naming when one cell carries a
+    real share of the damage *and* the player is distinctly worse there than their own
+    general standard; when the damage is spread evenly across hundreds of cells at a flat
+    ratio, the honest answer is that the baseline is the problem and no amount of pattern
+    practice addresses it.
+
+    The test is the *control-normalised* ratio, never the raw one against the reference.
+    A player whose whole baseline sits two and a half times the reference has every cell
+    at two and a half times, and gating on that would report a pattern problem for all of
+    them — which is the same mistake the control column was added to stop, made again one
+    layer up.
+    """
+    if not rows:
+        return "no cell has recoverable error against the reference."
+
+    top = rows[0]
+    named = [r for r in rows
+             if r.share >= concentrated_share and r.relative >= concentrated_relative]
+
+    if named:
+        return (f"concentrated: {len(named)} cell(s) carry at least {concentrated_share:.0%} "
+                f"of the damage each while running {named[0].relative:.2f}x your own "
+                f"baseline for that rhythm. Pattern-specific practice applies.")
+
+    worst = max(rows[:20], key=lambda r: r.relative)
+    return (f"diffuse: the largest cell is {top.share:.1%} of the damage but only "
+            f"{top.relative:.2f}x your own baseline, and across the top twenty the worst "
+            f"is {worst.relative:.2f}x. The error is where the clicks are, not where the "
+            f"geometry is. This is a baseline, not a pattern, and no cell drill fixes it.")

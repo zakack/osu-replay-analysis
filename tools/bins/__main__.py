@@ -138,6 +138,30 @@ def findings(args) -> int:
     return 0
 
 
+def rank(args) -> int:
+    """Which cells are worth a player's attention, and whether any of them are."""
+    rows = list(compare.read(args.findings))
+    ordered = compare.rank(rows, scheme=args.scheme, stratum=args.stratum,
+                           detrended=args.detrended)
+
+    print(f"{args.scheme}, stratum {args.stratum}"
+          + (" (map bias removed)" if args.detrended else ""))
+    print(f"\n  {'cell':<24}{'tgt':<8}{'fS':<4}{'n':>7}{'you sd':>8}{'bias':>7}"
+          f"{'ref sd':>8}{'vs ref':>8}{'vs you':>8}{'recoverable':>13}")
+
+    cumulative = 0.0
+    for row in ordered[:args.top]:
+        cumulative += row.share
+        print(f"  {row.cell:<24}{row.target:<8}{row.from_slider:<4}{row.n:>7}"
+              f"{row.player_sd:>8.1f}{row.player_mean:>+7.1f}{row.reference_sd:>8.1f}"
+              f"{row.ratio:>8.2f}{row.relative:>8.2f}{row.share * 100:>12.1f}%")
+
+    print(f"\n  top {min(args.top, len(ordered))} of {len(ordered)} cells "
+          f"= {cumulative:.1%} of recoverable error")
+    print(f"\n{compare.verdict(ordered)}")
+    return 0
+
+
 def scheme(args) -> int:
     print(f"schema version {SCHEMA_VERSION}")
     print(f"min n: player {MIN_N_PLAYER}, reference {MIN_N_REFERENCE}")
@@ -178,6 +202,14 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--min-n-player", type=int, default=MIN_N_PLAYER)
     f.add_argument("--min-n-reference", type=int, default=MIN_N_REFERENCE)
     f.set_defaults(run=findings)
+
+    k = sub.add_parser("rank", help="cells worth attention, worst damage first")
+    k.add_argument("--findings", default="build/findings.csv")
+    k.add_argument("--scheme", default="angle-spacing-snap", choices=list(SCHEMES))
+    k.add_argument("--stratum", default="all")
+    k.add_argument("--detrended", action="store_true")
+    k.add_argument("--top", type=int, default=15)
+    k.set_defaults(run=rank)
 
     s = sub.add_parser("scheme", help="the bin edges in force")
     s.set_defaults(run=scheme)
