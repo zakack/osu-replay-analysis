@@ -461,6 +461,15 @@
   var MISS = hex(tok("--miss", "#E2504E"));
   var FULL_SCALE = 50; // ms at which the ramp saturates
 
+  // The replay frame's action bits, matching what the scene document encodes. These were
+  // referenced before they were declared, which threw inside the render call and left the
+  // clock stopped — the failure mode the try/catch around tick exists to survive.
+  var LEFT = 1, RIGHT = 2;
+
+  // Reference presses are drawn brighter than reference cursors and much smaller. They
+  // are evidence rather than motion, so they should read as points, not as a crowd.
+  var REF_MARK = hex(tok("--true", "#93A6B0"));
+
   function hex(h) {
     h = h.replace("#", "");
     return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
@@ -571,7 +580,48 @@
 
   var you = new Track(SCENE.frames, "you", null);
   var ghosts = DATA.ghosts.map(function (g) { return new Track(g.frames, g.name, null); });
-  DATA.ghosts.forEach(function (g, n) { ghosts[n].sd = g.sd; });
+  DATA.ghosts.forEach(function (g, n) {
+    ghosts[n].sd = g.sd;
+    ghosts[n].marks = g.marks || [];
+  });
+
+  // Every press on the field, by whoever made it, in time order. Drawing the field's
+  // marks alongside the player's is what turns a stream into something checkable: taps
+  // snapped to one rhythm land at one pitch along the path, and an uneven row is visible
+  // as a picture in a way it is not as a number.
+  function drawMarks(t) {
+    for (var g = 0; g < ghosts.length; g++) {
+      var track = ghosts[g];
+      if (!track.on) continue;
+
+      var previous = null;
+      for (var m = 0; m < track.marks.length; m++) {
+        var mark = track.marks[m];
+        if (mark[1] > t) break;
+
+        var fade = Math.max(.35, 1 - (t - mark[1]) / 2600);
+        var q = [px(mark[2]), py(mark[3])];
+
+        // Join consecutive presses that belong to the same run, so the spacing between
+        // them reads directly. Anything further apart than a beat is a new phrase, not a
+        // continuation, and joining those would draw a map rather than a rhythm.
+        if (previous && mark[1] - previous[2] < 260) {
+          sx.beginPath();
+          sx.moveTo(previous[0], previous[1]);
+          sx.lineTo(q[0], q[1]);
+          sx.strokeStyle = rgba(REF_MARK, .3 * fade);
+          sx.lineWidth = .8;
+          sx.stroke();
+        }
+
+        sx.beginPath();
+        sx.arc(q[0], q[1], 1.8, 0, 6.2832);
+        sx.fillStyle = rgba(REF_MARK, .85 * fade);
+        sx.fill();
+        previous = [q[0], q[1], mark[1]];
+      }
+    }
+  }
 
   // ---- slider geometry ----------------------------------------------------
   // Walking the shipped polyline by arc length. Nothing here recomputes a curve.
@@ -652,13 +702,21 @@
 
     // Objects, oldest first so later ones sit on top.
     var r = RADIUS * view.s;
+    previousMark = null;
     for (var i = 0; i < OBJ.length; i++) {
       var o = OBJ[i];
       var end = o.endTime != null ? o.endTime : o.t;
       if (o.t - PREEMPT > t) break;
-      if (end + 240 < t) continue;
+      if (end + 240 < t) {
+        // The object is done being drawn, but its marker is not: markers persist for the
+        // whole play and the object cull would otherwise erase them a quarter second in.
+        if (showMarkers) drawMarker(o, t, r);
+        continue;
+      }
       drawObject(o, t, r);
     }
+
+    if (showMarkers) drawMarks(t);
 
     for (var g = 0; g < ghosts.length; g++) {
       if (ghosts[g].on) drawCursor(ghosts[g], t, false);
@@ -754,38 +812,55 @@
       sx.stroke();
     }
 
-    // Where the press actually landed. Left behind rather than flashed, because the
-    // interesting thing about a press is usually its relationship to the ones around it.
-    // Borrowed from lazer's own replay analysis overlay, including its best idea: the
-    // marker carries which button fired, as a highlighted half.
-    if (showMarkers && o.hx != null && t >= o.hitTime) {
-      // Persistent, not decorative: a marker dims as it ages so the last few reads as
-      // recent, but it never drops below the point where the shape of the whole run is
-      // still legible on the field.
-      var age = Math.min(1, (t - o.hitTime) / 2600);
-      var fade = (1 - age) * .55 + .45;
-      var mr = Math.max(2.2, r * .13);
-
-      sx.beginPath();
-      sx.arc(px(o.hx), py(o.hy), mr, 0, 6.2832);
-      sx.strokeStyle = rgba(c, .75 * fade);
-      sx.lineWidth = 1.1;
-      sx.stroke();
-
-      // Left button fills the left half, right the right. Both held fills the ring.
-      if (o.button) {
-        var left = (o.button & left_button) !== 0, right = (o.button & right_button) !== 0;
-        sx.beginPath();
-        if (left && right) sx.arc(px(o.hx), py(o.hy), mr, 0, 6.2832);
-        else if (left) sx.arc(px(o.hx), py(o.hy), mr, Math.PI / 2, Math.PI * 1.5);
-        else sx.arc(px(o.hx), py(o.hy), mr, Math.PI * 1.5, Math.PI / 2);
-        sx.fillStyle = rgba(c, .65 * fade);
-        sx.fill();
-      }
-    }
+    if (showMarkers) drawMarker(o, t, r);
   }
 
   var timed = judged.filter(function (j) { return j.k !== "spin"; });
+
+  // Where a press landed, left on the field. Borrowed from lazer's own replay analysis
+  // overlay, including its best idea: the marker carries which button fired, as a
+  // highlighted half. It lives outside the object drawing because a marker outlives the
+  // object it belongs to — the object cull drops anything finished a quarter second ago,
+  // and the marker has to survive that or "persistent" is a word rather than a behaviour.
+  var previousMark = null;
+
+  function drawMarker(o, t, r) {
+    if (o.hx == null || o.hitTime == null || t < o.hitTime) return;
+
+    var fade = Math.max(.45, 1 - (t - o.hitTime) / 2600);
+    var mr = Math.max(2.4, r * .14);
+    var c = o.result === "Miss" ? MISS : (o.error != null ? errorColour(o.error) : TRUE_);
+    var qx = px(o.hx), qy = py(o.hy);
+
+    // Consecutive presses inside one run, joined. On a snapped stream the marks should
+    // step along the path at a single pitch, and an uneven row shows up here as a picture
+    // when it is invisible at speed.
+    if (previousMark && o.hitTime - previousMark[2] < 260) {
+      sx.beginPath();
+      sx.moveTo(previousMark[0], previousMark[1]);
+      sx.lineTo(qx, qy);
+      sx.strokeStyle = rgba(c, .34 * fade);
+      sx.lineWidth = 1;
+      sx.stroke();
+    }
+    previousMark = [qx, qy, o.hitTime];
+
+    sx.beginPath();
+    sx.arc(qx, qy, mr, 0, 6.2832);
+    sx.strokeStyle = rgba(c, .8 * fade);
+    sx.lineWidth = 1.1;
+    sx.stroke();
+
+    if (o.button) {
+      var left = (o.button & LEFT) !== 0, right = (o.button & RIGHT) !== 0;
+      sx.beginPath();
+      if (left && right) sx.arc(qx, qy, mr, 0, 6.2832);
+      else if (left) sx.arc(qx, qy, mr, Math.PI / 2, Math.PI * 1.5);
+      else sx.arc(qx, qy, mr, Math.PI * 1.5, Math.PI / 2);
+      sx.fillStyle = rgba(c, .7 * fade);
+      sx.fill();
+    }
+  }
 
   function nearestError(t) {
     var lo = 0, hi = timed.length - 1, best = null;

@@ -126,10 +126,19 @@ def main() -> int:
                 print(f"  skipped {os.path.basename(path)}: different beatmap")
                 continue
 
+            # Where each of their presses landed, not just how they moved. The viewer
+            # leaves these on the field the same way it leaves the player's, which is what
+            # makes a stream's evenness checkable: a row of marks either steps along the
+            # path at one pitch or it does not.
+            marks = [[o["i"], o["hitTime"], o["hx"], o["hy"]]
+                     for o in other["objects"]
+                     if o.get("hx") is not None and o.get("hitTime") is not None]
+
             ghosts.append({
                 "name": username(path),
                 "sd": spread(other),
                 "frames": other["frames"],
+                "marks": marks,
                 "errors": {str(o["i"]): o["error"]
                            for o in other["objects"] if o.get("error") is not None},
             })
