@@ -2,6 +2,7 @@ using System.Globalization;
 using Extract;
 using osu.Game.Beatmaps;
 using osu.Game.Rulesets.Osu;
+using osu.Game.Rulesets.Osu.Mods;
 using osu.Game.Rulesets.Osu.Objects;
 using osu.Game.Rulesets.Scoring;
 using Sim;
@@ -28,6 +29,7 @@ if (args.Length == 0)
     Console.Error.WriteLine("  versions              print the lazer build that wrote each score in the corpus");
     Console.Error.WriteLine("  offsets <replay>      per click-judged object: result, hit offset, distance to the great edge");
     Console.Error.WriteLine("  flam <replay> [out]   build a self-contained page that clicks the map and your taps");
+    Console.Error.WriteLine("  scene <replay> [out]  emit the viewer's input: slider polylines, cursor frames, judgements");
     Console.Error.WriteLine("  rhythm [gap] [tol]... extract rhythmic groups and constant-snap runs across the corpus");
     Console.Error.WriteLine("  geometry              extract per-object geometry, cross-checking the angle against lazer");
     Console.Error.WriteLine("    both take --corpus <path> and --out <path>");
@@ -258,6 +260,66 @@ switch (args[0])
         Console.WriteLine(Flam.Summarise(track));
         Console.WriteLine($"written: {destination}");
         return 0;
+    }
+
+    case "scene":
+    {
+        // Everything the viewer needs, precomputed. The slider polylines are the reason this
+        // exists: lazer's piecewise-linear approximation *is* the path for every gameplay
+        // purpose, and a viewer that fitted its own curves would disagree with the game
+        // slightly, everywhere, without ever throwing.
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine("scene: expected a replay path");
+            return 2;
+        }
+
+        var index = BeatmapIndex.Read("build/beatmap-index.json");
+        var score = ReplayLoader.Decode(args[1], index);
+        var header = ReplayLoader.ReadHeader(args[1]);
+        var playable = new FlatWorkingBeatmap(index[header.BeatmapMd5].Path)
+            .GetPlayableBeatmap(new OsuRuleset().RulesetInfo, score.ScoreInfo.Mods);
+
+        // The polylines and frames are unaffected by the mod, but the judgements are not:
+        // Classic swaps in the legacy hit policy and changes slider head and tail rules, none
+        // of which is ported — which is why `verify` puts Classic scores out of scope rather
+        // than counting them. Say so, instead of colouring a trail from results the player
+        // never saw.
+        if (score.ScoreInfo.Mods.Any(m => m is OsuModClassic))
+        {
+            Console.Error.WriteLine("warning: this score is Classic. Slider paths and cursor frames are unaffected, "
+                                    + "but the per-object judgements come from the lazer-strict rules this project "
+                                    + "ports, not the ones it was played under.");
+        }
+
+        var document = Scene.Build(args[1], playable, score, header.BeatmapMd5);
+        string destination = args.Length > 2
+            ? args[2]
+            : Path.Combine("build", "scene", Path.GetFileNameWithoutExtension(args[1]) + ".json");
+
+        Scene.Write(document, destination);
+
+        // The one piece of arithmetic left to the viewer, checked against lazer before any
+        // of it is written. Ticks and repeats carry both a path progress and the position
+        // lazer placed them at, so walking the emitted polyline to that progress has an
+        // oracle for free.
+        var check = Scene.CrossCheck(document);
+
+        Console.WriteLine(Scene.Summarise(document, new FileInfo(destination).Length));
+        Console.WriteLine($"path walk cross-check: {check.Checked - check.Diverged} of {check.Checked} nested positions reproduced"
+                          + (check.Diverged > 0 ? $", worst divergence {check.Worst:0.###} px" : string.Empty));
+
+        // Not a failure: lazer drops vertices from an optimised Catmull path and counts their
+        // length anyway, so the walk cannot land exactly. Reported so the residual stays
+        // visible and bounded instead of being absorbed into a wider tolerance.
+        if (check.OptimisedSliders > 0)
+        {
+            Console.WriteLine($"  plus {check.OptimisedChecked} on {check.OptimisedSliders} Catmull-optimised slider(s), "
+                              + $"within {check.OptimisedWorst:0.###} px");
+        }
+
+        Console.WriteLine($"written: {destination}");
+        return check.Diverged > 0 ? 1 : 0;
     }
 
     case "rhythm":
