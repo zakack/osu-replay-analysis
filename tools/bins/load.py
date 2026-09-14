@@ -184,6 +184,11 @@ def observations(source: Source, *, maps: set[str] | None = None,
                 # tracking left it, not from the tail.
                 from_slider="1" if row["exitSlackRadii"] else "0",
                 angle=angle,
+                # spacingRadii, not minJumpRadii. The two differ only where a slider came
+                # before, and what an axis should carry is the jump the map asks for, not
+                # the one the follow circle shortens. The slider case is already visible
+                # twice over: fromSlider is a facet, and exitSlackRadii measures the
+                # correction directly.
                 spacing=_num(row["spacingRadii"]),
                 velocity=_num(row["requiredVelocity"]),
                 delta_time=_num(row["deltaTime"]),

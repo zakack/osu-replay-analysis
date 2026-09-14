@@ -142,7 +142,10 @@ public static class Geometry
     /// <summary>
     /// The turn at <paramref name="apex"/>, measured the way lazer measures it so the
     /// magnitudes can be compared: pi is straight through, zero is a full reversal. The sign
-    /// is ours, and it is positive for a counter-clockwise turn.
+    /// is ours: positive is the cross product of the incoming and outgoing legs, which in
+    /// osu! coordinates — where y increases <em>downward</em> — is a turn that reads
+    /// clockwise on screen. This comment said counter-clockwise until the binning layer had
+    /// to put a word on the label a player would read.
     /// </summary>
     private static double signedAngle(Vector2 from, Vector2 apex, Vector2 to)
     {

@@ -14,11 +14,12 @@ skipped the loader would pass happily through either.
 from __future__ import annotations
 
 import os
+import statistics
 import sys
 import tempfile
 
 from .. import cells, compare, load, maptiming, stats
-from ..schema import SCHEMES
+from ..schema import CONTROLS, SCHEMES
 from . import synthetic
 
 SCHEME = "angle-spacing-snap"
@@ -51,20 +52,28 @@ def _findings(directory, *, detrend=False, min_n_player=None, **corpus):
 
     bias = {}
     if detrend:
-        bias = maptiming.object_bias(load.observations(reference, maps=shared))
+        # Filtered the way the command line filters it. A test that detrends against
+        # every estimate is not testing the path that ships.
+        estimated = maptiming.object_bias(load.observations(reference, maps=shared))
+        bias = {k: b for k, b in estimated.items()
+                if b.n >= 20 and abs(b.median) >= 5.0}
 
     def stream(source):
         observations = load.observations(source, maps=shared)
         return maptiming.detrend(observations, bias) if bias else observations
 
-    keyer = lambda o: cells.key(o, SCHEME)
-    reference_cells = stats.aggregate(stream(reference), keyer)
-    player_cells = stats.aggregate(stream(player), keyer)
+    control_scheme = CONTROLS[SCHEME][0]
+    keyers = {name: (lambda o, s=name: cells.key(o, s))
+              for name in (SCHEME, control_scheme)}
+    reference_tables = stats.aggregate_many(stream(reference), keyers)
+    player_tables = stats.aggregate_many(stream(player), keyers)
 
     skipped: dict[str, int] = {}
     gate = {} if min_n_player is None else {"min_n_player": min_n_player}
-    rows = compare.compare(player_cells, reference_cells, scheme=SCHEME,
-                           detrended=bool(bias), skipped=skipped, **gate)
+    rows = compare.compare(player_tables[SCHEME], reference_tables[SCHEME],
+                           scheme=SCHEME, detrended=bool(bias), skipped=skipped,
+                           control=(player_tables[control_scheme],
+                                    reference_tables[control_scheme]), **gate)
     return rows, skipped, bias
 
 
@@ -105,6 +114,34 @@ def test_widening_surfaces():
         top = _top(rows, "hitSd")
         assert top.cell == DEFECT, f"expected {DEFECT} on top, got {top.cell} (z={top.z:.1f})"
         assert 1.7 < top.effect < 2.3, f"recovered ratio {top.effect:.2f}, expected ~2"
+
+        # The control column is the one that makes the table readable, so it gets its own
+        # assertion. The defect cell must stay wide once its own snap's baseline is
+        # divided out, and every other cell at that snap must collapse to about one —
+        # otherwise the geometry axes are taking credit for a rhythm-wide effect.
+        assert top.relativeEffect is not None, "no control effect was computed"
+        assert 1.6 < top.relativeEffect < 2.4, (
+            f"defect cell relative effect {top.relativeEffect:.2f}, expected ~2")
+
+        siblings = [r.relativeEffect for r in rows
+                    if r.metric == "hitSd" and r.stratum == "all"
+                    and r.cell.endswith("|" + synthetic.DEFECT[2])
+                    and r.cell != DEFECT and r.relativeEffect is not None]
+        assert siblings, "no sibling cells at the defect's snap to compare against"
+
+        # On the median sibling, not the extreme one. At sixty observations a cell's
+        # standard deviation carries about nine percent of sampling error on its own, so
+        # the widest of thirty clean cells is several of those out by construction and
+        # asserting on it would only test the seed. The typical clean cell is the claim.
+        #
+        # It lands just under one rather than at one because the control pools the defect
+        # cell in with the rest of its snap: a baseline that excluded the cell being
+        # measured would be a different cell for every row, and not a baseline.
+        typical = statistics.median(siblings)
+        assert 0.85 < typical < 1.15, f"clean cells read {typical:.2f} after control"
+        assert top.relativeEffect > max(siblings) * 1.5, (
+            f"defect {top.relativeEffect:.2f} does not stand clear of the cleanest "
+            f"sibling {max(siblings):.2f}")
 
 
 def test_clean_player_finds_nothing():

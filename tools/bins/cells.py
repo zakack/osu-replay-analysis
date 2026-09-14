@@ -11,7 +11,7 @@ from __future__ import annotations
 import itertools
 from collections.abc import Iterator
 
-from .schema import FACETS, SCHEMES, Axis, Categorical, Observation
+from .schema import CONTROLS, FACETS, SCHEMES, Axis, Categorical, Observation
 
 # Axis name -> the Observation attribute it reads. An axis that is added to the schema
 # without a line here fails loudly on the first observation rather than binning nothing.
@@ -20,9 +20,23 @@ FIELDS: dict[str, str] = {
     "spacing": "spacing",
     "velocity": "velocity",
     "snap": "snap",
+    "runPosition": "run_index",
     "target": "target",
     "fromSlider": "from_slider",
 }
+
+
+def control_key(observation: Observation, scheme: str) -> tuple[str, ...] | None:
+    """The cell in this scheme's control that an observation belongs to.
+
+    None when the scheme has no control. Keyed on a subset of the scheme's own axes, so
+    an observation always lands in exactly one control cell and the two tables partition
+    the same data.
+    """
+    control = CONTROLS.get(scheme)
+    if control is None:
+        return None
+    return key(observation, control[0])
 
 
 def key(observation: Observation, scheme: str) -> tuple[str, ...] | None:

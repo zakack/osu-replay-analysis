@@ -16,8 +16,8 @@ import argparse
 import sys
 import time
 from . import cells, compare, load, maptiming, stats
-from .schema import (FINDINGS_COLUMNS, MIN_N_PLAYER, MIN_N_REFERENCE, SCHEMA_VERSION,
-                     SCHEMES)
+from .schema import (CONTROLS, FINDINGS_COLUMNS, MIN_N_PLAYER, MIN_N_REFERENCE,
+                     SCHEMA_VERSION, SCHEMES)
 
 # Metrics that survive having a per-object constant subtracted from them. A mean does; a
 # standard deviation does not, because the constant is an estimate and its noise is not
@@ -70,7 +70,11 @@ def map_bias(args) -> int:
 def findings(args) -> int:
     shared = _sources(args)
     schemes = list(SCHEMES) if args.scheme == "all" else [args.scheme]
-    keyers = {name: (lambda o, s=name: cells.key(o, s)) for name in schemes}
+
+    # Every control a requested scheme needs is aggregated too, even when it was not
+    # asked for. A row without its control is a row that cannot be read.
+    needed = set(schemes) | {CONTROLS[s][0] for s in schemes if s in CONTROLS}
+    keyers = {name: (lambda o, s=name: cells.key(o, s)) for name in sorted(needed)}
 
     bias = {}
     if args.detrend:
@@ -107,11 +111,15 @@ def findings(args) -> int:
         player_tables = aggregate(load.PLAYER, detrended, players={args.player})
 
         for scheme in schemes:
+            control = CONTROLS.get(scheme)
+            tables = ((player_tables[control[0]], reference_tables[control[0]])
+                      if control else None)
+
             found = compare.compare(player_tables[scheme], reference_tables[scheme],
                                     scheme=scheme, detrended=detrended,
                                     min_n_player=args.min_n_player,
                                     min_n_reference=args.min_n_reference,
-                                    metrics=metrics, skipped=skipped)
+                                    metrics=metrics, control=tables, skipped=skipped)
             rows.extend(found)
             print(f"  {scheme:<20}{'detrended' if detrended else 'raw':<10}"
                   f"{len(player_tables[scheme]):>7} player cells "
@@ -135,7 +143,8 @@ def scheme(args) -> int:
     print(f"min n: player {MIN_N_PLAYER}, reference {MIN_N_REFERENCE}")
 
     for name, axes in SCHEMES.items():
-        print(f"\n{name}")
+        control = CONTROLS.get(name)
+        print(f"\n{name}" + (f"   controlled by {control[0]}" if control else ""))
         for axis in axes:
             print(f"  {axis.name:<10}{axis.unit:<16}{' '.join(axis.labels)}")
         print(f"  cells: {len(list(cells.enumerate_cells(name)))}")

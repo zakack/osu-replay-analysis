@@ -23,6 +23,8 @@ from dataclasses import dataclass
 
 from .schema import (FINDINGS_COLUMNS, METRICS, MIN_N_PLAYER, MIN_N_REFERENCE,
                      SCHEMA_VERSION, CellStats)
+from .cells import describe
+from .schema import CONTROLS
 from .stats import CellKey
 
 
@@ -49,6 +51,8 @@ class Finding:
     effect: float
     effectKind: str
     z: float
+    controlEffect: float | None
+    relativeEffect: float | None
     detrended: int
 
 
@@ -57,6 +61,7 @@ def compare(player: dict[CellKey, CellStats], reference: dict[CellKey, CellStats
             min_n_player: int = MIN_N_PLAYER,
             min_n_reference: int = MIN_N_REFERENCE,
             metrics: tuple[str, ...] | None = None,
+            control: tuple[dict[CellKey, CellStats], dict[CellKey, CellStats]] | None = None,
             skipped: MutableMapping[str, int] | None = None) -> list[Finding]:
     """Every cell both sides populate well enough, once per metric in ``schema.METRICS``.
 
@@ -64,6 +69,17 @@ def compare(player: dict[CellKey, CellStats], reference: dict[CellKey, CellStats
     The reference corpus has no eras — it is other people's replays, and the input-regime
     dates are a fact about this player's machine — so splitting it by anything would only
     shrink it against no gain.
+
+    ``control``, if given, is ``(player, reference)`` for this scheme's control scheme
+    (see ``schema.CONTROLS``) — the same observations binned with the geometry taken out. Each
+    row then also reports what the same metric did in its control cell, and its own effect
+    with that divided or subtracted away.
+
+    This is the difference between a table that says something and one that says
+    everything. When a player's whole baseline is two and a half times the reference,
+    every geometry cell reports two and a half times at overwhelming significance, and
+    reading which cells are worse *than that baseline* means dividing one row of this
+    table by another. That is classification, and it does not get handed upward.
 
     ``metrics`` restricts which of ``schema.METRICS`` are emitted. It exists for one
     case: hit errors with a map's own bias removed are sound for a *location* metric and
@@ -110,6 +126,17 @@ def compare(player: dict[CellKey, CellStats], reference: dict[CellKey, CellStats
             # the hit-error count would be reading a denominator that never applied.
             n_p = getattr(p, population)
             n_r = getattr(r, population)
+
+            # The control cell is keyed on the leading axes this scheme shares with its
+            # control, which for every scheme that has one means the snap alone.
+            control_effect = relative = None
+            if control is not None:
+                controls = _control_effect(metric, control, target, from_slider,
+                                           stratum, cell, scheme)
+                if controls is not None:
+                    control_effect = controls
+                    relative = (effect / control_effect if kind == "ratio"
+                                else effect - control_effect)
             findings.append(Finding(
                 schemaVersion=SCHEMA_VERSION,
                 scheme=scheme,
@@ -125,6 +152,8 @@ def compare(player: dict[CellKey, CellStats], reference: dict[CellKey, CellStats
                 effect=effect,
                 effectKind=kind,
                 z=z,
+                controlEffect=control_effect,
+                relativeEffect=relative,
                 detrended=1 if detrended else 0,
             ))
 
@@ -189,6 +218,36 @@ def _statistic(metric: str, p: CellStats, r: CellStats,
     raise ValueError(f"unknown metric {metric!r}")
 
 
+def _control_effect(metric: str,
+                    control: tuple[dict[CellKey, CellStats], dict[CellKey, CellStats]],
+                    target: str,
+                    from_slider: str, stratum: str, cell: tuple[str, ...],
+                    scheme: str) -> float | None:
+    """This cell's effect as its control scheme measures it, geometry removed.
+
+    The control cell is found by taking the scheme's axes that the control also has. The
+    facets and the stratum come along unchanged: a slider-exit turn in the overlapping
+    era is controlled against slider-exit turns in the overlapping era, not against the
+    corpus at large, or the control would be removing the facet as well as the geometry.
+    """
+    axes = describe(scheme)
+    control_axes = describe(CONTROLS[scheme][0])
+
+    try:
+        key = tuple(cell[axes.index(name)] for name in control_axes)
+    except ValueError:
+        return None
+
+    player_control, reference_control = control
+    p = player_control.get((target, from_slider, stratum, key))
+    r = reference_control.get((target, from_slider, "all", key))
+    if p is None or r is None:
+        return None
+
+    outcome = _statistic(metric, p, r)
+    return None if isinstance(outcome, str) else outcome[2]
+
+
 def _count(counts: MutableMapping[str, int], reason: str) -> None:
     counts[reason] = counts.get(reason, 0) + 1
 
@@ -209,4 +268,6 @@ def write(findings: Iterable[Finding], destination: str) -> None:
 
 
 def _format(value: object) -> str:
+    if value is None:
+        return ""
     return f"{value:.6g}" if isinstance(value, float) else str(value)

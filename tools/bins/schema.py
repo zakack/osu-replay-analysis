@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 DEG = 180 / math.pi
 
@@ -115,6 +115,17 @@ VELOCITY = Axis(
 # Rhythm as a fraction of the beat, taken from the quantised value the rhythm pass
 # already computed. Anything not in this set is dropped rather than pooled into an
 # "other" bin that would mix triplets with dotted rhythms with timing-point noise.
+# Position within a constant-snap run. The one axis that is not geometry at all, and the
+# one the project's existing finding lives on: timing spread grows from the start of a
+# stream to the end of it. Banded rather than per-index, because position 14 only exists
+# inside long streams and long streams sit on harder maps, so an unbanded trend measures
+# map difficulty as much as it measures fatigue.
+RUN_POSITION = Axis(
+    "runPosition",
+    (0.0, 2.0, 5.0, 9.0, 14.0, math.inf),
+    "index in run",
+)
+
 SNAP = Categorical(
     "snap",
     ("0.125", "0.1667", "0.25", "0.3333", "0.5", "0.75", "1", "1.5", "2"),
@@ -136,10 +147,26 @@ SCHEMES: dict[str, tuple[Axis | Categorical, ...]] = {
     # Angle against the demand axis directly, which pools maps of different tempo that
     # ask for the same thing.
     "angle-velocity": (ANGLE, VELOCITY),
+    # Where in a stream the click fell, with no geometry. Steps 5 and 6 found the
+    # player's spread growing through a run and had to say so in prose; this is that
+    # finding with a cell to live in.
+    "snap-runposition": (SNAP, RUN_POSITION),
     # Geometry removed entirely. The control for every finding above: if a cell in one
     # of the schemes above is only as bad as its snap alone predicts, the geometry is
     # not what is wrong.
     "snap-only": (SNAP,),
+}
+
+# Which scheme each scheme is measured against, and on which of its axes the lookup is
+# keyed. Without this the table is unreadable in a specific way: when the player's whole
+# baseline is two and a half times the reference, every one of six hundred geometry cells
+# reports "two and a half times, hugely significant", and separating the cells that are
+# worse than that baseline from the ones merely carrying it becomes arithmetic the
+# reading layer has to do on two rows of this table. That arithmetic is classification,
+# so it belongs here.
+CONTROLS: dict[str, tuple[str, str]] = {
+    "angle-spacing-snap": ("snap-only", "snap"),
+    "snap-runposition": ("snap-only", "snap"),
 }
 
 # --------------------------------------------------------------------------------------
@@ -254,6 +281,8 @@ FINDINGS_COLUMNS: tuple[str, ...] = (
     "effect",         # ratio or difference, per METRICS
     "effectKind",
     "z",              # effect over its standard error; sign is "worse than reference"
+    "controlEffect",  # the same effect in this cell's control cell, or empty if none
+    "relativeEffect", # effect once the control is divided or subtracted out
     "detrended",      # 1 if hit errors had the per-object reference median removed
 )
 
