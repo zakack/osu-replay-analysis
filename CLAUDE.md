@@ -329,6 +329,51 @@ section, it's the map, not the player.
   scattering around zero) but the *cause* — the map snapped to a music layer the player
   wasn't tracking — is not recoverable from the beatmap alone.
 
+## The interesting log
+
+`INTERESTING.md` is an append-only log of leads — things noticed while doing something else
+that deserve attention later. **Agents append to it and never read it.** Reading, grooming,
+deleting and promoting anything out of it into this file is a manual pass, done by hand with
+time to think. That split is the design: recording a lead has to cost near zero, and deciding
+what a lead is worth is paid by someone who is not mid-task.
+
+**The trigger is the word "interesting."** When the user opens a message with it, or calls
+some result interesting, append what they are reacting to. Do not ask whether to log it and
+do not stop to do it well — append, then carry on with whatever the message actually asked
+for. The user is a better detector than any heuristic here: the reaction fires on genuine
+surprise, and a surprise is exactly a fact the current model of the data did not predict.
+Append unprompted too, whenever something turns up that is worth attention but is not the
+task.
+
+One append, no reading the file first. Quote the heredoc delimiter, or the backticks and
+`$` in a path will execute:
+
+    cat >> INTERESTING.md <<'MD'
+
+    ## <today> — <what, in a phrase>
+
+    `<where the evidence is>`
+
+    <why it might matter, one line, optional>
+    MD
+
+Three fields, because those are the three already known without stopping to think. **what**
+is the thing in a phrase. **where** is a path, a command, a score id — whatever makes it
+findable again without the session that found it, and it is the field that matters most while
+costing least, because it is already on screen. **why** is optional and "unclear, just odd" is
+a complete answer; it is the only field costing real thought, and it earns that because the
+evidence survives in the repo while the reason something looked odd is gone within the hour.
+
+There is deliberately no severity, no category and no next step. Those are curation decisions.
+An agent guessing at them mid-task stalls on "does this count as X?" and then writes filler to
+satisfy the form — friction that buys nothing and produces a field the curator ignores. Keep
+entries to a few lines; polish is not expected and a sloppy entry is worth strictly more than
+a skipped one.
+
+`.gitattributes` sets `merge=union` on the file, because an append-only log is otherwise the
+worst possible shape for parallel worktrees: every branch appends at the end, so every merge
+conflicts on the same line.
+
 ## Licensing
 
 **This project is non-commercial only.** That decision settles most of what used to be a

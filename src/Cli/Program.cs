@@ -32,7 +32,7 @@ if (args.Length == 0)
     Console.Error.WriteLine("  scene <replay> [out]  emit the viewer's input: slider polylines, cursor frames, judgements");
     Console.Error.WriteLine("  rhythm [gap] [tol]... extract rhythmic groups and constant-snap runs across the corpus");
     Console.Error.WriteLine("  geometry              extract per-object geometry, cross-checking the angle against lazer");
-    Console.Error.WriteLine("    both take --corpus <path> and --out <path>");
+    Console.Error.WriteLine("    these, and verify, take --corpus <path> and --out <path>");
     Console.Error.WriteLine("  tail-sweep [ms]...    trim the end off replays that stopped early and report the drift");
     Console.Error.WriteLine("  sweep [ms]...         shift every replay frame time and report the drift in click judgements");
     return 2;
@@ -150,7 +150,8 @@ switch (args[0])
         Verification.IncludeClassic = args[0] == "verify-classic";
 
         var index = BeatmapIndex.Read("build/beatmap-index.json");
-        var corpus = CorpusSurvey.ReadRecords("build/corpus.json");
+        var (corpusPath, verificationOut) = paths(args, "build/verification.json");
+        var corpus = CorpusSurvey.ReadRecords(corpusPath);
 
         var eligible = corpus.Where(r => r is { RulesetId: 0, Paired: true, DecodeError: null }).ToArray();
         var results = new List<VerificationResult>(eligible.Length);
@@ -159,8 +160,8 @@ switch (args[0])
             results.Add(Verification.Verify(record, index));
 
         Report.Print(results, Console.Out);
-        Report.Write(results, "build/verification.json");
-        Console.WriteLine("written: build/verification.json");
+        Report.Write(results, verificationOut);
+        Console.WriteLine($"written: {verificationOut}");
         return 0;
     }
 
