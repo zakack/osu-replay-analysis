@@ -73,3 +73,21 @@ def enumerate_cells(scheme: str) -> Iterator[tuple[str, ...]]:
     """Every cell a scheme can produce. Used to prove the table is not missing cells
     that simply never got any data."""
     return itertools.product(*(axis.labels for axis in SCHEMES[scheme]))
+
+
+def bounds(scheme: str, cell: tuple[str, ...]) -> tuple[tuple[float, float] | None, ...]:
+    """The numeric edges of each axis of a cell, or None for a categorical axis.
+
+    A drawing of a cell needs the edges as numbers, not as the labels the findings table
+    carries. Reading them back by parsing "1.5:2" would put a second edge-parser in the
+    codebase and the two would eventually disagree, so this indexes the axis's own labels
+    and returns the edges at that index. The schema stays the only place edges are written.
+    """
+    out: list[tuple[float, float] | None] = []
+    for axis, part in zip(SCHEMES[scheme], cell, strict=True):
+        if isinstance(axis, Categorical):
+            out.append(None)
+            continue
+        i = axis.labels.index(part)
+        out.append((axis.edges[i], axis.edges[i + 1]))
+    return tuple(out)

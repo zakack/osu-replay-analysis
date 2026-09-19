@@ -1,0 +1,758 @@
+<meta charset="utf-8">
+<title>Cell Atlas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #E7E9E8; --panel: #F3F5F4; --panel-2: #DFE3E2; --line: #CBD2D1;
+    --text: #161D21; --dim: #5C6A72; --faint: #8896A0;
+    --scope: #05080A; --scope-line: #16202A;
+    --early: #3D9BE9; --true: #93A6B0; --late: #F0994A; --miss: #E2504E;
+    --accent: #7A6BE0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0B0E11; --panel: #12171B; --panel-2: #1A2126; --line: #232D34;
+      --text: #D8DFE4; --dim: #8293A0; --faint: #5E6E79; --accent: #9B8DF0;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0B0E11; --panel: #12171B; --panel-2: #1A2126; --line: #232D34;
+    --text: #D8DFE4; --dim: #8293A0; --faint: #5E6E79; --accent: #9B8DF0;
+  }
+
+  * { box-sizing: border-box; }
+  body { background: var(--ground); color: var(--text);
+         font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+         font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+
+  .shell { max-width: 1240px; margin: 0 auto; padding: 22px 20px 40px;
+           display: flex; flex-direction: column; gap: 16px; }
+  .masthead { display: flex; flex-wrap: wrap; align-items: flex-end;
+              justify-content: space-between; gap: 14px 24px;
+              padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.015em; }
+  .sub { margin: 4px 0 0; color: var(--dim); font-size: 13px; max-width: 70ch; }
+  .k { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 10px;
+       font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+          font-variant-numeric: tabular-nums; }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tabs button { font: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
+                 padding: 5px 12px; border-radius: 3px; color: var(--dim);
+                 background: var(--panel); border: 1px solid var(--line); }
+  .tabs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent);
+                                      color: #fff; }
+  .tabs button span { font-family: "IBM Plex Mono", monospace; opacity: .7;
+                      margin-left: 7px; font-size: 11px; }
+
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 132px; gap: 16px;
+           align-items: start; }
+  @media (max-width: 760px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+
+  .board { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+  .cellkey { display: flex; flex-wrap: wrap; border: 1px solid var(--line);
+             border-radius: 3px; overflow: hidden; background: var(--panel); }
+  .cellkey div { display: flex; flex-direction: column; gap: 2px; padding: 7px 13px; }
+  .cellkey div + div { border-left: 1px solid var(--line); }
+  .cellkey b { font-family: "IBM Plex Mono", monospace; font-size: 15px; font-weight: 600; }
+
+  /* Square, because the drawing is polar and a letterboxed canvas would just pad it. */
+  canvas.main { width: 100%; max-width: 60vh; aspect-ratio: 1 / 1; display: block;
+                margin: 0 auto; border-radius: 4px; background: var(--scope); }
+
+  .strip { display: flex; flex-direction: column; gap: 5px; max-height: 70vh;
+           overflow-y: auto; padding-right: 4px; }
+  /* flex-shrink would squash a hundred thumbnails into a hundred hairlines. */
+  .strip button { flex: 0 0 auto; position: relative; padding: 0; cursor: pointer;
+                  border-radius: 3px; border: 1px solid var(--line);
+                  background: var(--scope); line-height: 0; overflow: hidden; }
+  .strip button[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .strip canvas { width: 100%; aspect-ratio: 1 / 1; display: block; }
+  .strip .tag { position: absolute; left: 0; right: 0; bottom: 0; padding: 1px 4px;
+                font-family: "IBM Plex Mono", monospace; font-size: 9px; line-height: 1.5;
+                color: #C9D4DB; background: rgba(5, 8, 10, .74); text-align: left;
+                display: flex; justify-content: space-between; }
+  .strip .rung { width: 4px; position: absolute; left: 0; top: 0; bottom: 0; }
+
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+         justify-content: space-between; }
+  .nav { display: flex; gap: 6px; align-items: center; }
+  .nav button { font: inherit; font-size: 12px; cursor: pointer; padding: 4px 10px;
+                border-radius: 3px; background: var(--panel); color: var(--text);
+                border: 1px solid var(--line); }
+  .nav button:disabled { opacity: .4; cursor: default; }
+
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+              gap: 1px; background: var(--line); border: 1px solid var(--line);
+              border-radius: 3px; overflow: hidden; }
+  .stat-row div { background: var(--panel); padding: 8px 13px; display: flex;
+                  flex-direction: column; gap: 1px; }
+  .stat-row b { font-family: "IBM Plex Mono", monospace; font-size: 16px; font-weight: 600; }
+  .stat-row em { font-style: normal; font-size: 11px; color: var(--dim); }
+
+  .note { margin: 0; color: var(--dim); font-size: 12.5px; max-width: 78ch; }
+  .note b { color: var(--text); font-weight: 600; }
+  .warn { border-left: 2px solid var(--late); padding-left: 10px; }
+
+  .foot { margin: 6px 0 0; color: var(--faint); font-size: 12px; max-width: 86ch; }
+  .foot code { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--dim); }
+  details summary { cursor: pointer; color: var(--dim); font-size: 12.5px; }
+  details[open] summary { margin-bottom: 8px; }
+  table.drops { border-collapse: collapse; font-size: 12px; }
+  table.drops td { padding: 2px 14px 2px 0; }
+  table.drops td.n { font-family: "IBM Plex Mono", monospace; text-align: right; }
+</style>
+
+<div class="shell">
+  <div class="masthead">
+    <div>
+      <h1>Cell atlas</h1>
+      <p class="sub" id="sub"></p>
+    </div>
+    <div class="tabs" id="tabs"></div>
+  </div>
+
+  <div class="stage">
+    <div class="board">
+      <div class="cellkey" id="cellkey"></div>
+      <canvas class="main" id="board"></canvas>
+      <div class="bar">
+        <div class="nav">
+          <button id="prev">&larr;</button>
+          <button id="next">&rarr;</button>
+          <span class="k" id="pos"></span>
+        </div>
+        <div class="nav">
+          <button id="fit">fit each slide</button>
+          <span class="k" id="extlabel"></span>
+        </div>
+      </div>
+      <div class="stat-row" id="stats"></div>
+      <p class="note" id="slidenote"></p>
+    </div>
+    <div class="strip" id="strip"></div>
+  </div>
+
+  <p class="foot">
+    Each instance is one turn, drawn in the cell&rsquo;s own frame: the apex at the origin,
+    the approach rotated onto the axis pointing right, distances in circle radii. The
+    features are rotation and scale invariant by construction, so turns from anywhere on
+    the playfield superimpose exactly and a cell drawn from a CS4 map and a CS7 map is the
+    same picture. Cell membership and the boundary both come from the binning package that
+    produced the findings table, so the drawing and the number cannot disagree about what
+    is in the bin or where its edges are. Chirality is preserved rather than folded: a turn
+    below the axis went the other way round, and mirroring it in would erase the asymmetry
+    the signed angle exists to keep.
+  </p>
+  <details id="dropdetail">
+    <summary>What was left out, and why</summary>
+    <div id="drops"></div>
+  </details>
+</div>
+
+<script type="application/json" id="payload">/*__PAYLOAD__*/</script>
+<script>
+(function () {
+  "use strict";
+
+  var D = JSON.parse(document.getElementById("payload").textContent);
+  var css = getComputedStyle(document.documentElement);
+  function tok(n, f) { return (css.getPropertyValue(n) || "").trim() || f; }
+
+  var RAD = Math.PI / 180;
+  var UNITS = { angle: "degrees, signed", spacing: "circle radii", snap: "beats",
+                velocity: "radii per ms", runPosition: "index in run" };
+
+  var schemeNames = Object.keys(D.schemes);
+  var scheme = schemeNames[0];
+  var at = 0;
+  // Per slide by default. A single deck-wide frame is the more comparable choice and is
+  // what the toggle offers, but one cell whose exits run to ten radii would otherwise set
+  // the scale for every cell whose exits fit inside one, and squash all of them to a dot.
+  // The rung tint on the strip, the ring spacing, the corner readout and the ghost of the
+  // previous frame are what keep a change of scale from being silent.
+  var fitEach = true;
+  var decks = {};
+
+  // ---- decode -------------------------------------------------------------
+
+  var I = D.instances;
+  function inst(i) {
+    var a = I.a[i] / 10;
+    var x = I.x[i] / 100;
+    return { t: I.t[i], e: I.e[i] / 100, a: a, x: x, v: I.v[i] / 10000,
+             ex: x * Math.cos(a * RAD), ey: x * Math.sin(a * RAD) };
+  }
+
+  // ---- the deck -----------------------------------------------------------
+
+  function deck(name) {
+    if (decks[name]) return decks[name];
+    var S = D.schemes[name];
+    var out = [{ kind: "census", scheme: name }];
+    S.slides.forEach(function (s) { out.push({ kind: "cell", scheme: name, s: s }); });
+    if (S.residue) out.push({ kind: "residue", scheme: name, s: S.residue });
+    decks[name] = out;
+    return out;
+  }
+
+  function deckExtent(name) {
+    var e = 0;
+    deck(name).forEach(function (sl) { if (sl.s && sl.s.ext > e) e = sl.s.ext; });
+    return e || D.extLadder[D.extLadder.length - 1];
+  }
+
+  function extentOf(sl) {
+    if (sl.kind === "census") return null;
+    return fitEach ? sl.s.ext : deckExtent(sl.scheme);
+  }
+
+  // ---- canvas -------------------------------------------------------------
+
+  function fit(canvas, ctx) {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = Math.max(1, Math.round(w * dpr));
+    canvas.height = Math.max(1, Math.round(h * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { w: w, h: h };
+  }
+
+  function frame(box, ext) {
+    var s = Math.min(box.w, box.h) / (ext * 2);
+    return { ox: box.w / 2, oy: box.h / 2, s: s, ext: ext };
+  }
+
+  function px(f, x, y) { return [f.ox + x * f.s, f.oy + y * f.s]; }
+
+  // The canonical angle is the signed angle itself: the frame puts the approach on +x, so
+  // a point's polar angle is its turn. Canvas y grows downward and ctx.arc sweeps toward
+  // +y, and the schema calls a positive angle clockwise on screen, so all of it lines up
+  // with no flip anywhere. Any sign correction here would be a bug wearing a fix.
+  function wedge(ctx, f, sl) {
+    var g = D.schemes[sl.scheme].geometry, b = sl.s.bounds;
+    if (!b || g.angle === null) return;
+    var a0 = b[g.angle][0] * RAD, a1 = b[g.angle][1] * RAD;
+
+    if (g.radius === null) {
+      // Nothing bounds the radius, so the cell is an unbounded slice, not an annulus.
+      ctx.strokeStyle = tok("--accent", "#7A6BE0");
+      ctx.globalAlpha = .5; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      [a0, a1].forEach(function (a) {
+        var p = px(f, Math.cos(a) * f.ext * 1.5, Math.sin(a) * f.ext * 1.5);
+        ctx.beginPath(); ctx.moveTo(f.ox, f.oy); ctx.lineTo(p[0], p[1]); ctx.stroke();
+      });
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      return;
+    }
+
+    var r0 = b[g.radius][0], r1 = sl.s.clip !== null && sl.s.clip !== undefined
+      ? sl.s.clip : b[g.radius][1];
+    ctx.beginPath();
+    ctx.arc(f.ox, f.oy, r1 * f.s, a0, a1, false);
+    ctx.arc(f.ox, f.oy, r0 * f.s, a1, a0, true);
+    ctx.closePath();
+    ctx.fillStyle = tok("--accent", "#7A6BE0");
+    ctx.globalAlpha = .1; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = tok("--accent", "#7A6BE0");
+    ctx.lineWidth = 1.25;
+    // A clipped outer arc is drawn dashed, because that edge is the playfield running out
+    // rather than the cell ending.
+    if (sl.s.clip !== null && sl.s.clip !== undefined) ctx.setLineDash([4, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  function rings(ctx, f) {
+    ctx.strokeStyle = tok("--scope-line", "#16202A");
+    ctx.lineWidth = 1;
+    var step = f.ext > 12 ? 5 : f.ext > 6 ? 2 : 1;
+    for (var r = step; r <= f.ext; r += step) {
+      ctx.beginPath(); ctx.arc(f.ox, f.oy, r * f.s, 0, 6.2832); ctx.stroke();
+    }
+    // The rings are the scale bar. If the extent changes, their spacing changes with it,
+    // so a change of scale is visible in the drawing and not only in the label.
+    ctx.fillStyle = tok("--faint", "#5E6E79");
+    ctx.font = '10px "IBM Plex Mono", monospace';
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    for (var q = step; q <= f.ext; q += step) {
+      ctx.fillText(q + "r", f.ox, f.oy - q * f.s - 3);
+    }
+  }
+
+  function overlay(ctx, f, sl) {
+    var ov = sl.s.overlay;
+    if (!ov || !ov.n) return;
+    var a0 = ov.origin[0], r0 = ov.origin[1], aw = ov.widths[0], rw = ov.widths[1];
+    var peak = 1, i;
+    for (i = 2; i < ov.exit.length; i += 3) if (ov.exit[i] > peak) peak = ov.exit[i];
+
+    ctx.fillStyle = tok("--true", "#93A6B0");
+    for (i = 0; i < ov.exit.length; i += 3) {
+      var la = (a0 + ov.exit[i] * aw) * RAD, ha = (a0 + (ov.exit[i] + 1) * aw) * RAD;
+      var lr = r0 + ov.exit[i + 1] * rw, hr = r0 + (ov.exit[i + 2 - 1] + 1) * rw;
+      hr = r0 + (ov.exit[i + 1] + 1) * rw;
+      ctx.globalAlpha = .06 + .34 * Math.sqrt(ov.exit[i + 2] / peak);
+      ctx.beginPath();
+      ctx.arc(f.ox, f.oy, hr * f.s, la, ha, false);
+      ctx.arc(f.ox, f.oy, lr * f.s, ha, la, true);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // The entry radius is the one thing the cell does not constrain, so the corpus's
+    // distribution of it is drawn as a rug along the approach axis rather than as cloud.
+    var epeak = 1;
+    for (i = 1; i < ov.entry.length; i += 2) if (ov.entry[i] > epeak) epeak = ov.entry[i];
+    ctx.fillStyle = tok("--faint", "#5E6E79");
+    var beyond = 0;
+    for (i = 0; i < ov.entry.length; i += 2) {
+      var x = ov.entry[i] * D.buckets.entry;
+      if (x > f.ext) { beyond += ov.entry[i + 1]; continue; }
+      var h = 4 + 20 * Math.sqrt(ov.entry[i + 1] / epeak);
+      ctx.globalAlpha = .5;
+      ctx.fillRect(f.ox + x * f.s, f.oy + 1, Math.max(1, D.buckets.entry * f.s - .5), h);
+    }
+    // Approaches from outside the frame are piled against its edge rather than dropped,
+    // so a cell that is mostly reached from far away says so instead of looking empty.
+    if (beyond) {
+      ctx.globalAlpha = .5;
+      ctx.fillStyle = tok("--late", "#F0994A");
+      ctx.fillRect(f.ox + f.ext * f.s - 3, f.oy + 1, 3,
+                   4 + 20 * Math.sqrt(beyond / epeak));
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function instances(ctx, f, idx, small) {
+    var line = tok("--true", "#93A6B0"), dim = tok("--faint", "#5E6E79");
+    var alpha = Math.max(.08, Math.min(.62, 14 / Math.sqrt(idx.length + 1)));
+
+    ctx.lineWidth = small ? .6 : 1;
+    idx.forEach(function (i) {
+      var o = inst(i);
+      var a = px(f, o.e, 0), b = px(f, o.ex, o.ey);
+      ctx.globalAlpha = alpha * .62;
+      ctx.strokeStyle = dim;
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(f.ox, f.oy); ctx.stroke();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = line;
+      ctx.beginPath(); ctx.moveTo(f.ox, f.oy); ctx.lineTo(b[0], b[1]); ctx.stroke();
+    });
+
+    idx.forEach(function (i) {
+      var o = inst(i);
+      var a = px(f, o.e, 0), b = px(f, o.ex, o.ey);
+      ctx.globalAlpha = Math.min(.85, alpha * 1.7);
+      ctx.fillStyle = dim;
+      ctx.beginPath(); ctx.arc(a[0], a[1], small ? 1 : 2, 0, 6.2832); ctx.fill();
+      ctx.fillStyle = tok("--accent", "#7A6BE0");
+      ctx.beginPath(); ctx.arc(b[0], b[1], small ? 1.2 : 2.6, 0, 6.2832); ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  function apex(ctx, f, small) {
+    // A hit circle at the origin, drawn at radius one, so "circle radii" is a unit you can
+    // see rather than one you have to read off an axis.
+    ctx.strokeStyle = tok("--true", "#93A6B0");
+    ctx.globalAlpha = small ? .3 : .45; ctx.lineWidth = small ? .7 : 1;
+    ctx.beginPath(); ctx.arc(f.ox, f.oy, f.s, 0, 6.2832); ctx.stroke();
+    ctx.globalAlpha = small ? .5 : .8;
+    ctx.fillStyle = tok("--true", "#93A6B0");
+    ctx.beginPath(); ctx.arc(f.ox, f.oy, small ? 1.4 : 2.8, 0, 6.2832); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  function readout(ctx, box, f) {
+    ctx.fillStyle = tok("--faint", "#5E6E79");
+    ctx.font = '11px "IBM Plex Mono", monospace';
+    ctx.textAlign = "right"; ctx.textBaseline = "top";
+    ctx.fillText("frame ±" + f.ext.toFixed(1) + " r", box.w - 10, 9);
+  }
+
+  function drawCell(ctx, box, sl, small) {
+    var f = frame(box, extentOf(sl));
+    if (!small) rings(ctx, f);
+    overlay(ctx, f, sl);
+    wedge(ctx, f, sl);
+    if (sl.kind === "residue") {
+      // No single boundary: these instances are spread over many cells, so outline each.
+      ctx.strokeStyle = tok("--faint", "#5E6E79");
+      ctx.globalAlpha = .28; ctx.lineWidth = .8;
+      var g = D.schemes[sl.scheme].geometry;
+      sl.s.cells.forEach(function (c) {
+        if (g.angle === null || g.radius === null || !c.bounds[g.radius]) return;
+        var a0 = c.bounds[g.angle][0] * RAD, a1 = c.bounds[g.angle][1] * RAD;
+        var r0 = c.bounds[g.radius][0], r1 = c.bounds[g.radius][1];
+        if (r1 === null) r1 = f.ext;
+        ctx.beginPath();
+        ctx.arc(f.ox, f.oy, r1 * f.s, a0, a1, false);
+        ctx.arc(f.ox, f.oy, r0 * f.s, a1, a0, true);
+        ctx.closePath(); ctx.stroke();
+      });
+      ctx.globalAlpha = 1;
+    }
+    instances(ctx, f, sl.s.idx, small);
+    apex(ctx, f, small);
+    if (!small) readout(ctx, box, f);
+    return f;
+  }
+
+  function drawCensus(ctx, box, sl) {
+    var c = D.schemes[sl.scheme].census;
+    var pad = 46, w = box.w - pad * 2, h = box.h - pad * 2;
+    var bars = c.histogram, peak = 1;
+    bars.forEach(function (b) { if (b[1] > peak) peak = b[1]; });
+
+    ctx.fillStyle = tok("--faint", "#5E6E79");
+    ctx.font = '11px "IBM Plex Mono", monospace';
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText("cells holding exactly n instances of this map", pad, pad - 26);
+
+    var bw = w / bars.length;
+    bars.forEach(function (b, i) {
+      var bh = (b[1] / peak) * h;
+      ctx.fillStyle = b[0] < D.threshold ? tok("--miss", "#E2504E") : tok("--accent", "#7A6BE0");
+      ctx.globalAlpha = b[0] < D.threshold ? .55 : .8;
+      ctx.fillRect(pad + i * bw, pad + h - bh, Math.max(1, bw - 1.5), bh);
+      if (b[1] >= peak * .12 || b[0] <= 3) {
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = tok("--faint", "#5E6E79");
+        ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+        ctx.fillText(String(b[1]), pad + i * bw + bw / 2, pad + h - bh - 3);
+        ctx.textBaseline = "top";
+        ctx.fillText(b[0] >= 64 ? "64+" : String(b[0]), pad + i * bw + bw / 2, pad + h + 5);
+      }
+    });
+    ctx.globalAlpha = 1;
+
+    var cut = pad + (bars.findIndex(function (b) { return b[0] >= D.threshold; })) * bw - .75;
+    ctx.strokeStyle = tok("--miss", "#E2504E");
+    ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cut, pad - 8); ctx.lineTo(cut, pad + h + 2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = tok("--miss", "#E2504E");
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText("n < " + D.threshold + " collapses into the residue slide", cut + 5, pad - 22);
+  }
+
+  // ---- chrome -------------------------------------------------------------
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+
+  function stat(row, label, value, note) {
+    var d = el("div");
+    d.appendChild(el("span", "k", label));
+    d.appendChild(el("b", null, value));
+    if (note) d.appendChild(el("em", null, note));
+    row.appendChild(d);
+  }
+
+  function renderKey(sl) {
+    var key = document.getElementById("cellkey");
+    key.innerHTML = "";
+    var axes = D.schemes[sl.scheme].axes;
+
+    if (sl.kind === "census") {
+      var d = el("div");
+      d.appendChild(el("span", "k", "scheme"));
+      d.appendChild(el("b", null, sl.scheme));
+      key.appendChild(d);
+      return;
+    }
+    if (sl.kind === "residue") {
+      var r = el("div");
+      r.appendChild(el("span", "k", "the residue"));
+      r.appendChild(el("b", null, sl.s.cells.length + " cells below n=" + D.threshold));
+      key.appendChild(r);
+      return;
+    }
+    axes.forEach(function (axis, n) {
+      var d = el("div");
+      d.appendChild(el("span", "k", axis + " · " + (UNITS[axis] || "")));
+      d.appendChild(el("b", null, sl.s.labels[n]));
+      key.appendChild(d);
+    });
+    [["object", sl.s.target], ["after a slider", sl.s.fromSlider === "1" ? "yes" : "no"]]
+      .forEach(function (p) {
+        var d = el("div");
+        d.appendChild(el("span", "k", p[0]));
+        d.appendChild(el("b", null, p[1]));
+        key.appendChild(d);
+      });
+  }
+
+  function renderStats(sl) {
+    var row = document.getElementById("stats");
+    row.innerHTML = "";
+    var S = D.schemes[sl.scheme], c = S.census;
+
+    if (sl.kind === "census") {
+      stat(row, "cells occupied", String(c.cells), "of this scheme's grid");
+      stat(row, "hold one object", String(c.singletons),
+           Math.round(100 * c.singletons / Math.max(1, c.cells)) + "% of them");
+      stat(row, "median occupancy", String(c.median), "mean " + c.mean + ", max " + c.max);
+      stat(row, "slides at n≥" + D.threshold, String(c.slides),
+           Math.round(100 * c.covered / Math.max(1, c.instances)) + "% of instances");
+      stat(row, "unbinned", String(S.unbinned.length), "an axis rejected the value");
+      return;
+    }
+    if (sl.kind === "residue") {
+      stat(row, "instances here", String(sl.s.idx.length), "across " + sl.s.cells.length + " cells");
+      stat(row, "share of the map", Math.round(100 * sl.s.idx.length / Math.max(1, c.instances)) + "%", "");
+      return;
+    }
+
+    stat(row, "on this map", String(sl.s.idx.length), "instances drawn solid");
+    stat(row, "corpus-wide", String(sl.s.corpusN),
+         sl.s.overlay.n + " drawn faint behind");
+
+    var f = sl.s.finding && sl.s.finding.hitSd;
+    if (f) {
+      stat(row, "timing spread", (+f.effect).toFixed(2) + "×",
+           f.playerN + " of your clicks vs " + f.referenceN);
+      if (f.relativeEffect) {
+        stat(row, "against your baseline", (+f.relativeEffect).toFixed(2) + "×",
+             "your own spread at this snap divided out");
+      }
+    } else {
+      stat(row, "corpus finding", "—",
+           sl.s.corpusN + " corpus objects; the gate is "
+           + D.gates.player + " clicks");
+    }
+  }
+
+  function renderNote(sl) {
+    var n = document.getElementById("slidenote");
+    n.className = "note";
+    var S = D.schemes[sl.scheme], bits = [];
+
+    if (sl.kind === "census") {
+      n.innerHTML = "";
+      n.appendChild(document.createTextNode(
+        "A cell is a groupby, not a shape, and on one map most of them are nearly empty. "
+        + c_text(S.census) + " That is why findings pool across the whole corpus rather "
+        + "than being read off a single map, and why the gate for reporting a cell is "
+        + D.gates.player + " of your clicks and " + D.gates.reference + " reference ones."));
+      return;
+    }
+    if (sl.kind === "residue") {
+      n.textContent = "Every cell too thin to earn a slide, drawn together. Each faint "
+        + "outline is one cell's boundary. The instances are real; what they lack is "
+        + "company.";
+      return;
+    }
+
+    if (S.geometry.note) bits.push(S.geometry.note);
+    if (sl.s.clip !== null && sl.s.clip !== undefined) {
+      bits.push("this cell's outer edge is unbounded, so the arc is drawn dashed at "
+                + sl.s.clip.toFixed(1) + " r, the widest exit anyone in the corpus took");
+    }
+    if (sl.s.fromSlider === "1") bits.push(D.sliderNote);
+    if (!bits.length) {
+      bits.push("the entry radius is the one thing this cell does not constrain — the "
+                + "rug along the axis is where the corpus approached from");
+    }
+    n.innerHTML = "";
+    n.appendChild(document.createTextNode(bits.map(function (b) {
+      return b.replace(/\.\s*$/, "");
+    }).join(". ") + "."));
+    if (sl.s.fromSlider === "1") n.className = "note warn";
+  }
+
+  function c_text(c) {
+    return c.cells + " cells hold something, " + c.singletons + " of them hold exactly "
+      + "one object, and the median is " + c.median + ".";
+  }
+
+  function renderStrip() {
+    var strip = document.getElementById("strip");
+    strip.innerHTML = "";
+    var d = deck(scheme);
+    d.forEach(function (sl, i) {
+      var b = el("button");
+      b.setAttribute("aria-current", i === at ? "true" : "false");
+      var cv = el("canvas");
+      cv.width = 150; cv.height = 150;
+      b.appendChild(cv);
+      var rung = el("span", "rung");
+      if (sl.s) {
+        rung.style.background = rungColour(sl.s.ext);
+        b.appendChild(rung);
+      }
+      var tag = el("span", "tag");
+      tag.appendChild(el("span", null, sl.kind === "census" ? "census"
+        : sl.kind === "residue" ? "residue" : sl.s.labels.join(" ")));
+      if (sl.s && sl.s.idx) tag.appendChild(el("span", null, String(sl.s.idx.length)));
+      b.appendChild(tag);
+      b.onclick = function () { at = i; render(); };
+      strip.appendChild(b);
+
+      var ctx = cv.getContext("2d");
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = tok("--scope", "#05080A");
+      ctx.fillRect(0, 0, 150, 150);
+      var box = { w: 150, h: 150 };
+      if (sl.kind === "census") drawCensusThumb(ctx, box, sl);
+      else drawCell(ctx, box, sl, true);
+    });
+    // Scroll the strip, not the page: scrollIntoView would drag the whole document
+    // whenever the deck advances, which puts the slide you just asked for off-screen.
+    var active = strip.querySelector('[aria-current="true"]');
+    if (active) {
+      var top = active.offsetTop - strip.clientHeight / 2 + active.offsetHeight / 2;
+      strip.scrollTop = Math.max(0, top);
+    }
+  }
+
+  function drawCensusThumb(ctx, box, sl) {
+    var c = D.schemes[sl.scheme].census, bars = c.histogram, peak = 1;
+    bars.forEach(function (b) { if (b[1] > peak) peak = b[1]; });
+    var bw = (box.w - 16) / bars.length;
+    bars.forEach(function (b, i) {
+      var bh = (b[1] / peak) * (box.h - 30);
+      ctx.fillStyle = b[0] < D.threshold ? tok("--miss", "#E2504E") : tok("--accent", "#7A6BE0");
+      ctx.globalAlpha = .8;
+      ctx.fillRect(8 + i * bw, box.h - 18 - bh, Math.max(1, bw - .8), bh);
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  function rungColour(ext) {
+    var i = D.extLadder.indexOf(ext);
+    var k = i < 0 ? 0 : i / Math.max(1, D.extLadder.length - 1);
+    return "hsl(" + Math.round(210 - 150 * k) + ", 52%, " + Math.round(38 + 18 * k) + "%)";
+  }
+
+  function renderTabs() {
+    var tabs = document.getElementById("tabs");
+    tabs.innerHTML = "";
+    schemeNames.forEach(function (name) {
+      var b = el("button", null, name);
+      b.appendChild(el("span", null, String(D.schemes[name].census.slides)));
+      b.setAttribute("aria-pressed", name === scheme ? "true" : "false");
+      b.onclick = function () { scheme = name; at = 0; render(); };
+      tabs.appendChild(b);
+    });
+  }
+
+  // ---- the ghost of the previous rung -------------------------------------
+
+  var ghost = null, ghostUntil = 0, raf = null;
+
+  function render(skipStrip) {
+    var d = deck(scheme);
+    at = Math.max(0, Math.min(d.length - 1, at));
+    var sl = d[at];
+
+    renderTabs();
+    renderKey(sl);
+    renderStats(sl);
+    renderNote(sl);
+    document.getElementById("pos").textContent =
+      (at + 1) + " / " + d.length + "  ·  " + scheme;
+    document.getElementById("prev").disabled = at === 0;
+    document.getElementById("next").disabled = at === d.length - 1;
+    document.getElementById("fit").setAttribute("aria-pressed", fitEach);
+    document.getElementById("fit").textContent = fitEach ? "fit: each slide" : "fit: whole deck";
+
+    var ext = extentOf(sl);
+    document.getElementById("extlabel").textContent = ext ? "frame ±" + ext.toFixed(1) + " r" : "";
+    if (ext && ghost !== null && ghost !== ext) ghostUntil = performance.now() + 600;
+    var previous = ghost;
+    if (ext) ghost = ext;
+
+    paint(sl, previous);
+    if (!skipStrip) renderStrip();
+  }
+
+  function paint(sl, previous) {
+    var canvas = document.getElementById("board"), ctx = canvas.getContext("2d");
+    var box = fit(canvas, ctx);
+    ctx.fillStyle = tok("--scope", "#05080A");
+    ctx.fillRect(0, 0, box.w, box.h);
+
+    if (sl.kind === "census") { drawCensus(ctx, box, sl); return; }
+    var f = drawCell(ctx, box, sl, false);
+
+    if (previous !== null && previous !== f.ext && performance.now() < ghostUntil) {
+      // The frame just changed size. Show the rung it left, so a change of scale is an
+      // event you watch rather than a difference you have to notice.
+      ctx.strokeStyle = tok("--late", "#F0994A");
+      ctx.globalAlpha = .55 * ((ghostUntil - performance.now()) / 600);
+      ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(f.ox, f.oy, previous * f.s, 0, 6.2832);
+      ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(function () { paint(sl, previous); });
+    }
+  }
+
+  // ---- wiring -------------------------------------------------------------
+
+  document.getElementById("sub").textContent =
+    D.beatmap.artist + " — " + D.beatmap.title + " [" + D.beatmap.difficulty + "]"
+    + "  ·  " + D.instances.t.length + " turns, drawn against "
+    + D.corpus.objects.toLocaleString() + " from " + D.corpus.replays + " of your replays";
+
+  document.getElementById("prev").onclick = function () { at--; render(); };
+  document.getElementById("next").onclick = function () { at++; render(); };
+  document.getElementById("fit").onclick = function () { fitEach = !fitEach; ghost = null; render(); };
+
+  document.addEventListener("keydown", function (e) {
+    var d = deck(scheme), n = schemeNames.indexOf(scheme);
+    if (e.key === "ArrowRight") { at++; render(); }
+    else if (e.key === "ArrowLeft") { at--; render(); }
+    else if (e.key === "ArrowDown") { scheme = schemeNames[(n + 1) % schemeNames.length]; at = 0; render(); }
+    else if (e.key === "ArrowUp") { scheme = schemeNames[(n + schemeNames.length - 1) % schemeNames.length]; at = 0; render(); }
+    else if (e.key === "Home") { at = 0; render(); }
+    else if (e.key === "End") { at = d.length - 1; render(); }
+    else if (e.key === "f" || e.key === "F") { fitEach = !fitEach; ghost = null; render(); }
+    else return;
+    e.preventDefault();
+  });
+
+  var resize;
+  window.addEventListener("resize", function () {
+    clearTimeout(resize);
+    resize = setTimeout(function () { render(true); }, 120);
+  });
+
+  (function () {
+    var t = el("table", "drops"), rows = [];
+    Object.keys(D.dropped).forEach(function (k) { rows.push([k, D.dropped[k]]); });
+    var why = {
+      zeroEntryLeg: "a leg of length zero, so the turn has no direction: a spinner came before, or two objects sit at the same point",
+      zeroExitLeg: "the same, on the way out — these carry a bearing from subpixel noise into whichever angle cell it names",
+      notAdjacent: "the two rows are not neighbours on the map; deltaTime says an object sits between them",
+      noAngleOrSpacing: "the extractor measured no angle or no jump, usually the first objects of a map",
+      noEntryLeg: "nothing before it to arrive from",
+      noDeltaTime: "no gap recorded",
+      shortReplay: "fewer than two judged objects",
+      modDisagree: "replays of one map disagree about its geometry, which is a mod that mirrors or resizes the playfield"
+    };
+    rows.sort(function (a, b) { return b[1] - a[1]; });
+    rows.forEach(function (r) {
+      var tr = document.createElement("tr");
+      tr.appendChild(el("td", "n", r[1].toLocaleString()));
+      tr.appendChild(el("td", null, r[0]));
+      tr.appendChild(el("td", null, why[r[0]] || ""));
+      t.appendChild(tr);
+    });
+    document.getElementById("drops").appendChild(t);
+  }());
+
+  render();
+}());
+</script>
