@@ -152,3 +152,11 @@ Median NF usage runs 3.9% at SR under 4, 8.5% at 4-5, 15.1% at 5-6 and 23.5% abo
 This reverses an earlier note in this log. The daily boards were written off as truncated at the fail threshold "hardest on exactly the hard maps"; the opposite is true, because NF rises with difficulty. The population of runs that fall apart lives in the Wednesday boards and is already archived. Caveat: an NF run is a player choosing a different contract, not a random sample of would-be failures — many pass fine and take the safety anyway — so it is a partial window, not a clean one. Still far closer to genuine play than an RX run, which changes the input model entirely and scores zero pp.
 
 Also a methodology lesson: the 5% figure that prompted this came from a single map at SR 3.76, third from the bottom of the ramp. One map sampled at the easy end of a scheduled gradient reported the floor as if it were the rate.
+
+## 2026-09-20 — matched-skill peers are a third reference corpus, and the best-controlled one
+
+`build/friends.json`, `build/friends-best.jsonl` — 56 friends inside #120k-220k, 11,200 scores
+
+168 maps in Zak's own top-200 are also in a peer's, 105 with five or more peers and 40 with ten or more. Best covered: Ai no Sukima [Radiance] with 39, Mizuoto to Curtain [Lucid] with 30, Marshmary [Horizon] with 30. Their accuracy clusters 96-99% against his 96.86%.
+
+This is the control the other two corpora cannot be. A map's top-50 board is four digits above him so every difference is confounded with being far better -- the Glory Days comparison came back "their error sd is a third of yours" and nothing more specific. The daily boards span the ladder but ppy assigns the map, so nothing is shared with his own history. Peers are matched on skill AND choose the same maps, which makes any shared map a controlled comparison for free. Only the friends list needs user auth; everything downstream is public.
