@@ -205,6 +205,30 @@ public static class Taxonomy
                && (result.ReplayFormat == 0 || result.ReplayFormat < client_version_from);
     }
 
+    /// <summary>
+    /// The set the headline gate is about: a play that ran to the end, on a client new enough
+    /// that the same hit windows applied to the play and to this simulation, and that was
+    /// actually compared.
+    ///
+    /// Computed rather than assembled from causes. It used to be the sum of Exact,
+    /// TrackingOnly and ClicksUnreproducible, but Exact is assigned on Outcome.Match whatever
+    /// wrote the score, so a legacy-client replay that happened to match exactly was counted
+    /// under a modern-client heading. That inflated the denominator by a quarter and the
+    /// every-statistic figure from 60.8% to 63.7%.
+    /// </summary>
+    public static bool OnModernCompletedPlay(VerificationResult result)
+    {
+        if (result.Outcome is not (Outcome.Match or Outcome.Mismatch))
+            return false;
+
+        if (result.Unjudged > 0 || result.HeaderShortfall > 0)
+            return false;
+
+        var build = ParseBuild(result.ClientVersion);
+
+        return build != null && build.Value.CompareTo(FlooredHitWindowsFrom) >= 0;
+    }
+
     /// <summary>The first <c>.osr</c> format carrying lazer's score blob, and so the first
     /// that has anywhere to record a client version at all.</summary>
     private const int client_version_from = 30000001;

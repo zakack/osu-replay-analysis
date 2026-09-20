@@ -51,14 +51,13 @@ public static class Report
 
         // The question the taxonomy exists to answer: on a modern client, for a play that
         // ran to the end, does this reproduce what lazer judged?
-        int comparable = (byCause.GetValueOrDefault(Cause.Exact)?.Length ?? 0)
-                         + (byCause.GetValueOrDefault(Cause.TrackingOnly)?.Length ?? 0)
-                         + (byCause.GetValueOrDefault(Cause.ClicksUnreproducible)?.Length ?? 0);
+        var modern = results.Where(Taxonomy.OnModernCompletedPlay).ToArray();
+        int comparable = modern.Length;
 
         if (comparable > 0)
         {
-            int clicksExact = comparable - (byCause.GetValueOrDefault(Cause.ClicksUnreproducible)?.Length ?? 0);
-            int allExact = byCause.GetValueOrDefault(Cause.Exact)?.Length ?? 0;
+            int clicksExact = modern.Count(r => Taxonomy.Classify(r) != Cause.ClicksUnreproducible);
+            int allExact = modern.Count(r => r.Outcome == Outcome.Match);
 
             output.WriteLine();
             output.WriteLine($"of {comparable} replays on a modern client that played to the end:");
