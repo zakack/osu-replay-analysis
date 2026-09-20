@@ -94,3 +94,51 @@ Zero TV-size, nightcore, cut-version or sped-up titles; median playcount 36,874 
 `build/daily/room-*.jsonl`, 30 consecutive assignments grouped Thu-start; osu! wiki Gameplay/Daily_challenge
 
 3.13 / 3.74 / 4.33 / 4.84 / 5.41 / 5.75 / 6.23 by weekday, monotonic within all five archived weeks. So star rating is perfectly confounded with day of week, and day of week decides who shows up — any difficulty effect in this corpus is entangled with population composition and cannot be identified. Length is NOT scheduled and varies freely, which is what leaves the length question answerable.
+
+## 2026-09-20 — S-curve handedness: null on misses, a hint in timing, sample too small to settle
+
+`build/rhythm.csv` joined to `build/geometry.csv` on (replay, time); nomod 1/4 runs, reversal points bent on both sides
+
+Zak's standing intuition is that an S-curve is harder in one mirror orientation than the other. Miss rates say no — 2.61% vs 2.72%, but that ratio rests on 9 misses against 12. Timing says maybe: CW-first is hit 24.89ms off against 21.98ms for CCW-first. S-curves are 786 notes out of ~26,000 stream notes, about 3%, so the question needs accumulation rather than cleverness. Re-run as: reversal points, bent both sides, split by entry sign, compared on |err| not misses.
+
+## 2026-09-20 — no dead quadrant, on a well-powered null
+
+`build/scene/zaksynack*.json` — 79 replays, 62 maps, 48,103 objects with absolute x/y
+
+Miss rate spans 2.44-2.60% and |err| spans 16.44-17.06ms across the four playfield quadrants, on ~12,000 objects each. That rules out the least fixable explanation for any handedness effect: it is not where on the tablet the pattern sits. Two sharper tests remain unrun — quadrant restricted to 1/4 runs, where a speed-dependent effect would not be diluted by slow objects, and the direction of aim error as a vector (`hx`/`hy` minus `x`/`y`), which would show a systematic pull. Both need `ora scene` run over more than 79 replays.
+
+## 2026-09-20 — stream 50s come from autocorrelated drift, not press-attribution desync
+
+`build/rhythm.csv`, nomod 1/4 runs 6+ notes, error expressed in note-intervals
+
+A one-object desync would spike the error distribution at exactly +1.00 intervals. It does not: 1.26% sit there against 1.19% at -1.00, symmetric, no excess late mass. But an early tap predicts the next tap being early by -0.484 intervals against +0.051 otherwise, so taps run in streaks. At 190bpm half an interval is ~38ms, past the 34.5ms Great window, which produces exactly the observed run of 50s from sustained earliness rather than from misattribution. Matters because drift is trainable and a mechanical desync would not be.
+
+## 2026-09-20 — one map, two failure modes, and the curvature call was exact
+
+`build/scene/zaksynack*tenderly*.json` (15 attempts) joined to `build/geometry.csv` signedAngle
+
+look at me tenderly splits cleanly. The sharp sections Zak calls "bo peep" hooks measure 105.4 and 122.9 degrees mean angle against 151.4 in the 4:30 endurance run, and only 38%/55% of their objects are near-straight against 84%. He called that from feel before it was measured. The sections then fail differently: 3:15-3:25 has the map's highest MISS rate at 3.15%, five times the endurance run's 0.64%, while the endurance run bleeds accuracy instead (136 fifties, timing spread widening to 18.62ms against ~14ms elsewhere). Runs end at the hooks; runs finish worse because of the endurance section. Per-object the hooks are worse, in aggregate the endurance run costs more, and both readings are true at once.
+
+## 2026-09-20 — two bo peep sections on one map fail in opposite ways: one aim, one drift
+
+`build/scene/zaksynack*tenderly*.json` frames interpolated to each object's due time, 15 attempts
+
+At 3:15-3:25 a miss has the cursor a median 1.91 radii from the circle (35% inside) while the three preceding notes are hit at -1.57ms -- perfect rhythm, cursor absent, miss registered +81ms later as the window expires. At 2:25-2:45 the same-looking pattern fails the other way: cursor on the circle (0.77 radii, 62% inside) and the lead-in notes +25.38ms late. Successful hits sit at 0.40 radii everywhere. So "I miss the hooks" is two distinct defects wearing one name, and only one of them is the drift mechanism. Explains why it is subjectively opaque: a rhythm error has a feel, a cursor being elsewhere while the hands keep time does not.
+
+## 2026-09-20 — tap rhythm follows cursor deceleration, and it is the strongest effect measured so far
+
+`build/scene/zaksynack*tenderly*.json` frames; cursor speed over 60ms windows either side of each object, vs hit error
+
+In the 2:25-2:57 hook passage, mean hit error runs -1.83ms when the cursor is accelerating hardest to +10.92ms when decelerating hardest, monotone across five quintiles, corr +0.227. A 12.75ms swing -- larger than curvature (+1.2ms), chirality (2.9ms) or stream position. Zak has reported feeling this for years without being able to name it.
+
+Section-specific: the 4:30 endurance run is flat (-1.7 to -0.1ms, corr +0.031), whole map sits between at +0.148. And it is largely NOT the angle -- corr(straightness, deceleration) is only -0.057 in that passage against -0.152 map-wide, so deceleration and curvature are separate channels there and deceleration is the stronger one. The earlier +12.34ms hump in the 132-155 degree band was angle acting as a partial proxy for this.
+
+Mechanism: the passage forces repeated deceleration, tap rhythm tracks the hand rather than the beat, ~11ms late lands on the slowest objects, stacks onto drift already running, and a note falls past the window with the cursor sitting on it. Caveat: one map, 15 attempts, and vin-vout over 60ms windows sits near the acceleration boundary CLAUDE.md warns about. Corroborated by being monotone over five buckets and section-specific; settle it corpus-wide.
+
+## 2026-09-20 — the deceleration coupling is universal, and precision is the whole gap
+
+`build/glory/` — 14 nomod top-50 replays on Glory Days [Maki's Extra] vs zaksynack, same map, same mods
+
+The coupling between cursor deceleration and late tapping is NOT a skill deficit. The board's range is +0.149 to +0.634, bracketing zaksynack's +0.381, and corr(player accuracy, coupling) across the board is +0.005 — dead zero. Two top-50 players couple harder than he does. Nobody, including him, missed a single hairpin object.
+
+What separates him is precision, and it is not pattern-specific: error sd 23.42ms against a board median of 8.43, with the entire top fourteen inside a 6.93-9.13ms band. Same conclusion the accidental Pretender corpus reached from a different direction — the gap is consistency, not bias, and not geometry. Retracted on the strength of this: a practice recommendation to "hold tap rhythm independent of cursor speed", which the best players on the map demonstrably do not do either.
