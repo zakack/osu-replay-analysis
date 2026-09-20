@@ -1,0 +1,14 @@
+[Unit]
+Description=Sample the osu! global score stream periodically
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+# Do not hit the API on the exact minute boundary along with everyone else's cron.
+RandomizedDelaySec=120
+# A live tail cannot be sampled retroactively, so a missed run is simply a missed run.
+# Catching up would re-read the current edge and log duplicates the high-water mark drops.
+Persistent=false
+
+[Install]
+WantedBy=timers.target

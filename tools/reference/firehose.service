@@ -1,0 +1,13 @@
+[Unit]
+Description=Sample the osu! global score stream
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/osu-replay-analysis
+# Credentials are not in this repo and not in this unit. Create the file yourself with
+# OSU_API_CLIENT= and OSU_API_KEY= on their own lines, mode 600.
+EnvironmentFile=%h/.config/osu-api.env
+ExecStart=/usr/bin/python3 tools/reference/firehose.py --pages 1 --replays 10
+Nice=10
