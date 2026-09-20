@@ -91,6 +91,22 @@ public enum Cause
     ClicksUnreproducible,
 
     /// <summary>
+    /// The client version is present but undateable, so which ruleset wrote this score is
+    /// unknown — "local release", or a fork tagging itself in a shape lazer never uses.
+    ///
+    /// Distinct from an absent version on a format that could not carry one, which really
+    /// does imply an old client. Two shapes land here instead: a string that means something
+    /// to whoever built that client and nothing here, and a blank one on a format that had
+    /// room — a client that could have said and did not.
+    ///
+    /// A caveat this class only makes visible rather than solves: dating a *fork* by its
+    /// version tells you the state of the fork, not of lazer. 509 tachyon and 60 torii scores
+    /// in the local corpus parse cleanly and are dated like stock builds, which is right only
+    /// so long as those forks do not touch hit windows or the judgement loop.
+    /// </summary>
+    UnknownClient,
+
+    /// <summary>
     /// Nothing was compared, so nothing can be concluded: the beatmap converted to a
     /// different object count, the header carried no usable ground truth, or the replay threw.
     ///
@@ -123,7 +139,11 @@ public static class Taxonomy
         if (string.IsNullOrWhiteSpace(clientVersion))
             return null;
 
-        string[] parts = clientVersion.Split('-')[0].Split('.');
+        // Forks tag themselves, and not always in lazer's shape: torii builds are
+        // "v2026.730.1-torii". NumberStyles.None rejects the leading v, the parse returns
+        // null, and null means "assume ancient" -- so sixty scores set a year after the
+        // floored windows shipped were being judged as if they predated them.
+        string[] parts = clientVersion.Trim().TrimStart('v', 'V').Split('-')[0].Split('.');
 
         if (parts.Length < 2
             || !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out int year)
@@ -148,8 +168,32 @@ public static class Taxonomy
     {
         var build = ParseBuild(result.ClientVersion);
 
-        return build == null || build.Value.CompareTo(FlooredHitWindowsFrom) < 0;
+        if (build != null)
+            return build.Value.CompareTo(FlooredHitWindowsFrom) < 0;
+
+        // An absent version does not imply an old client on its own; the replay *format*
+        // does. Lazer's score blob, and with it the version field, arrives at 30000001.
+        // Below that the file has nowhere to put one and its absence means exactly what it
+        // looks like. At or above it, a blank version is a client that had somewhere to put
+        // its name and left it there — a fork, not an old build. The local corpus holds one:
+        // format 30000016, submitted with an online id, no version string.
+        //
+        // Format 0 means the field predates this check, in a verification run written before
+        // it existed. Fall back to the old reading rather than silently reclassifying.
+        return string.IsNullOrWhiteSpace(result.ClientVersion)
+               && (result.ReplayFormat == 0 || result.ReplayFormat < client_version_from);
     }
+
+    /// <summary>The first <c>.osr</c> format carrying lazer's score blob, and so the first
+    /// that has anywhere to record a client version at all.</summary>
+    private const int client_version_from = 30000001;
+
+    /// <summary>
+    /// The score cannot be dated and cannot be justified as legacy either: a version in a
+    /// shape nothing here parses, or no version at all on a format that had room for one.
+    /// </summary>
+    public static bool OnUnknownClient(VerificationResult result) =>
+        ParseBuild(result.ClientVersion) == null && !OnLegacyHitWindows(result);
 
     public static Cause Classify(VerificationResult result)
     {
@@ -187,6 +231,9 @@ public static class Taxonomy
 
         if (OnLegacyHitWindows(result))
             return Cause.LegacyHitWindows;
+
+        if (OnUnknownClient(result))
+            return Cause.UnknownClient;
 
         return Cause.ClicksUnreproducible;
     }

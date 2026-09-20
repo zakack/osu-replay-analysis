@@ -55,6 +55,13 @@ public sealed record VerificationResult(
     /// its own counts are short.
     /// </summary>
     public int HeaderShortfall { get; init; }
+
+    /// <summary>
+    /// The <c>.osr</c> format version. Carried because it is the only evidence of whether an
+    /// absent client version means an old client or a silent one — see
+    /// <see cref="Taxonomy.OnLegacyHitWindows"/>. Zero when the field was not recorded.
+    /// </summary>
+    public int ReplayFormat { get; init; }
 }
 
 public static class Verification
@@ -103,7 +110,7 @@ public static class Verification
             string clientVersion = score.ScoreInfo.ClientVersion;
 
             if (!IncludeClassic && mods.Any(m => m is OsuModClassic))
-                return scoped(record, Outcome.OutOfScopeClassic) with { ClientVersion = clientVersion };
+                return scoped(record, Outcome.OutOfScopeClassic) with { ClientVersion = clientVersion, ReplayFormat = record.Version };
 
             var working = new FlatWorkingBeatmap(index[record.BeatmapMd5].Path);
             var playable = working.GetPlayableBeatmap(new OsuRuleset().RulesetInfo, mods);
@@ -115,7 +122,7 @@ public static class Verification
             var expected = groundTruth(score);
 
             if (expected == null)
-                return scoped(record, Outcome.NoGroundTruth) with { ClientVersion = clientVersion };
+                return scoped(record, Outcome.NoGroundTruth) with { ClientVersion = clientVersion, ReplayFormat = record.Version };
 
             var simulation = new Simulator().Run(playable, score);
 
@@ -130,7 +137,7 @@ public static class Verification
                 {
                     string counts = string.Join(" ", wrong.Select(r => $"{r}:{maximums[r]}->{generated.GetValueOrDefault(r)}"));
                     return new VerificationResult(record.Path, Outcome.ObjectCountMismatch, counts, null, null, 0, 0)
-                        { ClientVersion = clientVersion };
+                        { ClientVersion = clientVersion, ReplayFormat = record.Version };
                 }
             }
             var actual = compared.ToDictionary(r => r, r => simulation.Statistics.GetValueOrDefault(r));
@@ -153,7 +160,7 @@ public static class Verification
 
             if (statisticsMatch && comboMatches)
                 return new VerificationResult(record.Path, Outcome.Match, null, expected, actual, score.ScoreInfo.MaxCombo, simulation.MaxCombo)
-                    { ClientVersion = clientVersion, Unjudged = unjudged, HeaderShortfall = shortfall };
+                    { ClientVersion = clientVersion, ReplayFormat = record.Version, Unjudged = unjudged, HeaderShortfall = shortfall };
 
             string unjudgedNote = unjudged > 0 ? $" [unjudged:{unjudged}]" : string.Empty;
 
@@ -177,16 +184,17 @@ public static class Verification
                 detail += $" [tails lost: {string.Join(",", dropReasons)}]";
 
             return new VerificationResult(record.Path, Outcome.Mismatch, detail, expected, actual, score.ScoreInfo.MaxCombo, simulation.MaxCombo)
-                { ClientVersion = clientVersion, Unjudged = unjudged, HeaderShortfall = shortfall };
+                { ClientVersion = clientVersion, ReplayFormat = record.Version, Unjudged = unjudged, HeaderShortfall = shortfall };
         }
         catch (Exception e)
         {
-            return new VerificationResult(record.Path, Outcome.Error, $"{e.GetType().Name}: {e.Message}", null, null, 0, 0);
+            return new VerificationResult(record.Path, Outcome.Error, $"{e.GetType().Name}: {e.Message}", null, null, 0, 0)
+                { ReplayFormat = record.Version };
         }
     }
 
     private static VerificationResult scoped(ReplayRecord record, Outcome outcome) =>
-        new(record.Path, outcome, null, null, null, 0, 0);
+        new(record.Path, outcome, null, null, null, 0, 0) { ReplayFormat = record.Version };
 
     private static Dictionary<HitResult, int>? groundTruth(Score score)
     {
