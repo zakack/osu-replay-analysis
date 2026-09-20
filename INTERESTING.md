@@ -47,3 +47,38 @@ Export rate falls monotonically down the top list: 37/50, 18/50, 15/50, 8/50. Th
 `build/best/*.osr` vs the matching lazer exports, .osr header `ticks` field
 
 Server later in 76 of 76, floor 193ms, neither value on a second boundary. That gap is the submission round trip, sitting in every pair of files for free. Probably useless.
+
+## 2026-09-19 — lazer replaying a replay reproduces the simulation, not the header, on a click
+
+`build/oracle/9a59c02f967d4f686df74b29a7dcca9f.json` vs `build/verification-best.json` row for `best-6473309535.osr`
+
+The differential oracle judges the same three Mehs at the same milliseconds as the simulation (1 divergence in 1724, and it is a spinner tick), while the header says one of them was an Ok. The residual is play-vs-recording, not port-vs-lazer, which the four causes in CLAUDE.md have no bucket for.
+
+## 2026-09-19 — a clean 1-2-1 triple read out as Miss / Ok / Meh because a press missed a circle by 0.21 units
+
+`build/best/best-6473309535.osr` at 69450ms; `tests/Tests/StackedPressCascadeTests.cs`
+
+Three circles stacked at (204,14), tapped at offsets 0, -5 and -15ms. The cursor sat 36.703 units from the first circle's stacked centre against a 36.495 radius, so the press went to the second circle instead and notelock missed the first. Every hit error in the group is then attributed to the wrong object, and nothing about the read-out says so.
+
+## 2026-09-19 — a slider head judged Miss 175ms before its own start time, with nothing hit at that instant
+
+`build/best/best-6473309535.osr`, object 787, slider at 175081ms; oracle `TimeAbsolute` 174906
+
+Both the simulation and the live game stamp the judgement at 174906, which is the moment of a press that landed on the head while 175ms too early for any window. Notelock is the only force-miss path that applies a result at an arbitrary time, and it only fires on a hit — no object was hit there. The route is unexplained; the totals are unaffected, so it has never had to be.
+
+## 2026-09-19 — geometry rows are padded to map length, so "sample size" splits three ways
+
+`build/geometry.csv` vs `build/corpus.json`
+
+Every replay of a map emits exactly the same row count (rows = replays x objects, to the
+unit), so rows carry nothing about how far a play got; only `hitError != ""` does. The
+ranking flips depending which you count: Bass Slut leads by replays (52), The Pretender by
+timed samples (42,377). And the longest maps are the least finished — there are no angels
+here. [archangeloi.] is 36% timed, Save Me [Tragedy] 55%, Blue Zenith [FOUR DIMENSIONS] 65%
+— so pooling by rows weights hardest toward the plays that were abandoned.
+
+## 2026-09-19 — the variance study needs no replays at all
+
+`build/best/manifest.json` accuracy fields; osu! API `/scores` and `/users/{id}/scores/recent?include_fails=1`
+
+Per-map accuracy variance comes from score metadata, which every listing carries and which exists even for fails; map physicality comes from the `.osu` geometry. Neither side of "do high-physicality maps convert luck into pp" touches a replay, so the preservation bias that truncates every replay source does not apply to it.
