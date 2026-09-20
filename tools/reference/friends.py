@@ -15,6 +15,12 @@ from there. Re-save the page when the list changes.
 
     python3 tools/reference/friends.py [--page build/zaksynack-friends.html]
                                        [--low 120000] [--high 220000]
+                                       [--include Name,Other]
+
+--include pulls named players whatever their rank. The band is the default because matched
+skill is what makes a shared map a controlled comparison, but a few rungs above it are worth
+carrying deliberately: they share map taste with the player in a way a top-50 board does not,
+while being far enough ahead that the difference is worth looking at.
 """
 import collections, json, os, re, sys, urllib.parse
 
@@ -53,9 +59,18 @@ def main():
         json.dump(profiles, f, indent=1)
     print(f"resolved {len(profiles)} -> {OUT}/friends.json")
 
-    peers = sorted(((k, v) for k, v in profiles.items() if v["rank"] and low <= v["rank"] <= high),
-                   key=lambda kv: kv[1]["rank"])
-    print(f"{len(peers)} inside #{low:,}-#{high:,}\n")
+    keep = {k for k, v in profiles.items() if v["rank"] and low <= v["rank"] <= high}
+
+    named = [n.strip() for n in arg("--include", "").split(",") if n.strip()]
+    if named:
+        wanted = {n.casefold() for n in named}
+        extra = {k for k, v in profiles.items() if (v.get("username") or "").casefold() in wanted}
+        for k in extra - keep:
+            print(f"  including {profiles[k]['username']} at #{profiles[k]['rank']:,} (outside the band)")
+        keep |= extra
+
+    peers = sorted(((k, profiles[k]) for k in keep), key=lambda kv: kv[1]["rank"])
+    print(f"{len(peers)} players: band #{low:,}-#{high:,} plus {len(named)} named\n")
 
     rows = []
     for uid, v in peers:
