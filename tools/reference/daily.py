@@ -34,6 +34,7 @@ truncated at the fail threshold, hardest on the hard maps.
     python3 tools/reference/daily.py --snapshot [--every 1800] [--seconds 21600]
     python3 tools/reference/daily.py --archive <room_id>
     python3 tools/reference/daily.py --backfill [50]
+    python3 tools/reference/daily.py --pull <room_id> [--take 200]
     python3 tools/reference/daily.py --list [10]
 """
 import json, os, sys, time
@@ -123,6 +124,40 @@ def main():
             for r in rooms(bearer, mode, arg("--list", 10) if mode == "ended" else 1):
                 print(f"  {mode:7} room {r.get('id')}  {r.get('name')}  "
                       f"participants {r.get('participant_count')}  ends {r.get('ends_at')}")
+        return 0
+
+    if "--pull" in sys.argv:
+        # Stratified by board position, which on a single map is a proxy for skill. The
+        # point of this corpus is comparing how a three-digit rank and a six-digit rank move
+        # through the same notes, and uniform sampling buries that in the crowded middle.
+        rid = arg("--pull", 0)
+        take = arg("--take", 200)
+        path = f"{OUT}/room-{rid}.jsonl"
+        rows = [json.loads(l) for l in open(path)]
+        latest = max(r["snapshot"] for r in rows)
+        board_ = [r for r in rows if r.get("snapshot") == latest and r.get("accuracy") is not None]
+        pool = [r for r in board_ if r.get("has_replay")]
+        picks = [pool[round(i * (len(pool) - 1) / max(take - 1, 1))] for i in range(min(take, len(pool)))]
+
+        dest = f"{OUT}/replays"
+        os.makedirs(dest, exist_ok=True)
+        got = 0
+        for i, sc in enumerate(picks):
+            name = f"d{rid}-{sc['id']}.osr"
+            if os.path.exists(f"{dest}/{name}"):
+                continue
+            data = call(f"https://osu.ppy.sh/api/v2/scores/{sc['id']}/download", bearer, raw=True)
+            if not data:
+                continue
+            with open(f"{dest}/{name}", "wb") as f:
+                f.write(data)
+            with open(f"{OUT}/replays.jsonl", "a") as f:
+                f.write(json.dumps({"file": name, "room_id": rid, "board_pos": i, **sc},
+                                   separators=(",", ":")) + "\n")
+            got += 1
+            if got % 25 == 0:
+                print(f"  {got}/{len(picks)}", flush=True)
+        print(f"pulled {got} replays stratified across {len(pool)} board positions -> {dest}")
         return 0
 
     if "--backfill" in sys.argv:
