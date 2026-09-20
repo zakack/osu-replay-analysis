@@ -36,9 +36,17 @@ public partial class PlaybackRateTests : RateAdjustedBeatmapTestScene
 
     private sealed record Target(string ReplayPath, string BeatmapPath);
 
-    /// <summary>Only objects settled by a single press. Tails and ticks are decided by
-    /// continuous cursor state and are known to move with sampling rate already.</summary>
-    private static bool clickJudged(object hitObject) => hitObject is HitCircle or SliderHeadCircle;
+    /// <summary>
+    /// Only objects settled by a single press.
+    ///
+    /// The exclusion is the whole point and is easy to get wrong: SliderTailCircle and
+    /// SliderRepeat both descend from SliderEndCircle, which descends from HitCircle. So
+    /// "is HitCircle or SliderHeadCircle" admits every slider tail in the map, and tails are
+    /// exactly the thing already known to move with sampling rate (ppy/osu#34016). Written
+    /// that way, this test reports #34016 back to itself and calls it a press.
+    /// </summary>
+    private static bool clickJudged(object hitObject) =>
+        hitObject is HitCircle and not SliderEndCircle;
 
     private static IEnumerable<TestCaseData> targets()
     {

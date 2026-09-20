@@ -237,3 +237,17 @@ is not recorded exactly is which object was hovered at that instant.
 
 Determinism not yet established -- a second run is going to say whether the same two objects
 move, or different ones.
+
+## 2026-09-20 — retraction: the "press" divergences above were slider tails, via C# inheritance
+
+`tests/Oracle/PlaybackRateTests.cs`, clickJudged()
+
+SliderTailCircle : SliderEndCircle : HitCircle, so a filter reading "is HitCircle or
+SliderHeadCircle" admits every tail and repeat in the map. The three objects that moved between
+rates were SliderTailHit/IgnoreMiss at 10794ms, 41521ms and 123901ms -- tails, which ppy/osu
+#34016 already documents as sampling-rate dependent. The test was reporting a known bug back to
+itself and labelling it a press.
+
+Worth keeping as a shape rather than a fact: an is-check against a base class silently widens to
+every subclass, and here the subclasses were precisely the population the filter existed to
+exclude. Nothing threw, nothing looked wrong, and the numbers were plausible.
