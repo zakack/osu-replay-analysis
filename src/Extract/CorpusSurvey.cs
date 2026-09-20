@@ -29,10 +29,17 @@ public static class CorpusSurvey
     {
         var records = new List<ReplayRecord>();
 
-        foreach (string directory in directories)
+        foreach (string given in directories)
         {
-            if (!Directory.Exists(directory))
+            if (!Directory.Exists(given))
                 continue;
+
+            // Absolute, always. EnumerateFiles hands back paths shaped like the one it was
+            // given, so surveying "build/replays" records relative paths -- which resolve
+            // against whatever process reads the corpus later. The oracle runs from its own
+            // bin directory, so a relative corpus silently produces a file-not-found on every
+            // target rather than anything that looks like a path problem.
+            string directory = Path.GetFullPath(given);
 
             foreach (string path in Directory.EnumerateFiles(directory, "*.osr", SearchOption.TopDirectoryOnly).Order(StringComparer.Ordinal))
                 records.Add(inspect(path, index));

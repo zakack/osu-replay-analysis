@@ -72,20 +72,35 @@ public static class OracleDiff
     public static IReadOnlyList<OracleTarget> ChooseTargets(
         IReadOnlyList<VerificationResult> results,
         IReadOnlyList<ReplayRecord> corpus,
-        int limit)
+        int limit,
+        Cause? only = null,
+        long maxBytes = max_replay_bytes)
     {
         var beatmapByReplay = corpus.ToDictionary(r => r.Path, r => r.BeatmapPath);
 
         // Skip replays the oracle cannot record in bounded time. Playback speed under the
         // headless host is many times realtime on ordinary maps but drops towards realtime
         // on dense marathon ones, and a single stuck target can outlast the whole run.
-        var candidates = results
-                         .Where(r => r.Outcome == Outcome.Mismatch && r.Expected != null && r.Actual != null)
-                         .Where(r => beatmapByReplay.GetValueOrDefault(r.ReplayPath) != null)
-                         .Where(r => new FileInfo(r.ReplayPath).Length <= max_replay_bytes)
-                         .OrderBy(r => r.Expected!.Sum(kv => Math.Abs(kv.Value - r.Actual!.GetValueOrDefault(kv.Key))))
-                         .ThenBy(r => r.ReplayPath, StringComparer.Ordinal)
-                         .ToArray();
+        //
+        // The cap is a time budget, not a neutral filter: it excludes long dense maps, which
+        // is where an attribution cascade is most likely. Raise it when the target list is
+        // small enough to afford, and say which cap a run was made under.
+        var matching = results
+                       .Where(r => r.Outcome == Outcome.Mismatch && r.Expected != null && r.Actual != null)
+                       .Where(r => only == null || Taxonomy.Classify(r) == only)
+                       .Where(r => beatmapByReplay.GetValueOrDefault(r.ReplayPath) != null)
+                       .Where(r => new FileInfo(r.ReplayPath).Length <= maxBytes)
+                       .ToArray();
+
+        // Asking for one named cause means taking all of it, cheapest first so a run that is
+        // cut short still leaves usable recordings. Sampling is for the unfiltered case,
+        // where the population is thousands and mostly one cause.
+        var candidates = only != null
+            ? matching.OrderBy(r => new FileInfo(r.ReplayPath).Length).ToArray()
+            : matching
+              .OrderBy(r => r.Expected!.Sum(kv => Math.Abs(kv.Value - r.Actual!.GetValueOrDefault(kv.Key))))
+              .ThenBy(r => r.ReplayPath, StringComparer.Ordinal)
+              .ToArray();
 
         if (candidates.Length <= limit)
             return candidates.Select(r => new OracleTarget(r.ReplayPath, beatmapByReplay[r.ReplayPath]!)).ToArray();
@@ -105,6 +120,14 @@ public static class OracleDiff
     }
 
     public sealed record Divergence(string ObjectType, double StartTime, string Reference, string Simulated);
+
+    /// <summary>
+    /// Whether this object's judgement is settled by a single press rather than by tracking.
+    /// Only these can convict the port: everything else shares lazer's own framerate
+    /// dependence (ppy/osu#34016) and is unreproducible in principle.
+    /// </summary>
+    private static bool clickJudged(string objectType) =>
+        objectType is "HitCircle" or "SliderHeadCircle";
 
     /// <summary>
     /// The outcome of one diff. Judgements the simulation made past the point the reference
@@ -221,6 +244,13 @@ public static class OracleDiff
         int totalDivergences = 0;
         int totalJudgements = 0;
 
+        // Which kind of object disagreed is the whole question. A slider tail or tick is
+        // decided by continuous cursor state, so the oracle is one draw from the same
+        // distribution the original play drew from and a disagreement is not a defect. A
+        // circle or a slider head is decided at a single instant, and there the oracle is
+        // authoritative.
+        var byObjectType = new Dictionary<string, int>(StringComparer.Ordinal);
+
         foreach (var target in targets)
         {
             var run = ReadRun(target.ReplayPath);
@@ -298,6 +328,9 @@ public static class OracleDiff
                 output.WriteLine($"    {key,-16} header={header,-6} game={oracle,-6} sim={sim}");
             }
 
+            foreach (var divergence in divergences)
+                byObjectType[divergence.ObjectType] = byObjectType.GetValueOrDefault(divergence.ObjectType) + 1;
+
             foreach (var divergence in divergences.Take(4))
                 output.WriteLine($"  {divergence.StartTime,10:F0}ms  {divergence.ObjectType,-18}  game={divergence.Reference,-14} sim={divergence.Simulated}");
 
@@ -311,6 +344,19 @@ public static class OracleDiff
         output.WriteLine($"  simulation diverges from it           {compared - agreed}");
         output.WriteLine($"  diverging judgements                  {totalDivergences} of {totalJudgements}" +
                          (totalJudgements > 0 ? $"  ({100.0 * totalDivergences / totalJudgements:F3}%)" : string.Empty));
+
+        if (byObjectType.Count > 0)
+        {
+            output.WriteLine();
+            output.WriteLine("  divergences by object type:");
+
+            foreach (var (type, count) in byObjectType.OrderByDescending(kv => kv.Value))
+                output.WriteLine($"    {type,-20} {count,5}{(clickJudged(type) ? "   <- decided at an instant, the oracle is authoritative here" : string.Empty)}");
+
+            int clicks = byObjectType.Where(kv => clickJudged(kv.Key)).Sum(kv => kv.Value);
+            output.WriteLine($"    click-judged total   {clicks,5} of {totalDivergences}");
+        }
+
         if (truncated > 0)
         {
             output.WriteLine($"  reference ran out of replay input           {truncated}");

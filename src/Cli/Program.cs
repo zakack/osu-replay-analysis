@@ -26,6 +26,7 @@ if (args.Length == 0)
     Console.Error.WriteLine("  verify                simulate the corpus and report the match rate and mismatch taxonomy");
     Console.Error.WriteLine("  verify-classic        the same, but simulate Classic scores too, to measure what not porting it costs");
     Console.Error.WriteLine("  oracle-list [n]       pick mismatching replays for the differential oracle to record");
+    Console.Error.WriteLine("    --cause <name> narrows to one taxonomy bucket; --max-kib <n> raises the recording budget");
     Console.Error.WriteLine("  oracle-diff           diff the simulation against the oracle's recordings, object by object");
     Console.Error.WriteLine("  trace <replay> <ms>   dump per-sample slider tracking state around a time");
     Console.Error.WriteLine("  versions              print the lazer build that wrote each score in the corpus");
@@ -603,11 +604,19 @@ switch (args[0])
 
     case "oracle-list":
     {
-        int limit = args.Length > 1 ? int.Parse(args[1]) : 8;
+        int limit = args.Length > 1 && !args[1].StartsWith("--") ? int.Parse(args[1]) : 8;
+        Cause? only = null;
+        long maxBytes = 48 * 1024;
+
+        for (int i = 1; i < args.Length; i++)
+        {
+            if (args[i] == "--cause" && i + 1 < args.Length) only = Enum.Parse<Cause>(args[++i], ignoreCase: true);
+            if (args[i] == "--max-kib" && i + 1 < args.Length) maxBytes = long.Parse(args[++i], CultureInfo.InvariantCulture) * 1024;
+        }
 
         var results = OracleDiff.ReadVerification("build/verification.json");
         var corpus = CorpusSurvey.ReadRecords("build/corpus.json");
-        var targets = OracleDiff.ChooseTargets(results, corpus, limit);
+        var targets = OracleDiff.ChooseTargets(results, corpus, limit, only, maxBytes);
 
         OracleDiff.WriteTargets(targets, "build/oracle-targets.json");
 

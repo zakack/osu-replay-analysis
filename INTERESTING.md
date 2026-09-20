@@ -188,3 +188,22 @@ exactly one object. Great -> Meh skips a whole window, which no hit-window chang
 Spread over 60 maps and every client version, and the same map reproduces fine on most runs
 (4 bad of 63 on tenderly), so it is run-specific rather than map- or version-specific. Reads
 like the Super Nuko World press-attribution cascade as a population rather than a one-off.
+
+## 2026-09-20 — the 86 were lazer, not us: 85 of 86 have the live game disagreeing with its own header
+
+`ora oracle-diff` over `build/oracle-targets.json` (--cause ClickMismatch --max-kib 200)
+
+Header vs live game on a click statistic: 85 of 86. Live game vs our sim: 1. Net click drift
+of the live game against the header is Great -137, Ok +11, Meh +157, Miss -31 -- within a
+judgement or two of the drift our own simulation shows, so both reach the same answer and the
+header is the thing neither can reach.
+
+Contradicts "every click survives exactly", which CLAUDE.md states and ppy/osu#28744 is read
+as establishing. Press times really are exact, but which object a press is attributed to is
+not: DrawableHitCircle only registers a press while IsHovered, and hover is tested against a
+cursor interpolated between 17ms samples. That is the Super Nuko World mechanism (0.21 units,
+0.57% of radius) as a population rather than a one-off, and it is a different mechanism from
+the tracking feedback in ppy/osu#34016.
+
+Whole-corpus defect surface for the port after this: one HitCircle, 73620ms, Thriller [Insane]
+2025-10-30_20-09, game=Miss sim=Ok.
