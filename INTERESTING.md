@@ -221,3 +221,19 @@ production step, so they are not window-edge cases. Our own simulation reaches d
 judgements at the production step and the oracle step for an object whose press is 8ms from
 perfect, which makes them attribution rather than timing. Consistent with OracleMatchStep
 agreeing only 33 of 47 at its best, so not evidence of a mis-ported rule, but unexplained.
+
+## 2026-09-20 — lazer grades the same replay differently at two playback rates, on a press
+
+`dotnet test tests/Oracle --filter PlaybackRateTests`, target 4 of 6
+
+Flight of the Bumblebee [Professional] 2026-08-08_16-42: 754 click judgements at 1.0x and 754
+at 0.25x, two of them judged differently. Median clock step 0.518ms against 0.086ms, so the
+slow run samples the cursor path six times finer. Same file, same code, first-party only.
+
+Three of the other five were identical across rates, so the effect is real but rare. ppy/osu
+#34016 shows this for a slider tail; a press is supposed to be immune, because a button change
+forces a replay frame and the press time and cursor position are both recorded exactly. What
+is not recorded exactly is which object was hovered at that instant.
+
+Determinism not yet established -- a second run is going to say whether the same two objects
+move, or different ones.
