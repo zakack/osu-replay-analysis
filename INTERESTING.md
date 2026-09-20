@@ -266,3 +266,19 @@ Also means the synthetic demo cannot be built from a replay at all: any replay-a
 comparison replays the same interpolated path, and the variable that matters is the true cursor
 path, which no .osr contains. Demonstrating it needs a *recorded* play -- autoplay through a
 ReplayRecorder, then a replay of that recording -- not a synthetic replay.
+
+## 2026-09-20 — the header-vs-playback divergence is a flat per-press hazard, not a geometry
+
+`build/geom-85.csv`, `build/geom-control.csv`, and the bucketing in this session
+
+Stacking hypothesis tested and not supported: the 59 maps carrying the 85 have *fewer* objects
+below 0.05 radii of spacing than 400 control maps that only ever reproduce exactly, 0.15%
+against 0.21%. What they do have is 739 objects per map against 340.
+
+Bucketing by click-object count, the per-replay rate goes 0% / 0.29% / 1.35% / 1.60% / 2.75% /
+4.60%, a sixteenfold climb -- while per thousand objects it sits at 0.010 / 0.027 / 0.022 /
+0.026 / 0.024, flat above 400. A constant hazard of about 1 press in 42,000, and the map
+dependence is exposure.
+
+Better number than the one it replaces. "0.93% of replays" is mostly a statement about how
+long the player's maps are.

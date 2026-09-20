@@ -30,6 +30,14 @@ the floored hit windows of `0f078ee550` applied to both the play and the playbac
 |---|---|
 | completed plays on a post-`2025.710.0` client | 9,114 |
 | where playback reaches different click counts than the header | 85 (0.93%) |
+| press judgements in those plays | ~4.2 million |
+| **rate per press** | **~1 in 42,000** |
+
+The per-replay figure is the less useful of the two, because it is mostly a statement about
+map length. Bucketing by the number of click-judged objects, the per-replay rate climbs
+sixteenfold — 0% below 200 objects to 4.6% above 1,400 — while the rate *per object* is flat
+at 0.022 to 0.027 per thousand everywhere above 400 objects. It behaves as a constant hazard
+per press, and a long map simply takes more draws.
 
 Of 86 examined through the headless host, **85 had the live game disagreeing with the header
 its own play wrote.** The net drift of playback against those headers:
@@ -77,6 +85,10 @@ than a sensitivity in playback, and it is not explained here.
   caught. The true population is at least this and may be larger.
 - **One player's corpus** — 17,273 replays over 3,239 beatmaps, one account, mixed
   difficulties. Not a cross-section of the playerbase.
+- **It does not concentrate on any geometry we can find.** Comparing the 59 maps carrying
+  these against 400 maps that only ever reproduce exactly, the affected maps have *fewer*
+  tightly stacked objects, not more — 0.15% against 0.21% of objects below 0.05 radii of
+  spacing. They are simply longer and denser, which the per-object rate already accounts for.
 - The 0.94% is a rate of affected *replays*. Within an affected replay the drift is usually
   one or two judgements out of several hundred.
 - Scores set with mods that move the drawable (Depth, Magnetised, Repel) were excluded, since
