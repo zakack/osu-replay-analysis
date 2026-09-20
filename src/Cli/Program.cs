@@ -20,6 +20,8 @@ if (args.Length == 0)
     Console.Error.WriteLine("usage: ora <command> [args]");
     Console.Error.WriteLine("  smoke <beatmap.osu>   load a beatmap to playable form and report the host-guard result");
     Console.Error.WriteLine("  index [lazer-root]    build the beatmap MD5 index from a copy of lazer's realm");
+    Console.Error.WriteLine("  scores [lazer-root]   index every score in lazer's realm; --export <dir> copies out their replays");
+    Console.Error.WriteLine("    --user <name> (repeatable) keeps only that player; downloaded replays share the table");
     Console.Error.WriteLine("  survey [--out p] <dir>...  triage a replay corpus: format, ruleset, pairing, decodability");
     Console.Error.WriteLine("  verify                simulate the corpus and report the match rate and mismatch taxonomy");
     Console.Error.WriteLine("  verify-classic        the same, but simulate Classic scores too, to measure what not porting it costs");
@@ -102,6 +104,75 @@ switch (args[0])
             Console.WriteLine(mapped.Count == 0
                 ? "host guard: clean, no host libraries mapped"
                 : $"host guard: FAILED, mapped {string.Join(", ", mapped)}");
+        }
+
+        return 0;
+    }
+
+    case "scores":
+    {
+        // Lazer has kept a replay for every play ever recorded, not only the ones exported
+        // by hand. Indexing is read-only; --export is the only part that writes replays.
+        string lazerRoot = args.Length > 1 && !args[1].StartsWith("--")
+            ? args[1]
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "osu-lazer");
+
+        string? exportTo = null;
+        string ruleset = "osu";
+        string destination = "build/score-index.json";
+        bool passedOnly = false;
+        DateTime since = DateTime.MinValue;
+
+        // Lazer files a downloaded replay in the same table as a played one, under the name
+        // of whoever set it. Without this the corpus is 138 strangers wide.
+        var users = new List<string>();
+
+        for (int i = 1; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--export" when i + 1 < args.Length: exportTo = args[++i]; break;
+                case "--ruleset" when i + 1 < args.Length: ruleset = args[++i]; break;
+                case "--out" when i + 1 < args.Length: destination = args[++i]; break;
+                case "--all-rulesets": ruleset = string.Empty; break;
+                case "--passed": passedOnly = true; break;
+                case "--user" when i + 1 < args.Length: users.Add(args[++i]); break;
+                case "--since" when i + 1 < args.Length: since = DateTime.Parse(args[++i], CultureInfo.InvariantCulture); break;
+            }
+        }
+
+        var scores = ScoreIndex.Build(lazerRoot, Path.Combine("build", "realm-copy"));
+        ScoreIndex.Write(scores, destination);
+
+        var selected = scores
+            .Where(s => ruleset.Length == 0 || s.Ruleset == ruleset)
+            .Where(s => !passedOnly || s.Passed)
+            .Where(s => users.Count == 0 || users.Contains(s.User, StringComparer.OrdinalIgnoreCase))
+            .Where(s => DateTime.Parse(s.Date, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind) >= since)
+            .OrderBy(s => s.Date)
+            .ToList();
+
+        Console.WriteLine($"scores in realm: {scores.Count}");
+        Console.WriteLine($"  with a replay file: {scores.Count(s => s.Path != null)}");
+
+        foreach (var group in scores.GroupBy(s => s.Ruleset).OrderByDescending(g => g.Count()))
+            Console.WriteLine($"  {group.Key}: {group.Count()}");
+
+        Console.WriteLine($"  distinct users: {scores.Select(s => s.User).Distinct().Count()}");
+
+        Console.WriteLine($"selected: {selected.Count}");
+
+        if (selected.Count > 0)
+            Console.WriteLine($"  dates: {selected[0].Date[..10]} to {selected[^1].Date[..10]}");
+
+        Console.WriteLine($"written: {destination}");
+
+        if (exportTo != null)
+        {
+            var result = ScoreIndex.Export(selected, exportTo);
+            Console.WriteLine($"exported: {result.Written} ({result.Bytes / 1024.0 / 1024.0:F1} MiB) to {exportTo}");
+            Console.WriteLine($"  already present: {result.Skipped}");
+            Console.WriteLine($"  no file in the store: {result.Missing}");
         }
 
         return 0;
