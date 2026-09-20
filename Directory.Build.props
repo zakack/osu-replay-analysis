@@ -16,5 +16,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- The batch commands simulate a 17,000-replay corpus across every core, and each
+         iteration allocates a playable beatmap graph and a decoded frame stream. Workstation
+         GC collects those on the allocating thread and becomes the bottleneck well before the
+         cores do. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
   </PropertyGroup>
 </Project>

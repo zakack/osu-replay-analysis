@@ -35,6 +35,7 @@ if (args.Length == 0)
     Console.Error.WriteLine("  rhythm [gap] [tol]... extract rhythmic groups and constant-snap runs across the corpus");
     Console.Error.WriteLine("  geometry              extract per-object geometry, cross-checking the angle against lazer");
     Console.Error.WriteLine("    these, and verify, take --corpus <path> and --out <path>");
+    Console.Error.WriteLine("    verify and the sweeps take --threads <n>, defaulting to every logical processor");
     Console.Error.WriteLine("  tail-sweep [ms]...    trim the end off replays that stopped early and report the drift");
     Console.Error.WriteLine("  sweep [ms]...         shift every replay frame time and report the drift in click judgements");
     return 2;
@@ -55,6 +56,14 @@ static (string Corpus, string Out) paths(string[] args, string fallbackOut)
     }
 
     return (corpus, destination);
+}
+
+// Applies to every batch command, so it is read once rather than in each case. Leaving
+// cores free matters: a full-corpus verify saturates the machine for a quarter of an hour.
+for (int i = 1; i < args.Length - 1; i++)
+{
+    if (args[i] == "--threads")
+        Batch.Threads = Math.Max(1, int.Parse(args[i + 1], CultureInfo.InvariantCulture));
 }
 
 switch (args[0])
@@ -225,10 +234,10 @@ switch (args[0])
         var corpus = CorpusSurvey.ReadRecords(corpusPath);
 
         var eligible = corpus.Where(r => r is { RulesetId: 0, Paired: true, DecodeError: null }).ToArray();
-        var results = new List<VerificationResult>(eligible.Length);
 
-        foreach (var record in eligible)
-            results.Add(Verification.Verify(record, index));
+        Console.Error.WriteLine($"verifying {eligible.Length:N0} replays on {Batch.Threads} threads");
+
+        var results = Batch.VerifyAll(eligible, index, Console.Error);
 
         Report.Print(results, Console.Out);
         Report.Write(results, verificationOut);

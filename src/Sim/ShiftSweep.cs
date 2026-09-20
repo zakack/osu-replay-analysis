@@ -42,10 +42,10 @@ public static class ShiftSweep
                 int gross = 0;
                 int exact = 0;
 
-                foreach (var record in records)
+                // Parallel within the pass, never across passes: the loop above rewrites a
+                // process global, so the passes have to stay on one thread. See Batch.
+                foreach (var result in Batch.VerifyAll(records, index))
                 {
-                    var result = Verification.Verify(record, index);
-
                     if (result.Expected == null || result.Actual == null)
                         continue;
 
@@ -94,10 +94,10 @@ public static class ShiftSweep
                 int exact = 0;
                 int counted = 0;
 
-                foreach (var record in records)
+                // Parallel within the pass, never across passes: the loop above rewrites a
+                // process global, so the passes have to stay on one thread. See Batch.
+                foreach (var result in Batch.VerifyAll(records, index))
                 {
-                    var result = Verification.Verify(record, index);
-
                     if (result.Expected == null || result.Actual == null)
                         continue;
 
