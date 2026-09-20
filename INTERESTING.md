@@ -178,3 +178,13 @@ Unfinished: `build/above.log` was mid-pull of 159 friends above #120k when the s
 The hand-export corpus was 1,259 files. Everything else was already on disk in the file
 store, unreachable only because realm holds the score-to-file mapping. Also: every score in
 realm has `Passed = true`, so the "no failed runs" limit is structural, not a sampling gap.
+
+## 2026-09-20 — the click-mismatch bucket is not empty, and the 86 in it share a signature
+
+`build/verification.json`, Outcome=Mismatch on a modern client with Unjudged=0 and HeaderShortfall=0
+
+86 of 10,810. Net across them: Great -138, Meh +156, Miss -32, Ok +14, and 48 of the 86 move
+exactly one object. Great -> Meh skips a whole window, which no hit-window change produces.
+Spread over 60 maps and every client version, and the same map reproduces fine on most runs
+(4 bad of 63 on tenderly), so it is run-specific rather than map- or version-specific. Reads
+like the Super Nuko World press-attribution cascade as a population rather than a one-off.

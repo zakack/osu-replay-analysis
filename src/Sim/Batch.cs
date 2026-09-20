@@ -26,7 +26,14 @@ public static class Batch
     /// How many replays to simulate at once.
     ///
     /// Measured on a 13700KF (8 performance cores with SMT, 8 efficiency cores, 24 logical)
-    /// over a 1,000-replay sample whose sequential cost is 440s:
+    /// over a 1,000-replay sample whose sequential cost is 440s.
+    ///
+    /// <em>These are boost-clock numbers and read high.</em> Each run lasted 45-62s, which is
+    /// short of thermal equilibrium: the machine runs Intel default limits and throttles at
+    /// 90C, and a full-corpus run settles to about 16 replays/s against the 20.7/s this table
+    /// predicts. Treat the speedups as an upper bound and the shape as suspect -- a 24-thread
+    /// run reaches the limit sooner than an 8-thread one, so equilibrium should flatter the
+    /// low end by more than this shows.
     ///
     /// <code>
     ///  threads   wall    cpu   speedup   cpu cost
