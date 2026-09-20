@@ -142,3 +142,13 @@ Mechanism: the passage forces repeated deceleration, tap rhythm tracks the hand 
 The coupling between cursor deceleration and late tapping is NOT a skill deficit. The board's range is +0.149 to +0.634, bracketing zaksynack's +0.381, and corr(player accuracy, coupling) across the board is +0.005 — dead zero. Two top-50 players couple harder than he does. Nobody, including him, missed a single hairpin object.
 
 What separates him is precision, and it is not pattern-specific: error sd 23.42ms against a board median of 8.43, with the entire top fourteen inside a 6.93-9.13ms band. Same conclusion the accidental Pretender corpus reached from a different direction — the gap is consistency, not bias, and not geometry. Retracted on the strength of this: a practice recommendation to "hold tap rhythm independent of cursor speed", which the best players on the map demonstrably do not do either.
+
+## 2026-09-20 — NoFail usage tracks daily difficulty, so the hard boards are the LEAST truncated
+
+`build/daily/room-*.jsonl` — 51 archived dailies with 300+ scores, mods per score row
+
+Median NF usage runs 3.9% at SR under 4, 8.5% at 4-5, 15.1% at 5-6 and 23.5% above 6, with corr(star rating, NF) = +0.73 across 51 days. The tail reaches 37.5% on a 6.13 and 32.4% on a 6.84 — on hard days a third of the board refuses to let the run end.
+
+This reverses an earlier note in this log. The daily boards were written off as truncated at the fail threshold "hardest on exactly the hard maps"; the opposite is true, because NF rises with difficulty. The population of runs that fall apart lives in the Wednesday boards and is already archived. Caveat: an NF run is a player choosing a different contract, not a random sample of would-be failures — many pass fine and take the safety anyway — so it is a partial window, not a clean one. Still far closer to genuine play than an RX run, which changes the input model entirely and scores zero pp.
+
+Also a methodology lesson: the 5% figure that prompted this came from a single map at SR 3.76, third from the bottom of the ramp. One map sampled at the easy end of a scheduled gradient reported the floor as if it were the rate.
