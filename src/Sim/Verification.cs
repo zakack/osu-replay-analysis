@@ -19,6 +19,11 @@ public enum Outcome
     Mismatch,
     ObjectCountMismatch,
     OutOfScopeClassic,
+
+    /// <summary>
+    /// A mod that judges through the drawable layer, which this project does not host.
+    /// </summary>
+    OutOfScopeDrawableMod,
     NoGroundTruth,
     Error
 }
@@ -108,6 +113,22 @@ public static class Verification
             // The Classic mod swaps in LegacyHitPolicy and changes slider head and tail
             // judgement. It is a different ruleset branch, not a variation, so it waits.
             string clientVersion = score.ScoreInfo.ClientVersion;
+
+            // Mods that reach hit detection through the drawable layer rather than through
+            // the beatmap. Depth rewrites drawable.Position and drawable.Scale every frame
+            // from a 3D projection, and a circle only registers a press while IsHovered --
+            // which tests the cursor against that rendered quad. So what you can hit moves
+            // with what you can see. Magnetised and Repel do the same to the cursor.
+            //
+            // This is not a defect in lazer and not one here either. On the corpus's one
+            // Depth score the header and the live game agree on every click statistic --
+            // the game is entirely self-consistent, and we are the outlier because we judge
+            // from logical positions. Reaching those positions needs a hosted game loop,
+            // which HostGuardTests exists to forbid, so this is a permanent edge of the port
+            // rather than something to fix. Out of scope, like Classic, and for a firmer
+            // reason: Classic is unported, this is unportable.
+            if (mods.Any(m => m is OsuModDepth or OsuModMagnetised or OsuModRepel))
+                return scoped(record, Outcome.OutOfScopeDrawableMod) with { ClientVersion = clientVersion, ReplayFormat = record.Version };
 
             if (!IncludeClassic && mods.Any(m => m is OsuModClassic))
                 return scoped(record, Outcome.OutOfScopeClassic) with { ClientVersion = clientVersion, ReplayFormat = record.Version };

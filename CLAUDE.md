@@ -344,6 +344,18 @@ section, it's the map, not the player.
   that point, and lazer judges nothing after it. Simulating to the end of the beatmap
   invents a miss for every remaining object — which looks like a catastrophic ruleset bug
   and is not one.
+- **Some mods reach hit detection through the drawable layer, and those are unportable.**
+  Mod *application* is never reimplemented here — lazer does it — but that assumes a mod acts
+  on the beatmap. Depth does not: it implements `IUpdatableByPlayfield` and rewrites
+  `drawable.Position` and `drawable.Scale` every frame from a 3D projection. A circle only
+  registers a press while `IsHovered`, which tests the cursor against that rendered quad, so
+  the hit target follows the render. Magnetised and Repel do the same to the cursor.
+  Lazer is entirely self-consistent about this — on the corpus's one Depth score the header
+  and the live game agree on every click statistic, and the simulation is the only party
+  disagreeing, because it judges from logical positions. Reaching the rendered ones needs a
+  hosted game loop, which `HostGuardTests` exists to forbid. So these are scoped out like
+  Classic, for a firmer reason: Classic is unported, this is unportable. One score in 17,273,
+  and it was a daily challenge gimmick.
 - **Read error vs aim error can look identical in the data.** A misread usually shows the
   cursor travelling confidently to the wrong place; an aim error shows it travelling to
   the right place imprecisely. That separation is inference, and it's where a model will

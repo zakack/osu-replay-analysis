@@ -19,6 +19,19 @@ public enum Cause
     ClassicMod,
 
     /// <summary>
+    /// A mod whose effect on hit detection lives in the drawable layer, which cannot be
+    /// reached without hosting a game loop — the one thing the architecture forbids.
+    ///
+    /// Depth moves and rescales the drawable every frame, and presses register against the
+    /// rendered quad, so the hit target follows the render. Magnetised and Repel move the
+    /// cursor. Lazer is self-consistent about all of it: on the corpus's single Depth score
+    /// the header and the live game agree on every click statistic, and the simulation is
+    /// the only disagreeing party, because it judges from logical positions. Unportable
+    /// rather than unported, and one score in 17,273.
+    /// </summary>
+    DrawableLayerMod,
+
+    /// <summary>
     /// The score was set on a client whose hit windows were the raw difficulty range rather
     /// than floored to a half-integer. Replay frame times are whole milliseconds, so under
     /// the old windows a judgement could sit exactly on an edge and flip on playback — the
@@ -212,6 +225,9 @@ public static class Taxonomy
 
             case Outcome.OutOfScopeClassic:
                 return Cause.ClassicMod;
+
+            case Outcome.OutOfScopeDrawableMod:
+                return Cause.DrawableLayerMod;
 
             case not Outcome.Mismatch:
                 return Cause.NotComparable;
