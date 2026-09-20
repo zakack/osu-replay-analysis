@@ -160,3 +160,13 @@ Also a methodology lesson: the 5% figure that prompted this came from a single m
 168 maps in Zak's own top-200 are also in a peer's, 105 with five or more peers and 40 with ten or more. Best covered: Ai no Sukima [Radiance] with 39, Mizuoto to Curtain [Lucid] with 30, Marshmary [Horizon] with 30. Their accuracy clusters 96-99% against his 96.86%.
 
 This is the control the other two corpora cannot be. A map's top-50 board is four digits above him so every difference is confounded with being far better -- the Glory Days comparison came back "their error sd is a third of yours" and nothing more specific. The daily boards span the ladder but ppy assigns the map, so nothing is shared with his own history. Peers are matched on skill AND choose the same maps, which makes any shared map a controlled comparison for free. Only the friends list needs user auth; everything downstream is public.
+
+## 2026-09-20 — map overlap with better players recovers through rate mods, confirmed at #1
+
+`build/friends-best.jsonl`; mrekk's top 200 via `/users/{id}/scores/best`
+
+mrekk's base-map difficulty falls monotonically as he stacks mods: nomod median 10.07 SR, HR-only 9.18, DT 7.09, DT+HR 6.85 (reaching 5.90). 17 of his 200 sit inside zaksynack's 5.0-6.5 nomod range and ALL 17 were played with a rate mod — the overlap is 100% mechanism, 0% coincidence.
+
+So overlap with stronger players never vanishes, because HDDTHR keeps dragging their base-map requirement back down. What should vary is volume, and locating the peak is the open question: Zak predicts 4-digit. Shared-map counts by rank so far run 4 at #25k, 24 at #84k, ~24 median in the #120-180k band, 9 at #300k — overlap peaks near one's own rank and decays BOTH directions, so "better players share less" was wrong; players unlike you share less, either side.
+
+Unfinished: `build/above.log` was mid-pull of 159 friends above #120k when the session ended. Re-run `/tmp` script or `tools/reference/friends.py --low 0 --high 120000`. The test needs shared-count AND modded-share to rise together at the same rank; shared count rising on nomod maps would be taste convergence instead, and the in-band modded share swings 0-82% on personal preference, so the signal must clear real noise.
