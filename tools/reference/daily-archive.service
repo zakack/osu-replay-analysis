@@ -1,0 +1,14 @@
+[Unit]
+Description=Archive the previous osu! daily challenge leaderboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/osu-replay-analysis
+# Create this yourself: OSU_API_CLIENT= and OSU_API_KEY=, mode 600. Not in the repo.
+EnvironmentFile=%h/.config/osu-api.env
+# --backfill skips rooms already on disk, so this is self-healing: a missed day, a reboot or
+# a week offline is caught up by the next run rather than leaving a hole in the series.
+ExecStart=/usr/bin/python3 tools/reference/daily.py --backfill 7
+Nice=10

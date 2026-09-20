@@ -1,0 +1,13 @@
+[Unit]
+Description=Archive the osu! daily challenge once a day
+
+[Timer]
+# Rooms close at 00:00Z; run after that so the previous day's board is final.
+OnCalendar=*-*-* 01:30:00 UTC
+RandomizedDelaySec=900
+# Unlike the firehose, this IS worth catching up: the board persists, so a run missed while
+# the machine was off still retrieves a complete leaderboard afterwards.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
