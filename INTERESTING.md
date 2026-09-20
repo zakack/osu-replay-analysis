@@ -82,3 +82,15 @@ here. [archangeloi.] is 36% timed, Save Me [Tragedy] 55%, Blue Zenith [FOUR DIME
 `build/best/manifest.json` accuracy fields; osu! API `/scores` and `/users/{id}/scores/recent?include_fails=1`
 
 Per-map accuracy variance comes from score metadata, which every listing carries and which exists even for fails; map physicality comes from the `.osu` geometry. Neither side of "do high-physicality maps convert luck into pp" touches a replay, so the preservation bias that truncates every replay source does not apply to it.
+
+## 2026-09-19 — the daily corpus contains none of the map genre the variance hypothesis is about
+
+`build/daily/room-*.jsonl` meta joined against bulk `/beatmaps` — 38 assignments resolved
+
+Zero TV-size, nightcore, cut-version or sped-up titles; median playcount 36,874 against the hundreds of thousands that define a farm map; only 3 of 38 meet four of six slop markers and none is a jump map. The curation panel selects on quality rather than popularity, so the daily is not an attenuated sample of aim-heavy maps, it is an absent one. Only the firehose reaches that population.
+
+## 2026-09-19 — daily star rating is a fixed weekly ramp, Thursday to Wednesday
+
+`build/daily/room-*.jsonl`, 30 consecutive assignments grouped Thu-start; osu! wiki Gameplay/Daily_challenge
+
+3.13 / 3.74 / 4.33 / 4.84 / 5.41 / 5.75 / 6.23 by weekday, monotonic within all five archived weeks. So star rating is perfectly confounded with day of week, and day of week decides who shows up — any difficulty effect in this corpus is entangled with population composition and cannot be identified. Length is NOT scheduled and varies freely, which is what leaves the length question answerable.
