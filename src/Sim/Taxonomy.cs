@@ -175,12 +175,18 @@ public static class Taxonomy
         if (result.Unjudged > 0 || result.HeaderShortfall > 0)
             return Cause.EndedEarly;
 
-        if (OnLegacyHitWindows(result))
-            return Cause.LegacyHitWindows;
-
+        // Tracking is tested before the client version, and the order is load-bearing. If
+        // every click agrees then the hit windows demonstrably did not cause this mismatch,
+        // whichever client wrote it, and filing it under them is just the older label winning
+        // a race. It ran the other way until measured: 614 of the 6,150 replays the legacy
+        // class held had clicks agreeing exactly, a tenth of the class and all of it
+        // mislabelled.
         if (result.Expected != null && result.Actual != null
             && clicks.All(c => result.Expected.GetValueOrDefault(c) == result.Actual.GetValueOrDefault(c)))
             return Cause.TrackingOnly;
+
+        if (OnLegacyHitWindows(result))
+            return Cause.LegacyHitWindows;
 
         return Cause.ClicksUnreproducible;
     }
