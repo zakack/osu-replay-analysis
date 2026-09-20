@@ -251,3 +251,18 @@ itself and labelling it a press.
 Worth keeping as a shape rather than a fact: an is-check against a base class silently widens to
 every subclass, and here the subclasses were precisely the population the filter existed to
 exclude. Nothing threw, nothing looked wrong, and the numbers were plausible.
+
+## 2026-09-20 — playback is cadence-stable for presses; the stale-hover mechanism is dead
+
+`build/rate-probe-fixed.txt`, `tests/Oracle/PlaybackRateTests.cs`
+
+Six replays, 2,881 press judgements, sampling made 5x to 35x finer via UserPlaybackRate. Zero
+judged differently. The 85 header-vs-playback divergences therefore do not come from playback
+being sensitive to sampling -- it isn't -- so they come from the difference between the play
+and the recorded file. Mechanism now unknown rather than merely unproven, which is progress in
+the only direction that counts.
+
+Also means the synthetic demo cannot be built from a replay at all: any replay-against-replay
+comparison replays the same interpolated path, and the variable that matters is the true cursor
+path, which no .osr contains. Demonstrating it needs a *recorded* play -- autoplay through a
+ReplayRecorder, then a replay of that recording -- not a synthetic replay.

@@ -51,26 +51,23 @@ Great just outside the new edge becomes an Ok. Here the mass moves Great to **Me
 the Ok window entirely: Meh gains 157 while Ok gains 11. No edge adjustment produces a
 two-step move.
 
-## Proposed mechanism (hypothesis, not established)
+## Mechanism: unknown, with one candidate ruled out
 
-`DrawableHitCircle` registers a press only while `IsHovered`. `IsHovered` is resolved against
-the drawable's quad using the current cursor position — which, during playback, is
-interpolated between samples recorded at `ReplayRecorder.RecordFrameRate = 60`, i.e. roughly
-every 17ms.
+The obvious explanation is that press *attribution* drifts. `DrawableHitCircle` registers a
+press only while `IsHovered`, and during playback the cursor path between recorded samples is
+interpolated, so if hover were evaluated against a stale position — the last update before the
+press rather than the press itself — a press could land on a neighbouring object, and the
+intended one would be judged later and worse. That fits the Great-to-Meh direction exactly.
 
-The press time is exact. The cursor position *at that instant* is exact. But whether a given
-circle was hovered at that instant is evaluated against an interpolated path, and the
-original play evaluated it against the true cursor at the client's real frame rate. Where two
-objects are close together, a sub-pixel difference hands the press to a neighbour. The object
-that should have taken it is then judged later and worse — or missed — which is the
-Great-to-Meh direction above.
+**It has been tested and it does not hold.** Playing replays through the headless gameplay
+stack at two playback rates, giving 5x to 35x finer sampling of the same interpolated path,
+produced identical press judgements on all of 2,881 across six replays — including replays
+that are themselves in the 85. A stale-hover mechanism predicts cadence dependence. There is
+none.
 
-This would make it a distinct mechanism from #34016. That one is a feedback loop in the
-follow radius and affects tracking; this affects which object a discrete press resolves
-against, and would apply equally to a circle with no slider anywhere near it.
-
-The mechanism is inference from the direction of the drift plus the code path. It has not
-been demonstrated object-by-object, and a maintainer may well see a likelier explanation.
+So press judgements are stable under *how finely playback samples*, and still differ from what
+the play recorded. Whatever the cause, it is a difference between the play and the file rather
+than a sensitivity in playback, and it is not explained here.
 
 ## Limits of the measurement
 
