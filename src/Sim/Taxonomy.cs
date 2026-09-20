@@ -99,10 +99,18 @@ public enum Cause
     /// to whoever built that client and nothing here, and a blank one on a format that had
     /// room — a client that could have said and did not.
     ///
-    /// A caveat this class only makes visible rather than solves: dating a *fork* by its
-    /// version tells you the state of the fork, not of lazer. 509 tachyon and 60 torii scores
-    /// in the local corpus parse cleanly and are dated like stock builds, which is right only
-    /// so long as those forks do not touch hit windows or the judgement loop.
+    /// Dating a *fork* by its version tells you the state of the fork, not of lazer, so the
+    /// local corpus's three were checked with the player rather than assumed:
+    ///
+    ///   tachyon  509 scores  release-candidate lazer, no ruleset changes — dated as stock,
+    ///                        which is correct rather than merely convenient
+    ///   torii     60 scores  carries changes, extent unestablished; barely played
+    ///   googu      1 score   the only fork with structural mapping changes, so the one that
+    ///                        could move object counts rather than timing; barely played
+    ///
+    /// Only the googu score is a live concern, and a conversion difference would surface as
+    /// <see cref="Outcome.ObjectCountMismatch"/> rather than hide here. There are none in the
+    /// corpus.
     /// </summary>
     UnknownClient,
 

@@ -207,3 +207,17 @@ the tracking feedback in ppy/osu#34016.
 
 Whole-corpus defect surface for the port after this: one HitCircle, 73620ms, Thriller [Insane]
 2025-10-30_20-09, game=Miss sim=Ok.
+
+## 2026-09-20 — the legacy hit-window class survives the oracle, with six judgements left over
+
+`ora oracle-diff` over `build/oracle-targets-legacy200.json` (200 size-stratified of 5,536)
+
+Simulation agrees with the live game on 146 of 200 and on every click in 197. All 200 differ
+from their header, so the class is a measurement now and not just a confident label.
+
+The six leftover click divergences are the odd part. Bidirectional -- we are stricter three
+times and looser three times -- and four of the six sit 20-30ms inside their window at the
+production step, so they are not window-edge cases. Our own simulation reaches different
+judgements at the production step and the oracle step for an object whose press is 8ms from
+perfect, which makes them attribution rather than timing. Consistent with OracleMatchStep
+agreeing only 33 of 47 at its best, so not evidence of a mis-ported rule, but unexplained.
