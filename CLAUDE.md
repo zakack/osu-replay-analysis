@@ -105,11 +105,23 @@ counts, since version 30000001+ carries a JSON blob with full `statistics` and
 weak assertion, not the strong one: it is int32-truncated and means different things for
 lazer and stable scores. Assert counts and max combo.
 
-There is no local Replays folder. The corpus is lazer's exports, and beatmaps are not
-reachable by path at all — the `.osr` header carries the beatmap's MD5 while lazer's file
-store is addressed by SHA-256, and only the realm database holds the mapping. Build that
-index first, from a *copy* of the realm, and never traverse or brute-force hash the file
-store.
+There is no local Replays folder, and the exports directory is not the corpus either — it is
+a record of which results were worth a hotkey press, which is a label worth keeping and a
+terrible sampling frame. Lazer keeps a replay for **every completed run**, in the same
+content-addressed file store as the beatmaps, and realm holds both mappings: `BeatmapInfo` to
+a `.osu`, `ScoreInfo` to a `.osr`. Nothing is reachable by path — the `.osr` header carries
+the beatmap's MD5 while the store is addressed by SHA-256. Build both indexes first, from a
+*copy* of the realm, and never traverse or brute-force hash the file store.
+
+Exporting is a byte copy: `LegacyScoreExporter.ExportToStream` opens the store entry and
+copies it without re-encoding, so a bulk export and a hand export of the same score produce
+identical files and the two corpora are one corpus.
+
+Two traps in that table. Realm files a **downloaded** replay beside a played one, under the
+name of whoever set it, so filter by user or the corpus is a hundred-odd strangers wide — and
+the name is the only reliable discriminator, since 44% of downloaded scores carry no online
+id either. And `ScoreInfo.Passed` is `true` on every stored score, carrying no information at
+all; `Rank == F` is what marks an incomplete run.
 
 The oracle settles *rules*, not *parameters*. Whether `TryJudgeNestedObject` was ported
 correctly is a question about semantics, and a divergence there is a defect. How often the

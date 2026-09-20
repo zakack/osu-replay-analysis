@@ -170,3 +170,11 @@ mrekk's base-map difficulty falls monotonically as he stacks mods: nomod median 
 So overlap with stronger players never vanishes, because HDDTHR keeps dragging their base-map requirement back down. What should vary is volume, and locating the peak is the open question: Zak predicts 4-digit. Shared-map counts by rank so far run 4 at #25k, 24 at #84k, ~24 median in the #120-180k band, 9 at #300k — overlap peaks near one's own rank and decays BOTH directions, so "better players share less" was wrong; players unlike you share less, either side.
 
 Unfinished: `build/above.log` was mid-pull of 159 friends above #120k when the session ended. Re-run `/tmp` script or `tools/reference/friends.py --low 0 --high 120000`. The test needs shared-count AND modded-share to rise together at the same rank; shared count rising on nomod maps would be taste convergence instead, and the in-band modded share swings 0-82% on personal preference, so the signal must clear real noise.
+
+## 2026-09-20 — lazer kept every completed run; the export corpus was 7% of it
+
+`ora scores --export build/replays` — 17,500 osu! replays, 3,281 distinct beatmaps, 2013-06-28 to today
+
+The hand-export corpus was 1,259 files. Everything else was already on disk in the file
+store, unreachable only because realm holds the score-to-file mapping. Also: every score in
+realm has `Passed = true`, so the "no failed runs" limit is structural, not a sampling gap.
