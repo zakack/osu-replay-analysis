@@ -63,22 +63,41 @@ public enum Cause
     TrackingOnly,
 
     /// <summary>
-    /// A click judgement differs on a modern client's completed play.
+    /// A click judgement differs on a modern client's completed play — because replaying a
+    /// replay does not reproduce the clicks of the play that wrote it.
     ///
-    /// This is the only bucket where a disagreement <em>could</em> be a defect, but it is not
-    /// evidence of one on its own, and the corpus proves the distinction. Both replays left
-    /// here differ from their header by exactly one click, and the differential oracle
-    /// reproduces the live game on both without a single divergence — so the disagreement is
-    /// between the header and lazer's own playback, not between lazer and us. Nor is it the
-    /// hit window rounding effect returning: the disputed judgements sit three and a half
-    /// milliseconds or more outside a window edge rather than on it.
+    /// This used to be the bucket that "should be empty", the one place a disagreement was
+    /// held to be evidence of a defect in the port. It is not, and the oracle settled it at
+    /// scale. Of the 86 members at 17,236 replays, 85 have the <em>live game</em> disagreeing
+    /// with the header its own play wrote, and exactly one has the live game disagreeing with
+    /// this simulation. The net drift of lazer's playback against those headers is Great -137,
+    /// Ok +11, Meh +157, Miss -31; this simulation's drift against the same headers is Great
+    /// -138, Ok +14, Meh +156, Miss -32. Two implementations walking away from the header in
+    /// the same direction by the same amount is agreement, not a shared bug.
     ///
-    /// What cannot be done is localising it. The header carries totals, so it names no object
-    /// and no millisecond, and there is nothing else in the file to appeal to. Only the oracle
-    /// can settle a replay in here, and until it has, membership means unexplained rather than
-    /// wrong.
+    /// So the file's press <em>times</em> survive exactly, as a button change forces a frame,
+    /// but which object a press is <em>attributed</em> to does not: a circle only registers a
+    /// press while <c>IsHovered</c>, and hover is tested against a cursor interpolated between
+    /// 17ms samples. Sub-pixel differences there hand a press to a neighbour, and the intended
+    /// object is judged later and worse — which is the Great-to-Meh direction above, skipping
+    /// the Ok window entirely in a way no hit-window change produces. Distinct from the
+    /// tracking feedback of ppy/osu#34016, and it contradicts the common reading of
+    /// ppy/osu#28744 that only tracking is lost.
+    ///
+    /// Membership is therefore not an accusation. Only <c>oracle-diff</c> can convict, by
+    /// asking the live game directly, and across this corpus it convicted once: one HitCircle
+    /// at 73620ms of Thriller [Insane].
     /// </summary>
-    ClickMismatch
+    ClicksUnreproducible,
+
+    /// <summary>
+    /// Nothing was compared, so nothing can be concluded: the beatmap converted to a
+    /// different object count, the header carried no usable ground truth, or the replay threw.
+    ///
+    /// These used to fall through into the click bucket, which quietly inflated the one
+    /// number that was supposed to mean a defect. A failure to compare is not a disagreement.
+    /// </summary>
+    NotComparable
 }
 
 public static class Taxonomy
@@ -143,7 +162,7 @@ public static class Taxonomy
                 return Cause.ClassicMod;
 
             case not Outcome.Mismatch:
-                return Cause.ClickMismatch;
+                return Cause.NotComparable;
         }
 
         // Order matters, and it runs from the least to the most attributable to us. A replay
@@ -163,6 +182,6 @@ public static class Taxonomy
             && clicks.All(c => result.Expected.GetValueOrDefault(c) == result.Actual.GetValueOrDefault(c)))
             return Cause.TrackingOnly;
 
-        return Cause.ClickMismatch;
+        return Cause.ClicksUnreproducible;
     }
 }

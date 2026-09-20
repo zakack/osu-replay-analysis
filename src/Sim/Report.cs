@@ -53,11 +53,11 @@ public static class Report
         // ran to the end, does this reproduce what lazer judged?
         int comparable = (byCause.GetValueOrDefault(Cause.Exact)?.Length ?? 0)
                          + (byCause.GetValueOrDefault(Cause.TrackingOnly)?.Length ?? 0)
-                         + (byCause.GetValueOrDefault(Cause.ClickMismatch)?.Length ?? 0);
+                         + (byCause.GetValueOrDefault(Cause.ClicksUnreproducible)?.Length ?? 0);
 
         if (comparable > 0)
         {
-            int clicksExact = comparable - (byCause.GetValueOrDefault(Cause.ClickMismatch)?.Length ?? 0);
+            int clicksExact = comparable - (byCause.GetValueOrDefault(Cause.ClicksUnreproducible)?.Length ?? 0);
             int allExact = byCause.GetValueOrDefault(Cause.Exact)?.Length ?? 0;
 
             output.WriteLine();

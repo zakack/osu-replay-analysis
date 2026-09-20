@@ -162,8 +162,13 @@ Four causes account for the local corpus, and only the last is a defect:
   past its end. Judging past the last frame invents misses.
 - **Slider tracking.** See the trap below: lazer's own tracking is framerate-dependent by a
   mechanism ppy has open as a bug, so tails are not reproducible even in principle.
-- **A click judgement differs on a modern client's completed play.** This bucket should be
-  empty. It is the only place a disagreement is evidence of a bug in the port.
+- **A click judgement differs on a modern client's completed play.** This was written as the
+  bucket that should be empty, the only place a disagreement is evidence of a bug in the port.
+  That was wrong, and the oracle settled it at scale: of its 86 members across 17,236 replays,
+  85 have the *live game* disagreeing with the header its own play wrote, and one has the live
+  game disagreeing with the simulation. Replaying a replay does not reproduce the play's
+  clicks, so membership here is a property of the file, like the three causes above it. Only
+  `oracle-diff` convicts, and across the whole corpus it convicted once.
 
 **2. The two-click flam — as a debugging instrument, not a feature.** Immediately after
 extraction works, before any analysis. Two synthesized clicks per object: one at the
@@ -318,11 +323,17 @@ section, it's the map, not the player.
   shows the live game replaying a replay disagreeing with the header that same play wrote,
   which is also why judgement counts can differ between the results screen and watching the
   replay back — ppy #28744, closed, and #34016, open.
-  What survives exactly, and it is the important half: every click. A button change forces a
-  frame, so the press time and the cursor position at the press are recorded rather than
-  interpolated, and on a modern client a completed play's Great/Ok/Meh/Miss counts reproduce
-  exactly. The header is unreachable on *tracking-dependent* judgements specifically, and
-  reachable on the rest.
+  What survives exactly is narrower than it looks, and this paragraph used to overstate it.
+  Press *times* do survive: a button change forces a frame, so the press time and the cursor
+  position at that press are recorded rather than interpolated. What does not survive is which
+  object a press is *attributed* to. A circle only registers a press while `IsHovered`, and
+  hover is tested against a cursor interpolated between 17ms samples, so a sub-pixel difference
+  hands the press to a neighbour and the intended object is judged later and worse. Measured
+  over 17,236 replays: 85 modern-client completed plays where lazer's own playback reaches
+  different Great/Ok/Meh/Miss counts than the play recorded, drifting Great -137, Ok +11, Meh
+  +157, Miss -31. Great to Meh skips the Ok window entirely, which no hit-window change
+  produces. So the header is unreachable on tracking *and* on press attribution, and reachable
+  on everything else — and the common reading of #28744, that only tracking is lost, is wrong.
 - **The replay handler's "important section" rule never applies.**
   `FramedReplayInputHandler` refuses mid-frame times while a button is held — but only when
   `FrameAccuratePlayback` is true, and across the whole `ppy/osu` tree that public field is
