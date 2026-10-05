@@ -116,7 +116,7 @@ def capture(bearer, seconds, every, stream=False):
         os.makedirs(STREAM, exist_ok=True)
         if os.path.exists(STREAM_STATE):
             mark = json.load(open(STREAM_STATE)).get("last_id", 0)
-    renewed = time.time()
+    renewed, empty = time.time(), 0
 
     while not seconds or time.time() - started < seconds:
         began = time.time()
@@ -141,6 +141,15 @@ def capture(bearer, seconds, every, stream=False):
             # should keep reading rather than wait out the interval and fall further back.
             if len(page["scores"]) < 900 or not page.get("cursor_string"):
                 break
+
+        # At a dozen-plus scores a second a cycle that reads nothing is never real. It is a 401
+        # or an endpoint change wearing the shape of a quiet minute, so say so, and on the third
+        # in a row assume the token and renew it.
+        empty = 0 if batch else empty + 1
+        if stream and empty:
+            print(f"  {stamp}  empty cycle {empty}", flush=True)
+            if empty % 3 == 0:
+                bearer, renewed = token(), time.time()
 
         if stream:
             batch = [sc for sc in batch if sc["id"] > mark]

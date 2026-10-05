@@ -14,10 +14,12 @@ EnvironmentFile=%h/.config/osu-api.env
 # One page a minute keeps pace with the stream and pages faster when it falls behind, so it
 # records everything. depth.py found that every sparser schedule either reads a fraction of
 # the stream or catches repeat attempts only on short maps. build/firehose is a symlink to a
-# zstd dataset: this writes ~470MB a day before compression.
+# zstd dataset: at the 18/s measured on 2026-10-05 this writes ~670MB a day before compression.
 ExecStart=/usr/bin/python3 -u tools/reference/firehose.py --stream
 Restart=always
-RestartSec=60
+# The first page after a restart covers under a minute of stream, so a long delay is a
+# guaranteed hole on every restart.
+RestartSec=10
 Nice=10
 
 [Install]
