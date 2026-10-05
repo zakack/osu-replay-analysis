@@ -133,8 +133,15 @@ def stratified(rid, take):
     return [(i, pos, r) for i, (pos, r) in enumerate(picks)]
 
 
+# The download endpoint allows a burst of about ten and then answers 429 for roughly a
+# minute: the 2026-09-19 pull ran ten at a second apart, then a 56s backoff, on repeat. The
+# same nine-or-so a minute is available without ever being refused, by spacing them out.
+DOWNLOAD_SPACING = 6.5
+
+
 def pull(bearer, rid, take):
     picks = stratified(rid, take)
+    last = 0.0
     dest = f"{OUT}/replays"
     os.makedirs(dest, exist_ok=True)
     got = 0
@@ -142,6 +149,8 @@ def pull(bearer, rid, take):
         name = f"d{rid}-{sc['id']}.osr"
         if os.path.exists(f"{dest}/{name}"):
             continue
+        time.sleep(max(0.0, DOWNLOAD_SPACING - (time.time() - last)))
+        last = time.time()
         data = call(f"https://osu.ppy.sh/api/v2/scores/{sc['id']}/download", bearer, raw=True)
         if not data:
             continue
