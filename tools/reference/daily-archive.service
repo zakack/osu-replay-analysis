@@ -1,5 +1,5 @@
 [Unit]
-Description=Archive the previous osu! daily challenge leaderboard
+Description=Archive the previous osu! daily challenge leaderboard and its replays
 After=network-online.target
 Wants=network-online.target
 
@@ -11,4 +11,8 @@ EnvironmentFile=%h/.config/osu-api.env
 # --backfill skips rooms already on disk, so this is self-healing: a missed day, a reboot or
 # a week offline is caught up by the next run rather than leaving a hole in the series.
 ExecStart=/usr/bin/python3 tools/reference/daily.py --backfill 7
+# Then replays: the room that just closed plus two from the backlog, newest first, 200 each
+# stratified by board position. Stored replays are pruned over time, so the backlog is worked
+# every night rather than left for one big pull. build/daily is a symlink to a zstd dataset.
+ExecStart=/usr/bin/python3 -u tools/reference/daily.py --pull-pending 3 --take 200
 Nice=10

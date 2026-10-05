@@ -35,9 +35,10 @@ truncated at the fail threshold, hardest on the hard maps.
     python3 tools/reference/daily.py --archive <room_id>
     python3 tools/reference/daily.py --backfill [50]
     python3 tools/reference/daily.py --pull <room_id> [--take 200]
+    python3 tools/reference/daily.py --pull-pending [3] [--take 200]
     python3 tools/reference/daily.py --list [10]
 """
-import json, os, sys, time
+import collections, glob, json, os, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fetch import call, token
@@ -116,6 +117,46 @@ def write(meta, scores, stamp):
     return path
 
 
+def stratified(rid, take):
+    """Stratified by board position, which on a single map is a proxy for skill. The point
+    of this corpus is comparing how a three-digit rank and a six-digit rank move through the
+    same notes, and uniform sampling buries that in the crowded middle.
+
+    Returns (stratum, board position, score). Position is the score's place on the final
+    board, 0-based; stratum is its slot among the evenly spaced picks. They are different
+    numbers, and an earlier version wrote the stratum under the name board_pos."""
+    rows = [json.loads(l) for l in open(f"{OUT}/room-{rid}.jsonl")]
+    latest = max(r["snapshot"] for r in rows)
+    board_ = [r for r in rows if r.get("snapshot") == latest and r.get("accuracy") is not None]
+    pool = [(pos, r) for pos, r in enumerate(board_) if r.get("has_replay")]
+    picks = [pool[round(i * (len(pool) - 1) / max(take - 1, 1))] for i in range(min(take, len(pool)))]
+    return [(i, pos, r) for i, (pos, r) in enumerate(picks)]
+
+
+def pull(bearer, rid, take):
+    picks = stratified(rid, take)
+    dest = f"{OUT}/replays"
+    os.makedirs(dest, exist_ok=True)
+    got = 0
+    for stratum, pos, sc in picks:
+        name = f"d{rid}-{sc['id']}.osr"
+        if os.path.exists(f"{dest}/{name}"):
+            continue
+        data = call(f"https://osu.ppy.sh/api/v2/scores/{sc['id']}/download", bearer, raw=True)
+        if not data:
+            continue
+        with open(f"{dest}/{name}", "wb") as f:
+            f.write(data)
+        with open(f"{OUT}/replays.jsonl", "a") as f:
+            f.write(json.dumps({"file": name, "room_id": rid, "stratum": stratum,
+                                "board_pos": pos, **sc}, separators=(",", ":")) + "\n")
+        got += 1
+        if got % 25 == 0:
+            print(f"  {got}/{len(picks)}", flush=True)
+    print(f"room {rid}: pulled {got}, stratified over {len(picks)} picks -> {dest}", flush=True)
+    return got
+
+
 def main():
     bearer = token()
 
@@ -127,37 +168,35 @@ def main():
         return 0
 
     if "--pull" in sys.argv:
-        # Stratified by board position, which on a single map is a proxy for skill. The
-        # point of this corpus is comparing how a three-digit rank and a six-digit rank move
-        # through the same notes, and uniform sampling buries that in the crowded middle.
         rid = arg("--pull", 0)
-        take = arg("--take", 200)
-        path = f"{OUT}/room-{rid}.jsonl"
-        rows = [json.loads(l) for l in open(path)]
-        latest = max(r["snapshot"] for r in rows)
-        board_ = [r for r in rows if r.get("snapshot") == latest and r.get("accuracy") is not None]
-        pool = [r for r in board_ if r.get("has_replay")]
-        picks = [pool[round(i * (len(pool) - 1) / max(take - 1, 1))] for i in range(min(take, len(pool)))]
+        pull(bearer, rid, arg("--take", 200))
+        return 0
 
-        dest = f"{OUT}/replays"
-        os.makedirs(dest, exist_ok=True)
-        got = 0
-        for i, sc in enumerate(picks):
-            name = f"d{rid}-{sc['id']}.osr"
-            if os.path.exists(f"{dest}/{name}"):
+    if "--pull-pending" in sys.argv:
+        # Newest first, so the room that just closed is always taken and the backlog is
+        # worked down behind it a few rooms a night. Stored replays are pruned by osu-web
+        # over time, which is why there is a backlog at all and why it runs nightly rather
+        # than waiting for a big pull. A room that comes up short (throttling, a pruned
+        # replay) stays pending, and the retry costs only the files still missing.
+        want, take = arg("--pull-pending", 3), arg("--take", 200)
+        have = collections.Counter()
+        if os.path.exists(f"{OUT}/replays.jsonl"):
+            for line in open(f"{OUT}/replays.jsonl"):
+                have[json.loads(line)["room_id"]] += 1
+
+        rooms_ = []
+        for path in glob.glob(f"{OUT}/room-*.jsonl"):
+            if path.endswith(".snapshots.jsonl"):
                 continue
-            data = call(f"https://osu.ppy.sh/api/v2/scores/{sc['id']}/download", bearer, raw=True)
-            if not data:
-                continue
-            with open(f"{dest}/{name}", "wb") as f:
-                f.write(data)
-            with open(f"{OUT}/replays.jsonl", "a") as f:
-                f.write(json.dumps({"file": name, "room_id": rid, "board_pos": i, **sc},
-                                   separators=(",", ":")) + "\n")
-            got += 1
-            if got % 25 == 0:
-                print(f"  {got}/{len(picks)}", flush=True)
-        print(f"pulled {got} replays stratified across {len(pool)} board positions -> {dest}")
+            with open(path) as f:
+                head = json.loads(f.readline())
+            rooms_.append((head["meta"]["starts_at"], head["meta"]["room_id"]))
+
+        pending = [rid for _, rid in sorted(rooms_, reverse=True)
+                   if have[rid] < min(take, len(stratified(rid, take)))]
+        print(f"{len(pending)} rooms short of {take} replays; taking {min(want, len(pending))}")
+        for rid in pending[:want]:
+            pull(bearer, rid, take)
         return 0
 
     if "--backfill" in sys.argv:
