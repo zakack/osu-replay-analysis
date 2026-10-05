@@ -1,0 +1,13 @@
+[Unit]
+Description=Download a few random replays from the osu! score stream
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/osu-replay-analysis
+EnvironmentFile=%h/.config/osu-api.env
+# The download endpoint throttled after about ten in a burst and four a minute sustained.
+# Three every fifteen minutes stays far inside both, and is a trickle on purpose.
+ExecStart=/usr/bin/python3 tools/reference/firehose.py --replays-only --replays 3
+Nice=10

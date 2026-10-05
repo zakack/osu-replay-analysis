@@ -1,13 +1,24 @@
 [Unit]
-Description=Sample the osu! global score stream
+Description=Capture the osu! global score stream, gapless
 After=network-online.target
 Wants=network-online.target
+# Never give up: a network outage should cost a hole in the series, not the service.
+StartLimitIntervalSec=0
 
 [Service]
-Type=oneshot
+Type=simple
 WorkingDirectory=%h/Projects/osu-replay-analysis
 # Credentials are not in this repo and not in this unit. Create the file yourself with
 # OSU_API_CLIENT= and OSU_API_KEY= on their own lines, mode 600.
 EnvironmentFile=%h/.config/osu-api.env
-ExecStart=/usr/bin/python3 tools/reference/firehose.py --pages 1 --replays 10
+# One page a minute keeps pace with the stream and pages faster when it falls behind, so it
+# records everything. depth.py found that every sparser schedule either reads a fraction of
+# the stream or catches repeat attempts only on short maps. build/firehose is a symlink to a
+# zstd dataset: this writes ~470MB a day before compression.
+ExecStart=/usr/bin/python3 -u tools/reference/firehose.py --stream
+Restart=always
+RestartSec=60
 Nice=10
+
+[Install]
+WantedBy=default.target

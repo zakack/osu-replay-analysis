@@ -1,0 +1,14 @@
+[Unit]
+Description=Sample replays from the osu! score stream every fifteen minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+# Do not hit the API on the exact minute boundary along with everyone else's cron, and
+# keep the sampling instants unrelated to anything being played.
+RandomizedDelaySec=120
+# A live edge cannot be sampled retroactively, so a missed run is simply a missed run.
+Persistent=false
+
+[Install]
+WantedBy=timers.target

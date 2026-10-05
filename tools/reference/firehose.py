@@ -45,8 +45,23 @@ possible (interval, depth) configuration, so one capture run evaluates all of th
 instead of needing a grid of live experiments — and at one page a minute it costs about the
 same as any partial config would.
 
+A standing capture is the same loop run forever, which is what is installed. It writes one
+file per UTC day under stream/, because a single append-only log at a million rows a day is a
+file nothing can open, and it remembers the highest id it wrote so that a restart re-reading
+the live edge does not log the overlap twice. What it cannot do is cover its own downtime: a
+restart resumes at the live edge, not where it stopped, so an outage is a hole in the series.
+The cursor is not persisted to bridge it, because nothing says the stream keeps a day-old
+cursor valid, and the hole is visible anyway as a gap in `fetched_at`.
+
+Replays are a separate, slower job for the same reason metadata and replays were separated
+in the first place. It reads one page at the live edge, logs nothing, and downloads a few
+replays chosen uniformly from it. Firing at times unrelated to what is being played, that is
+a uniform sample of preserved scores over the long run.
+
     python3 tools/reference/firehose.py [--pages 2] [--replays 10] [--no-replays]
     python3 tools/reference/firehose.py --complete [--seconds 21600] [--every 60]
+    python3 tools/reference/firehose.py --stream [--every 60]
+    python3 tools/reference/firehose.py --replays-only [--replays 3]
 """
 import json, os, random, sys, time
 
@@ -56,6 +71,8 @@ from fetch import call, token
 OUT = "build/firehose"
 REPLAYS = f"{OUT}/replays"
 STATE = f"{OUT}/state.json"
+STREAM = f"{OUT}/stream"
+STREAM_STATE = f"{STREAM}/state.json"
 SCORES = f"{OUT}/scores.jsonl"
 TAKEN = f"{OUT}/replays.jsonl"
 
@@ -81,18 +98,30 @@ def detailed(s, fetched_at):
     return row
 
 
-def capture(bearer, seconds, every):
+def capture(bearer, seconds, every, stream=False):
     """Hold the cursor and keep pace with the stream, so the log is gapless.
 
     Each cycle reads until a page comes back short, which is the signal that the live edge
     has been reached. `fetched_at` is stamped per batch rather than per score, because
     reconstructing a polling schedule offline needs to know when a reader would have seen a
-    score, not when it was set."""
+    score, not when it was set.
+
+    With `stream` it runs until killed, rotates by UTC day, and deduplicates across restarts.
+    A client-credentials token lasts a day and the API answers an expired one with a bare 401,
+    which `call` reports as an empty page, so the token is renewed well before that."""
     out = f"{OUT}/complete.jsonl"
     started, cursor, total, cycles = time.time(), None, 0, 0
+    mark = 0
+    if stream:
+        os.makedirs(STREAM, exist_ok=True)
+        if os.path.exists(STREAM_STATE):
+            mark = json.load(open(STREAM_STATE)).get("last_id", 0)
+    renewed = time.time()
 
-    while time.time() - started < seconds:
+    while not seconds or time.time() - started < seconds:
         began = time.time()
+        if stream and began - renewed > 6 * 3600:
+            bearer, renewed = token(), began
         batch, stamp = [], time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
         while True:
@@ -113,14 +142,23 @@ def capture(bearer, seconds, every):
             if len(page["scores"]) < 900 or not page.get("cursor_string"):
                 break
 
+        if stream:
+            batch = [sc for sc in batch if sc["id"] > mark]
+            out = f"{STREAM}/{stamp[:10]}.jsonl"
+
         if batch:
             with open(out, "a") as f:
                 for sc in batch:
                     f.write(json.dumps(detailed(sc, stamp), separators=(",", ":")) + "\n")
             total += len(batch)
 
+            if stream:
+                mark = max(mark, max(sc["id"] for sc in batch))
+                with open(STREAM_STATE, "w") as f:
+                    json.dump({"last_id": mark, "last_write": stamp}, f)
+
         cycles += 1
-        if cycles % 10 == 0:
+        if cycles % (60 if stream else 10) == 0:
             elapsed = time.time() - started
             print(f"  {elapsed/60:5.1f} min  {total:7d} scores  {total/max(elapsed,1):5.1f}/s", flush=True)
 
@@ -143,7 +181,13 @@ def main():
         os.makedirs(OUT, exist_ok=True)
         return capture(token(), arg("--seconds", 21600), arg("--every", 60))
 
-    pages = arg("--pages", 2)
+    if "--stream" in sys.argv:
+        return capture(token(), 0, arg("--every", 60), stream=True)
+
+    # Replays only: one page at the live edge, nothing logged, the high-water mark left to
+    # whichever job owns the metadata.
+    only = "--replays-only" in sys.argv
+    pages = 1 if only else arg("--pages", 2)
     wanted = 0 if "--no-replays" in sys.argv else arg("--replays", 10)
     os.makedirs(REPLAYS, exist_ok=True)
 
@@ -170,18 +214,19 @@ def main():
     # Ids increase with time, so the high-water mark is all the dedup a run needs. Blocks
     # only overlap when the interval is short enough that the stream has not moved a full
     # page, which is a configuration mistake rather than a case to handle.
-    mark = state.get("last_id", 0)
-    fresh = [s for s in fresh if s["id"] > mark]
+    if not only:
+        mark = state.get("last_id", 0)
+        fresh = [s for s in fresh if s["id"] > mark]
 
-    # Metadata first and unconditionally: it is the half that is cheap, unbiased and useful
-    # on its own, and it should survive a replay download failing or being switched off.
-    with open(SCORES, "a") as f:
-        for s in fresh:
-            f.write(json.dumps(compact(s), separators=(",", ":")) + "\n")
+        # Metadata first and unconditionally: it is the half that is cheap, unbiased and useful
+        # on its own, and it should survive a replay download failing or being switched off.
+        with open(SCORES, "a") as f:
+            for s in fresh:
+                f.write(json.dumps(compact(s), separators=(",", ":")) + "\n")
 
-    if fresh:
-        state["last_id"] = max(s["id"] for s in fresh)
-    state["scores_seen"] = state.get("scores_seen", 0) + len(fresh)
+        if fresh:
+            state["last_id"] = max(s["id"] for s in fresh)
+        state["scores_seen"] = state.get("scores_seen", 0) + len(fresh)
     state["last_run"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     with open(STATE, "w") as f:
         json.dump(state, f, indent=1)
@@ -215,8 +260,12 @@ def main():
     with open(STATE, "w") as f:
         json.dump(state, f, indent=1)
 
-    print(f"scores seen {len(fresh)} (total {state['scores_seen']}), "
-          f"replays taken {got} (total {state['replays_taken']})")
+    if only:
+        print(f"replays taken {got} of {len(fresh)} at the live edge "
+              f"(total {state['replays_taken']})")
+    else:
+        print(f"scores seen {len(fresh)} (total {state['scores_seen']}), "
+              f"replays taken {got} (total {state['replays_taken']})")
     return 0
 
 

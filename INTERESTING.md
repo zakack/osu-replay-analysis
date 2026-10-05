@@ -282,3 +282,9 @@ dependence is exposure.
 
 Better number than the one it replaces. "0.93% of replays" is mostly a statement about how
 long the player's maps are.
+
+## 2026-10-05 — repeat attempts run 0.85x the stream's map length even in a complete capture
+
+`python3 tools/reference/depth.py` on `build/firehose/complete.jsonl` (6h, 2026-09-19 23:58Z–09-20 05:57Z); every gapless config plateaus at 88s vs a 103s baseline
+
+so 0.85x is the real grind-vs-stream length ratio, not sampling bias; the committed 15m×1 unit gives 0.52x
