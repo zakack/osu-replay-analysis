@@ -124,7 +124,9 @@
       <h2>Every traversal, in the pattern&rsquo;s own frame</h2>
       <p>
         Each instance translated to put the turn at the origin and rotated to put the
-        approach along the same bearing, measured in circle radii. This is what
+        approach along the same bearing, measured in circle radii. The origin is the object
+        the cell&rsquo;s angle is measured at; the click the error belongs to is the one the
+        path leaves towards, which is where the sweep clock reads zero. This is what
         rotation-invariant features buy: the same pattern in forty places on the map
         becomes forty attempts at one thing.
       </p>
@@ -145,7 +147,8 @@
     <div class="head">
       <h2>Where they actually are</h2>
       <p id="sheet-note">
-        The same instances on the playfield, each cropped to its own three objects.
+        The same instances on the playfield, each cropped to its own three objects &mdash;
+        the brighter circle is the turn, the one after it is the click being measured.
         Position on the map is the thing the overlay throws away.
       </p>
     </div>

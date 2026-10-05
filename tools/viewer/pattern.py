@@ -75,7 +75,18 @@ def instance_times(md5: str, cell: tuple[str, ...], scheme: str,
     return found
 
 
-def traversal(document: dict, apex_index: int, frames: list) -> dict | None:
+def chain(index: int) -> tuple[int, int, int]:
+    """The three objects forming the turn that the row at object `index` describes.
+
+    Geometry.cs keys a row at object n but apexes its angle at n-1: the row is the jump
+    *into* n — its spacing and delta time are the leg n-1 to n — and the apex is the pivot
+    the player had to turn through to start that jump. Drawing (n-1, n, n+1) instead shows
+    the next turn, which is the bug this helper exists to make unrepeatable.
+    """
+    return index - 2, index - 1, index
+
+
+def traversal(document: dict, index: int, frames: list) -> dict | None:
     """One player's cursor through one instance, in the pattern's own frame.
 
     Returns both the canonical path — apex at the origin, incoming leg along +x, measured
@@ -83,15 +94,19 @@ def traversal(document: dict, apex_index: int, frames: list) -> dict | None:
     it actually sits on the playfield and the overlay draws it where it can be compared.
     """
     objects = document["objects"]
-    if apex_index < 1 or apex_index + 1 >= len(objects):
+    indices = chain(index)
+    if indices[0] < 0 or indices[-1] >= len(objects):
         return None
 
-    before, apex, after = objects[apex_index - 1], objects[apex_index], objects[apex_index + 1]
+    before, apex, after = (objects[j] for j in indices)
     radius = document["beatmap"]["radius"]
 
     start = (before.get("endTime") or before["t"]) - LEAD_MS
     end = after["t"] + TRAIL_MS
 
+    # Time is measured from the click on `after`, not from the apex. The apex is where the
+    # geometry pivots; `after` is the object the row is keyed at and the one whose hit error
+    # the finding is about, so it is the event the sweep should be read against.
     raw = []
     for k in range(0, len(frames), 4):
         t = frames[k]
@@ -99,7 +114,7 @@ def traversal(document: dict, apex_index: int, frames: list) -> dict | None:
             continue
         if t > end:
             break
-        raw.append((round(t - apex["t"], 1), frames[k + 1], frames[k + 2]))
+        raw.append((round(t - after["t"], 1), frames[k + 1], frames[k + 2]))
 
     if len(raw) < 3:
         return None
@@ -120,8 +135,8 @@ def traversal(document: dict, apex_index: int, frames: list) -> dict | None:
 
     return {
         "t": flat,
-        "err": apex.get("error"),
-        "result": apex["result"],
+        "err": after.get("error"),
+        "result": after["result"],
         "raw": [v for t, x, y in raw for v in (t, round(x, 1), round(y, 1))],
         "in": canon(before["x"], before["y"]),
         "out": canon(after["x"], after["y"]),
@@ -199,7 +214,7 @@ def main() -> int:
                     "objects": [
                         {"x": document["objects"][j]["x"], "y": document["objects"][j]["y"],
                          "type": document["objects"][j]["type"]}
-                        for j in (k - 1, k, k + 1)
+                        for j in chain(k)
                     ],
                     "paths": [],
                 })
