@@ -33,6 +33,12 @@ a no-mod board runs about half lazer where an unfiltered one runs a fifth.
 Usage: OSU_API_CLIENT/OSU_API_KEY in the environment, then
 
     python3 tools/reference/fetch.py [map-count] [--mods NM] [--include-stable]
+
+Or for named maps rather than the player's busiest ones, into a corpus of their own. The
+daily challenge's Mirror week is the first use: a board of flipped plays per map, and this
+pulls the same maps unflipped to stand against it.
+
+    python3 tools/reference/fetch.py --beatmaps <id,id,...> --out build/reference-<name>
 """
 import collections, csv, json, os, sys, time, urllib.error, urllib.parse, urllib.request
 
@@ -95,8 +101,25 @@ def targets(limit):
     return clicks.most_common(limit)
 
 
+def named(ids, bearer):
+    """Explicit beatmap ids, resolved to the checksum the rest of the pull keys on. The
+    clicks column is meaningless here, so it carries None."""
+    for beatmap_id in ids:
+        beatmap = call(f"https://osu.ppy.sh/api/v2/beatmaps/{beatmap_id}", bearer)
+        if beatmap and beatmap.get("checksum"):
+            yield beatmap["checksum"], None
+        else:
+            print(f"  lookup failed for beatmap {beatmap_id}", flush=True)
+
+
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    global OUT, MANIFEST
+    flagged = {"--mods", "--beatmaps", "--out"}
+    args = [a for i, a in enumerate(sys.argv[1:], 1)
+            if not a.startswith("--") and sys.argv[i - 1] not in flagged]
+    if "--out" in sys.argv:
+        OUT = sys.argv[sys.argv.index("--out") + 1]
+        MANIFEST = f"{OUT}/manifest.json"
     lazer_only = "--include-stable" not in sys.argv
     mod_filter = sys.argv[sys.argv.index("--mods") + 1] if "--mods" in sys.argv else "NM"
     count = int(args[0]) if args else 30
@@ -106,7 +129,12 @@ def main():
     bearer = token()
     fetched = skipped = missing = stable = 0
 
-    for checksum, player_clicks in targets(count):
+    if "--beatmaps" in sys.argv:
+        wanted = named(sys.argv[sys.argv.index("--beatmaps") + 1].split(","), bearer)
+    else:
+        wanted = targets(count)
+
+    for checksum, player_clicks in wanted:
         beatmap = call("https://osu.ppy.sh/api/v2/beatmaps/lookup", bearer, {"checksum": checksum})
 
         if not beatmap:
@@ -118,8 +146,9 @@ def main():
         scores = (listing or {}).get("scores", [])
         lazer = sum(1 for s in scores
                     if "CL" not in [m.get("acronym") for m in s.get("mods", []) if isinstance(m, dict)])
-        print(f"  {beatmap['id']} [{beatmap['version']}] {lazer}/{len(scores)} lazer "
-              f"(player has {player_clicks} clicks here)", flush=True)
+        print(f"  {beatmap['id']} [{beatmap['version']}] {lazer}/{len(scores)} lazer"
+              + (f" (player has {player_clicks} clicks here)" if player_clicks is not None else ""),
+              flush=True)
 
         for score in scores:
             key = str(score["id"])
