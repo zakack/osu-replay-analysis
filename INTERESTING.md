@@ -283,8 +283,71 @@ dependence is exposure.
 Better number than the one it replaces. "0.93% of replays" is mostly a statement about how
 long the player's maps are.
 
+## 2026-09-20 — the deceleration-to-late coupling changes sign with the speed window's anchor
+
+`tools/analysis/coupling.py`, and the three-anchor comparison in this session over
+1,048 zaksynack scenes / 554,752 judged objects
+
+Same rows, same 60ms windows, only the anchor moved:
+
+    anchored on the object time, -60/0 vs 0/+60      +12.31ms   corr +0.250
+    anchored on the hit time,    -60/0 vs 0/+60       -2.45ms   corr -0.054
+    anchored on the object time, -180/-100 vs -100/-20 -7.43ms   corr -0.162
+
+coupling.py's headline (deceleration is the largest single predictor of late tapping,
+12.75ms swing) uses the first. The mechanism is that cursor speed near an object is not
+flat: it has a minimum at the object. A window pinned to the object time samples the
+nominal profile at tau plus the error, so the predictor is partly the error. A window
+pinned to the hit time is not exposed that way -- but it is exposed the opposite way if
+the tap moves and the cursor does not. Neither anchor identifies the hand on its own.
+
+Sharpest on tight turns, where the speed profile is a deep V: on the 51 sharp-turn
+(>45 deg) stream notes of Glory Days [Maki's Extra], 31 plays, the within-object swing is
++2.91ms anchored on the object and -15.35ms anchored on the hit. An 18ms range from a
+choice of anchor, with 29/31 plays agreeing on the second one.
+
+Replication across 14 top-50 replays does not rescue it -- a measurement artifact
+replicates across players by construction. Wants a paired-anchor estimator, or a
+simulation of a known shift to calibrate how much each anchor manufactures.
+
 ## 2026-10-05 — repeat attempts run 0.85x the stream's map length even in a complete capture
 
 `python3 tools/reference/depth.py` on `build/firehose/complete.jsonl` (6h, 2026-09-19 23:58Z–09-20 05:57Z); every gapless config plateaus at 88s vs a 103s baseline
 
 so 0.85x is the real grind-vs-stream length ratio, not sampling bias; the committed 15m×1 unit gives 0.52x
+
+## 2026-10-05 — a 2ms note shift on Marshmary [Horizon Borked] shows up in 18 plays, and a PipeWire buffer change shows as an ~11ms per-play step
+
+zaksynack plays 16:08–16:42Z 2026-10-05 on md5 582efdb6 (original, 9) vs f075745d / 59e46389 (edited, 9); `ora offsets <store path>` per play. Edit = red lines at 31703 (-0.35ms off grid) and 63361 (+9.3ms off grid) that do not move notes in gameplay; the notes 63681–82307 moved -2ms. Section-vs-rest contrast: bork − orig +2.48ms within latency era, stratified permutation p=0.031. Raw per-play median steps +9..+15 → -1..+3 between 16:18:40 and 16:24:44 (256→32 quantum).
+
+first real-hands check of per-replay centring: the device-latency step is a per-play constant and vanishes from the contrast; not blind, and the intended +9.3ms edit was never in the gameplay
+
+## 2026-10-06 — Torii, an actively maintained lazer fork with its own server and an o!rdr button
+
+`https://github.com/ShikkesoraSIM/torii-osu` (MIT; private server is `g0v0-server`, osu!-API-shaped, with daily challenges). Commits are in Spanish.
+
+`osu.Game/Rulesets/UI/ReplayRecorder.cs` is still upstream's 60Hz as of 2026-10-01, but the README lists "gameplay tweaks specific to Torii", a latency mode, Reflex/Anti-Lag, and a gameplay frame-time hiccup tracker. Worth a look at what they changed around update/tick rate and input handling before treating any Torii replay as an upstream one, and as prior art if a full-rate recorder build ever happens.
+
+## 2026-10-06 — one jump on Dear You [Dear Rue] breaks under vertical flips only
+
+`python3 tools/analysis/flip.py` on `build/mirrorweek/zak-dearyou` (25 zaksynack runs, 2026-10-06). The circle at 53107ms ends a 6.8-radius jump, (212,268) -> (384,88), up and to the right. Missed in 8 of 9 vertically flipped runs (HR 6/7, Mirror-vertical with DA AR10 OD9 HD 2/2), against 1 of 7 unflipped and 0 of 9 horizontally mirrored. Horizontal Mirror reverses turn direction exactly as a vertical flip does, so this is jump direction on screen (down-right after a vertical flip), not handedness. Fisher one-sided p = 7e-5, but found post hoc among ~40 missed objects: it is a prediction to test on fresh runs, not a result.
+
+the forum claim in miniature; also, under vertical flips the 3 stacked turns on this map keep their direction because lazer's stack offset is always up-left
+
+## 2026-10-06 — turn direction (chirality) carries nothing on Mirror week; screen direction or position might
+
+`python3 tools/analysis/flip.py`: clockwise-minus-counter-clockwise aim contrast under 0.02 radii on all seven Mirror-week boards (top-50 no-mod vs daily Mirror-H) and for zaksynack's 25 Dear You runs (P +0.004..+0.02 r). The one flip effect found, Dear You 53107ms, survives a horizontal flip and breaks under vertical ones, so it is about up/down on screen. Open: target location or jump heading? They move together under any flip of one object.
+
+user's reaction: "we can essentially ignore chirality" — keep the column (it is free and CLAUDE.md asks for it), stop expecting it to carry findings
+
+## 2026-10-06 — the 53.1s Dear You miss is a late start, not an overshoot, and it follows the finger axis
+
+`build/mirrorweek/zak-dearyou` (25 runs) with replay frames sampled at fixed times. All flips leave the previous note (52935) on time (tap +8..+14ms) and none has moved by +40ms; by +80ms unflipped/horizontal runs have covered 19%/18% of the jump, vertical flips 8%, and at the note's time vertical flips are still 1.2-1.35 radii short on both axes equally. Speed once moving is the same. The zaksynack setup maps fingers to screen-vertical and wrist to screen-horizontal (OTD area rotated for it); horizontal Mirror keeps the finger sequence (down then up) and a vertical flip reverses it (up then down), so the late start sits on a finger reversal into a big downward stroke.
+
+a hypothesis for the corpus: departure latency after an up-to-down vs down-to-up vertical reversal, matched geometry; needs a departure-time column
+
+## 2026-10-06 — a delayed press sound moves the player ~20 ms early
+
+The player's account: for one whole session in late Sep / early Oct 2026, evclack's hitsound was accidentally routed through a REAPER microphone FX chain (Waves Clarity Vx Pro noise reduction), game audio not, and their hits ran consistently about 20 ms early. To be located in the replays as a session-long shift in per-play median hit error.
+
+the click is part of the timing loop, not just confirmation: hitsound latency belongs in setup-timeline.csv as a gameplay parameter
