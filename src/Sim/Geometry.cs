@@ -49,7 +49,10 @@ public static class Geometry
         string Result,
         double TravelRadii,
         double TravelTime,
-        double? ExitSlackRadii)
+        double? ExitSlackRadii,
+        float TargetX,
+        float TargetY,
+        double? Heading)
     {
         /// <summary>
         /// Whether <see cref="LazerAngle"/> is a fair comparison for <see cref="SignedAngle"/>.
@@ -105,6 +108,13 @@ public static class Geometry
 
             var clicked = clickState(Base(current), byObject);
 
+            // Where the target is and which way the jump into it points, both absolute. The
+            // pattern bins stay invariant to them; these exist because the hand is not (see
+            // CLAUDE.md, "Where on the screen"). Position is after mods and stacking, so a
+            // flipped play reports where the circle actually was.
+            var target = Base(current).StackedPosition;
+            double? heading = apex == null ? null : Heading(apex.Value, target);
+
             double? aimError = clicked?.CursorAtHit is { } cursor
                 ? Vector2.Distance(cursor, ((OsuHitObject)clicked.HitObject).StackedPosition) / ((OsuHitObject)clicked.HitObject).Radius
                 : null;
@@ -133,7 +143,10 @@ public static class Geometry
                 clicked is { Judged: true } ? clicked.Result.ToString() : "Unjudged",
                 current.TravelDistance / normalised_radius,
                 current.TravelTime,
-                exitSlack) { AngleComparable = comparable });
+                exitSlack,
+                target.X,
+                target.Y,
+                heading) { AngleComparable = comparable });
         }
 
         return rows;
@@ -160,6 +173,16 @@ public static class Geometry
 
         return Math.Atan2(v1.X * v2.Y - v1.Y * v2.X, Vector2.Dot(v1, v2));
     }
+
+    /// <summary>
+    /// The direction of travel from <paramref name="from"/> to <paramref name="to"/>, in the
+    /// mathematical convention a reader expects of a compass drawn on screen: zero is to the
+    /// right, positive turns <b>counter-clockwise</b>, and +pi/2 is <b>up</b>. Playfield y
+    /// grows downward, so the y difference is negated. Chosen so a counter-clockwise turn, which
+    /// <see cref="SignedAngle"/> reports as positive, also increases the heading. Pinned by
+    /// GeometryTests, after the turn sign was mislabelled twice.
+    /// </summary>
+    public static double Heading(Vector2 from, Vector2 to) => Math.Atan2(-(to.Y - from.Y), to.X - from.X);
 
     /// <summary>Where lazer assumes the player leaves an object from.</summary>
     private static Vector2 endPosition(OsuDifficultyHitObject o) =>
@@ -204,7 +227,8 @@ public static class Geometry
 
     public const string CsvHeader =
         "replay,startTime,kind,signedAngle,lazerAngle,observedAngle,spacingRadii,minJumpRadii,"
-        + "deltaTime,requiredVelocity,aimErrorRadii,hitError,result,travelRadii,travelTime,exitSlackRadii";
+        + "deltaTime,requiredVelocity,aimErrorRadii,hitError,result,travelRadii,travelTime,exitSlackRadii,"
+        + "targetX,targetY,heading";
 
     public static void WriteCsv(string replay, IReadOnlyList<Row> rows, TextWriter output)
     {
@@ -214,7 +238,8 @@ public static class Geometry
                 $"{quote(replay)},{r.StartTime:0.###},{r.Kind},{num(r.SignedAngle)},{num(r.LazerAngle)},{num(r.ObservedSignedAngle)},"
                 + $"{r.SpacingRadii:0.####},{r.MinimumJumpRadii:0.####},{r.DeltaTime:0.###},"
                 + $"{(r.DeltaTime > 0 ? (r.SpacingRadii / r.DeltaTime).ToString("0.######", CultureInfo.InvariantCulture) : string.Empty)},"
-                + $"{num(r.AimErrorRadii)},{num(r.HitError)},{r.Result},{r.TravelRadii:0.####},{r.TravelTime:0.###},{num(r.ExitSlackRadii)}"));
+                + $"{num(r.AimErrorRadii)},{num(r.HitError)},{r.Result},{r.TravelRadii:0.####},{r.TravelTime:0.###},{num(r.ExitSlackRadii)},"
+                + $"{r.TargetX:0.##},{r.TargetY:0.##},{num(r.Heading)}"));
         }
     }
 

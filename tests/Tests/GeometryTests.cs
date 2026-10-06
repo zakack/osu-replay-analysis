@@ -47,6 +47,30 @@ public class GeometryTests
         });
     }
 
+    [Test]
+    public void HeadingIsACompassWithUpPositive()
+    {
+        // Playfield y grows downward; a heading reads like a compass drawn on the screen.
+        var o = new Vector2(256, 192);
+        Assert.Multiple(() =>
+        {
+            Assert.That(degrees(Geometry.Heading(o, o + new Vector2(100, 0))), Is.EqualTo(0).Within(1e-9));
+            Assert.That(degrees(Geometry.Heading(o, o + new Vector2(0, -100))), Is.EqualTo(90).Within(1e-9));
+            Assert.That(degrees(Geometry.Heading(o, o + new Vector2(0, 100))), Is.EqualTo(-90).Within(1e-9));
+            Assert.That(Math.Abs(degrees(Geometry.Heading(o, o + new Vector2(-100, 0)))), Is.EqualTo(180).Within(1e-9));
+        });
+    }
+
+    [Test]
+    public void ACounterClockwiseTurnIncreasesTheHeading()
+    {
+        // The two conventions agree: right then up is +90 as a turn and a +90 change of heading.
+        var (a, b, c) = (new Vector2(0, 0), new Vector2(100, 0), new Vector2(100, -100));
+        double turn = Geometry.SignedAngle(a, b, c);
+        double change = Geometry.Heading(b, c) - Geometry.Heading(a, b);
+        Assert.That(Math.Sign(change), Is.EqualTo(Math.Sign(turn)));
+    }
+
     [TestCase(512f, 0f, TestName = "MirroredLeftRight")]
     [TestCase(0f, 384f, TestName = "MirroredTopBottom")]
     public void EitherSingleAxisReflectionReversesTheTurn(float width, float height)

@@ -196,7 +196,8 @@ about other people's data.
 
 ## Feature design
 
-Rotation and scale invariance come free by never classifying on absolute position:
+The *shape* of a pattern is classified without absolute position, which is where rotation
+and scale invariance come from:
 
 - **Angle** at object n formed by (n-1, n, n+1). Rotation-invariant by construction.
   Note lazer's own `OsuDifficultyHitObject.Angle` is `Math.Abs(Math.Atan2(det, dot))` and,
@@ -210,10 +211,30 @@ Rotation and scale invariance come free by never classifying on absolute positio
   that predicts error. A 3-radii 1/2 jump at 180bpm and a 1.5-radii 1/4 jump at 180bpm
   land in the same bin and are the same demand — which absolute-position matching misses.
 
-**Preserve chirality.** Use signed angle; do not collapse CW and CCW into one bin.
-Handedness asymmetry is real — the same player often shows different error distributions
-left-to-right vs right-to-left at the same magnitude, and tablet users frequently have a
-dead quadrant. Taking the absolute value erases a genuinely useful finding.
+**Where on the screen is its own axis, not noise to be invariant to.** Invariance is right for
+the shape and wrong for the hand. A tablet maps the playfield onto a fixed patch of the
+tablet, so a screen position *is* a place under the pen, and edges and corners are where the
+hand runs out of room; area-warping drivers (OpenTabletDriver plugins with a different
+geometry per quadrant, as the primary player of this corpus uses) make the mapping differ by
+region on top of that. Mouse players mostly anchor the wrist or a finger, which turns a
+relative device into a near-absolute one in practice. So every object also carries its
+**target position** (after mods and stacking, playfield units, y down) and the **heading** of
+the jump into it. These are separate axes, never folded into the pattern bins, because the
+same shape in a different place is the same pattern on a different part of the hand.
+
+Why both: on Dear You [Dear Rue] (2026-10-06), one long jump was missed in 8 of 9 vertically
+flipped runs and 0 of 9 horizontally mirrored ones. A flip moves where a target lands and
+which way the jump into it points together, so one object cannot say which mattered; only
+objects where the two vary independently can, and the corpus has hundreds of thousands.
+
+**Preserve chirality, but do not expect it to carry findings.** Use signed angle; do not
+collapse CW and CCW into one bin, because it costs nothing and a player may have a real
+asymmetry. Measured on Mirror week (seven maps, top-50 no-mod boards against 1,400 mirrored
+daily plays) and on the primary player's flipped and unflipped runs, the clockwise vs
+counter-clockwise gap was under 0.02 radii everywhere (`tools/analysis/flip.py`). The "dead
+quadrant" this paragraph used to cite as a chirality effect is a screen-position one, which is
+what the axis above is for. Sign convention, pinned by `GeometryTests`: positive reads
+counter-clockwise on screen.
 
 **Bins, not names.** The diagnosis is "error concentrates in the 120–150° × 2.5–3.5 radii
 × 1/2-snap cell" — a groupby. The phrase "wide-angle jump" is a presentation label applied
