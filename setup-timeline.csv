@@ -1,0 +1,17 @@
+start,end,component,change,source,confidence
+2024-10-27,2025-01-28,tablet,"Area and Circular Area mapping changed almost daily; many presets, mapping on and off",".otd preset filenames and contents",measured
+2024-11,2025-01,buttons,"Left and right presses mutually exclusive (a release and a press at the same millisecond); implementation not in qmk_firmware history","replays: no frame holds both keys (107 of 108 in Jan 2025)",measured
+2025-01-01,,display,"Bigger monitor (presets named big-monitor from here)",".otd preset filenames",approximate
+2025-01-14,2025-05-04,tablet,"Bottom-right linear: its settings sat in an ignored duplicate slot; top-left forward elliptical grid 0.7-0.9, top-right inverse","Circular Area 3.2.0 slot lookup applied to .otd presets",inferred
+2025-02,2025-12,buttons,"Overlapping presses allowed (exclusive logic off); February is the transition month","replays: 85 of 85 overlap in May 2025",measured
+2025-05-05,2025-10-21,tablet,"Bottom-right mapped (forward elliptical grid in slot 1; with top-left from Aug 13); truncation 0.707 rising to 0.9; inverse 1.0 on top-right/bottom-left","Circular Area slot lookup applied to .otd presets",inferred
+2025-07-10,,client,"Lazer 2025.710.0 moves every hit-window edge to an integer minus 0.5 (ppy/osu 0f078ee550); older scores were judged under different windows","CLAUDE.md, ppy/osu",measured
+2025-09-12,2025-11-14,buttons,"QMK hold threshold (22 then 24 ms); the player calls it one of their worst ideas; treat press and hold timing in this window as suspect","qmk_firmware commits 4938697f3e..fa961173c2; player",measured
+2025-10-22,2026-10-06,tablet,"Bottom-right and bottom-left linear: duplicate-slot settings ignored; top-left forward 0.707 rising to 0.9; top-right inverse 1.0, 0.9 from Dec 2025, 0.6 from Jun 2026","Circular Area slot lookup applied to .otd presets",inferred
+2025-11-14,2025-11-18,buttons,"QMK keymap rewritten and simplified, removing the bad ideas; the player's biggest single change","qmk_firmware commits 11a8bb5cdb..1d380cfd55; player",measured
+2025-12-16,2026-01-03,buttons,"Exclusive-press state machine moves from QMK to an interception-tools filter (osu-intercept, later doubletap); exclusive presses from Jan 2026","doubletap commits cb7844c..44c4e43; replays: 24 of 24 exclusive in Feb 2026",measured
+2026-05-14,,audio,"doubletap merges PipeWire hitsounds and a unified daemon rewrite; meaning for what the player hears on a press not yet confirmed","doubletap commits 59b69cb, df2ef6a",unconfirmed
+2026-08,2026-09,audio,"doubletap audio work: polyphonic mixing, ogg/opus/mp3 via libsndfile","doubletap commits",measured
+2026-09-11,,corpus,"Export habit changes: 18.8x more hand exports from here; the export corpus has a seam, the realm corpus does not","project memory",measured
+2026-10-05,2026-10-05,audio,"PipeWire quantum raised to 256/48000 earlier in the day for REAPER, back to 32/48000 between 16:18 and 16:24Z; replays show an ~11 ms per-play step","player; Marshmary replays",measured
+2026-10-06,2026-10-06,tablet,"Quadrant fix (100626-quadrant-fix.json) maps all four corners, top-left/bottom-right forward 0.9, top-right/bottom-left inverse 0.6; used for 4 Dear You runs 17:25-17:32Z, then reverted before Jump Patterns Training at 17:41Z","player; .otd",measured

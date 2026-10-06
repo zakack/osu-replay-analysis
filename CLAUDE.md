@@ -377,6 +377,13 @@ section, it's the map, not the player.
   hosted game loop, which `HostGuardTests` exists to forbid. So these are scoped out like
   Classic, for a firmer reason: Classic is unported, this is unportable. One score in 17,273,
   and it was a daily challenge gimmick.
+- **The player's rig changes, and every change is a step in the data.** Tablet area and
+  mapping, button firmware and input filters, audio path, monitor, client version: the
+  primary player changes one or another every few months, often in bursts (November 2024 and
+  late 2025 most of all). A step change at a date is a setup change until shown otherwise.
+  `setup-timeline.csv` records each one with its source (replays, preset files, commit
+  history, the player's word) and how sure it is; label scores by it before comparing
+  across dates, and add to it whenever a new one turns up.
 - **Read error vs aim error can look identical in the data.** A misread usually shows the
   cursor travelling confidently to the wrong place; an aim error shows it travelling to
   the right place imprecisely. That separation is inference, and it's where a model will
