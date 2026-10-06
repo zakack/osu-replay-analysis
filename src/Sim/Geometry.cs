@@ -1,3 +1,4 @@
+using osu.Game.Rulesets.Osu.Replays;
 using System.Globalization;
 using osu.Game.Beatmaps;
 using osu.Game.Rulesets.Difficulty.Preprocessing;
@@ -52,7 +53,10 @@ public static class Geometry
         double? ExitSlackRadii,
         float TargetX,
         float TargetY,
-        double? Heading)
+        double? Heading,
+        float? CursorX,
+        float? CursorY,
+        string CursorSource)
     {
         /// <summary>
         /// Whether <see cref="LazerAngle"/> is a fair comparison for <see cref="SignedAngle"/>.
@@ -77,6 +81,11 @@ public static class Geometry
             difficulty.Add(new OsuDifficultyHitObject(playable.HitObjects[i], playable.HitObjects[i - 1], clockRate, difficulty, difficulty.Count));
 
         var rows = new List<Row>();
+
+        // The cursor path as recorded, for objects with no press to read it from. Lazer's
+        // replay input handler interpolates position linearly between frames, so the same is
+        // done here; it is as good as the 60Hz recorder allows and no better.
+        var path = score.Replay.Frames.OfType<OsuReplayFrame>().Select(f => (f.Time, f.Position)).ToArray();
 
         foreach (OsuDifficultyHitObject current in difficulty)
         {
@@ -115,6 +124,12 @@ public static class Geometry
             var target = Base(current).StackedPosition;
             double? heading = apex == null ? null : Heading(apex.Value, target);
 
+            // Signed error needs the cursor itself, not its distance. A press records it
+            // exactly; a miss has no press, so it is read off the recorded path at the object's
+            // time, and the source column says which so an analysis can keep them apart.
+            Vector2? cursorAt = clicked?.CursorAtHit ?? cursorAtTime(path, Base(current).StartTime);
+            string cursorSource = clicked?.CursorAtHit != null ? "press" : cursorAt != null ? "objectTime" : string.Empty;
+
             double? aimError = clicked?.CursorAtHit is { } cursor
                 ? Vector2.Distance(cursor, ((OsuHitObject)clicked.HitObject).StackedPosition) / ((OsuHitObject)clicked.HitObject).Radius
                 : null;
@@ -146,7 +161,10 @@ public static class Geometry
                 exitSlack,
                 target.X,
                 target.Y,
-                heading) { AngleComparable = comparable });
+                heading,
+                cursorAt?.X,
+                cursorAt?.Y,
+                cursorSource) { AngleComparable = comparable });
         }
 
         return rows;
@@ -183,6 +201,27 @@ public static class Geometry
     /// GeometryTests, after the turn sign was mislabelled twice.
     /// </summary>
     public static double Heading(Vector2 from, Vector2 to) => Math.Atan2(-(to.Y - from.Y), to.X - from.X);
+
+    private static Vector2? cursorAtTime((double Time, Vector2 Position)[] path, double time)
+    {
+        if (path.Length == 0 || time < path[0].Time || time > path[^1].Time)
+            return null;
+
+        // First frame at or after the time; frames are in time order.
+        int lo = 0, hi = path.Length - 1;
+        while (lo < hi)
+        {
+            int mid = (lo + hi) / 2;
+            if (path[mid].Time < time) lo = mid + 1;
+            else hi = mid;
+        }
+        if (hi == 0)
+            return path[0].Position;
+
+        var (t0, p0) = path[hi - 1];
+        var (t1, p1) = path[hi];
+        return t1 > t0 ? Vector2.Lerp(p0, p1, (float)((time - t0) / (t1 - t0))) : p1;
+    }
 
     /// <summary>Where lazer assumes the player leaves an object from.</summary>
     private static Vector2 endPosition(OsuDifficultyHitObject o) =>
@@ -228,7 +267,7 @@ public static class Geometry
     public const string CsvHeader =
         "replay,startTime,kind,signedAngle,lazerAngle,observedAngle,spacingRadii,minJumpRadii,"
         + "deltaTime,requiredVelocity,aimErrorRadii,hitError,result,travelRadii,travelTime,exitSlackRadii,"
-        + "targetX,targetY,heading";
+        + "targetX,targetY,heading,cursorX,cursorY,cursorSource";
 
     public static void WriteCsv(string replay, IReadOnlyList<Row> rows, TextWriter output)
     {
@@ -239,7 +278,8 @@ public static class Geometry
                 + $"{r.SpacingRadii:0.####},{r.MinimumJumpRadii:0.####},{r.DeltaTime:0.###},"
                 + $"{(r.DeltaTime > 0 ? (r.SpacingRadii / r.DeltaTime).ToString("0.######", CultureInfo.InvariantCulture) : string.Empty)},"
                 + $"{num(r.AimErrorRadii)},{num(r.HitError)},{r.Result},{r.TravelRadii:0.####},{r.TravelTime:0.###},{num(r.ExitSlackRadii)},"
-                + $"{r.TargetX:0.##},{r.TargetY:0.##},{num(r.Heading)}"));
+                + $"{r.TargetX:0.##},{r.TargetY:0.##},{num(r.Heading)},"
+                + $"{num(r.CursorX)},{num(r.CursorY)},{r.CursorSource}"));
         }
     }
 
