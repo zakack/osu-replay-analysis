@@ -231,8 +231,10 @@
 
   // The canonical angle is the signed angle itself: the frame puts the approach on +x, so
   // a point's polar angle is its turn. Canvas y grows downward and ctx.arc sweeps toward
-  // +y, and the schema calls a positive angle clockwise on screen, so all of it lines up
-  // with no flip anywhere. Any sign correction here would be a bug wearing a fix.
+  // +y, and the signed angle was computed in osu! coordinates where y also grows downward,
+  // so the picture reproduces the screen geometry with no flip anywhere: a positive angle
+  // is drawn as the counter-clockwise turn it is. Any sign correction here would be a bug
+  // wearing a fix.
   function wedge(ctx, f, sl) {
     var g = D.schemes[sl.scheme].geometry, b = sl.s.bounds;
     if (!b || g.angle === null) return;

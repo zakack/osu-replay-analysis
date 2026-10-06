@@ -91,7 +91,7 @@ public static class Geometry
 
             double? signed = apex == null || from == null
                 ? null
-                : signedAngle(from.Value, apex.Value, Base(current).StackedPosition);
+                : SignedAngle(from.Value, apex.Value, Base(current).StackedPosition);
 
             // The same angle as the player actually traced it. Where the previous object is a
             // slider this can differ a lot from the map's version, because the map assumes a
@@ -101,7 +101,7 @@ public static class Geometry
 
             double? observed = observedApex == null || observedFrom == null
                 ? null
-                : signedAngle(observedFrom.Value, observedApex.Value, Base(current).StackedPosition);
+                : SignedAngle(observedFrom.Value, observedApex.Value, Base(current).StackedPosition);
 
             var clicked = clickState(Base(current), byObject);
 
@@ -142,12 +142,18 @@ public static class Geometry
     /// <summary>
     /// The turn at <paramref name="apex"/>, measured the way lazer measures it so the
     /// magnitudes can be compared: pi is straight through, zero is a full reversal. The sign
-    /// is ours: positive is the cross product of the incoming and outgoing legs, which in
-    /// osu! coordinates — where y increases <em>downward</em> — is a turn that reads
-    /// clockwise on screen. This comment said counter-clockwise until the binning layer had
-    /// to put a word on the label a player would read.
+    /// is ours: the cross product of (from − apex) and (to − apex). The first of those points
+    /// <em>back</em> along the incoming leg, so this is the negative of incoming × outgoing,
+    /// and in osu! coordinates, where y increases downward, a positive value is a turn that
+    /// reads <b>counter-clockwise</b> on screen. Right then down is −90°.
+    ///
+    /// This has been relabelled twice. It said counter-clockwise, which was right; it was
+    /// changed to clockwise by reasoning about incoming × outgoing without noticing the first
+    /// leg is reversed; and the binning schema and the atlas inherited that. The arithmetic
+    /// never changed, so every number and every picture was right and only the word was not.
+    /// GeometryTests pins the word now, so the next relabelling has to break a test.
     /// </summary>
-    private static double signedAngle(Vector2 from, Vector2 apex, Vector2 to)
+    public static double SignedAngle(Vector2 from, Vector2 apex, Vector2 to)
     {
         var v1 = from - apex;
         var v2 = to - apex;

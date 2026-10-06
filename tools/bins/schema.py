@@ -83,11 +83,12 @@ class Categorical:
         return value if value in self.values else None
 
 
-# The turn at an object, signed. The sign is the cross product of (previous -> apex) and
+# The turn at an object, signed. The sign is the cross product of (apex -> previous) and
 # (apex -> next) in osu! coordinates, where y increases *downward* — so a positive value
-# is a turn that reads clockwise on screen. Note Geometry.cs documents this as
-# counter-clockwise; the arithmetic is the same either way, only the word differs, and
-# the word matters once these labels reach a player.
+# is a turn that reads COUNTER-clockwise on screen, and right-then-down is -90. This
+# comment said clockwise until 2026-10-06, from reading the first leg as previous -> apex;
+# Geometry.SignedAngle reverses it. The numbers never changed, only the word, and the word
+# matters once these labels reach a player. tests/Tests/GeometryTests.cs pins it.
 #
 # Magnitudes match lazer's convention: 180 is straight through, 0 is a full reversal.
 ANGLE = Axis(
