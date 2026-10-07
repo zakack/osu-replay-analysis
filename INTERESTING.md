@@ -351,3 +351,13 @@ a hypothesis for the corpus: departure latency after an up-to-down vs down-to-up
 The player's account: for one whole session in late Sep / early Oct 2026, evclack's hitsound was accidentally routed through a REAPER microphone FX chain (Waves Clarity Vx Pro noise reduction), game audio not, and their hits ran consistently about 20 ms early. To be located in the replays as a session-long shift in per-play median hit error.
 
 the click is part of the timing loop, not just confirmation: hitsound latency belongs in setup-timeline.csv as a gameplay parameter
+
+## 2026-10-06 — presses land contracted toward the playfield centre, by a near-constant fraction of the circle
+
+`python3 tools/analysis/where.py analyse` (outputs `build/where-{all,T0..T4,HR-screen,HR-map}.txt`), zaksynack, 16,655 replays, 6.8M objects, additive model replay + pattern + region (4x3 grid) + heading (8 sectors), map-cluster bootstrap. Press error in screen axes: top row lands 0.06-0.10 radii low, bottom row 0.07-0.09 high, left column 0.07 right, right column 0.06-0.09 left. Region + heading explain 6% of the vertical error and 3% of the horizontal, against under 1% for miss, aim and hit error. It holds on jumps perpendicular to it (E/W jumps for the vertical, N/S for the horizontal), so it is not undershoot in disguise. It is present in every tablet regime including T0, before Circular Area. Under HR it keeps its screen sign (and reverses in map coordinates), so it is the hand, not mapper placement. Within replays it grows with circle size, 2.6 → 3.2 → 3.8 units vertically for radius 32-36 / 36-40 / 40-46, about 0.08-0.09 radii throughout, so it looks like using the circle's slack rather than a fixed reach error. Vertical (the finger axis) is larger than horizontal (the wrist axis).
+
+needs the reference players' target and cursor columns (their geometry CSVs predate them) to say whether it is this player or everyone
+
+## 2026-10-06 — location costs little in misses, and most of it is the bottom-right and top-left corners
+
+same outputs. The miss rate after replay and pattern: B4 +0.58 pp and T1 +0.50 pp over the 3.96% mean, the middle row about -0.2 pp; horizontal headings +0.2-0.3 pp, upward -0.2 pp. B4 stays worst under HR in screen coordinates (+1.13 pp). T1's excess falls from +0.88 pp (T1 regime) to +0.33 pp (T4); B4's does not. Hit error: corners about +0.8 ms late, the middle about 0.5 ms early, rightward and up-right jumps about 0.84 ms early, leftward and downward about 0.6 ms late.
