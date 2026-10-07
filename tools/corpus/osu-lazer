@@ -1,0 +1,8 @@
+#!/bin/bash
+# Installed as ~/.local/bin/osu-lazer, ahead of the pacman-owned /usr/bin/osu-lazer on PATH,
+# so the `osu` launcher and the desktop entries reach it. Plays the game, then asks systemd
+# to refresh the corpus once it closes.
+/usr/bin/osu-lazer "$@"
+status=$?
+systemctl --user start --no-block corpus-sync.service
+exit $status
