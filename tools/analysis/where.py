@@ -25,7 +25,12 @@ Outcomes:
   aim     |cursor - target| at the press, in radii; presses only, so selected on outcome
   along   signed error along the jump's heading, radii; + is overshoot, - undershoot
   across  signed error across it, radii; + is to the left of travel (counter-clockwise side)
-  hit     signed hit error, ms; + is late
+  hit     signed hit error, ms, + is late, with the per-beatmap offset in force removed
+          (offsets.py: raw = hitError - offset); replays whose offset is ambiguous are
+          left out of this outcome only
+  hitVsCrowd  hit minus the reference corpus's median at the same object (map-bias.csv),
+          so a mistimed section does not read as the player; only where the map is covered.
+          Not in OUTCOMES: one more worker per analyse is more than the box holds
   missAlong  on a miss with no press, the cursor at the object's time along the heading
   centre  signed error toward the playfield's centre, radii; presses only, heading-free
   dx, dy  the press error in screen axes, radii; + is right and up
@@ -49,6 +54,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from flip import osr_mods  # noqa: E402
+from offsets import Offsets  # noqa: E402
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from bins.maptiming import _key as bias_key  # noqa: E402  the one rounding rule for the join
+
+MAP_BIAS = "build/map-bias.csv"
 
 GEOMETRY = "build/geometry.csv"
 SCORES = "build/score-index.json"
@@ -113,9 +124,15 @@ def reduce() -> None:
     """One pass over the 1.7GB geometry CSV, keeping the player's usable rows as columns."""
     mods = mods_by_replay()
     md5 = {os.path.basename(r["Path"]): r["BeatmapMd5"] for r in json.load(open("build/corpus.json"))}
+    offsets = Offsets()
+    bias: dict[tuple[str, float], float] = {}
+    if os.path.exists(MAP_BIAS):
+        with open(MAP_BIAS, newline="") as fh:
+            for r in csv.DictReader(fh):
+                bias[bias_key(r["beatmapMd5"], float(r["startTime"]))] = float(r["referenceMedian"])
 
     cols = {k: array.array("f") for k in
-            ("t", "angle", "spacing", "vel", "aim", "hit", "tx", "ty", "heading", "cx", "cy")}
+            ("t", "angle", "spacing", "vel", "aim", "hit", "tx", "ty", "heading", "cx", "cy", "crowd")}
     ints = {k: array.array("i") for k in ("rep", "kind", "slider_in", "result", "press")}
     replays: list[dict] = []
     index: dict[str, int] = {}
@@ -144,7 +161,9 @@ def reduce() -> None:
                     skipped[why] += 1
                 else:
                     index[name] = k = len(replays)
+                    off, status = offsets.at(md5[name], name)
                     replays.append({"name": name, "md5": md5[name], "day": stamp.group(1),
+                                    "offset": off, "offsetStatus": status,
                                     "era": era_of(stamp.group(1)), "mods": sorted(m)})
             if k < 0 or row["result"] not in RESULTS:
                 continue
@@ -159,6 +178,7 @@ def reduce() -> None:
             cols["vel"].append(f(row["requiredVelocity"]))
             cols["aim"].append(f(row["aimErrorRadii"]))
             cols["hit"].append(f(row["hitError"]))
+            cols["crowd"].append(bias.get(bias_key(replays[k]["md5"], float(row["startTime"])), NAN))
             cols["tx"].append(f(row["targetX"]))
             cols["ty"].append(f(row["targetY"]))
             cols["heading"].append(f(row["heading"]))
@@ -255,7 +275,7 @@ def prepare(d, era: str | None, mods: str | None = None, frame: str = "screen") 
     maps: dict[str, int] = {}
     patterns: dict[tuple, int] = {}
     out = {k: array.array("i") for k in ("rep", "map", "pat", "reg", "sec")}
-    ys = {k: array.array("f") for k, _, _ in OUTCOMES}
+    ys = {k: array.array("f") for k, _, _ in OUTCOMES + (("hitVsCrowd", 1, "ms"),)}
     for i in range(n):
         k = rep[i]
         if not selected(reps[k], era, mods):
@@ -289,7 +309,9 @@ def prepare(d, era: str | None, mods: str | None = None, frame: str = "screen") 
         ys["aim"].append(aim[i] if press[i] else NAN)
         ys["along"].append(along)
         ys["across"].append(across)
-        ys["hit"].append(cols["hit"][i])
+        raw = cols["hit"][i] - reps[k]["offset"] if reps[k]["offsetStatus"] != "ambiguous" else NAN
+        ys["hit"].append(raw)
+        ys["hitVsCrowd"].append(raw - cols["crowd"][i])
         ys["missAlong"].append(miss_along)
         # Error toward the middle of the playfield, independent of where the jump came from:
         # + means the press landed on the centre side of the target. If corner undershoot is

@@ -99,7 +99,10 @@ def per_play(d, regime: dict[int, str]):
             v = cols["aim"][i]
             if v == v:
                 a["aim"].append(v)
-        h = cols["hit"][i]
+        # Hit error with the per-beatmap offset in force removed (offsets.py); a replay whose
+        # offset is ambiguous contributes no timing at all rather than a guessed one.
+        rep = d["replays"][k]
+        h = cols["hit"][i] - rep["offset"] if rep["offsetStatus"] != "ambiguous" else NAN
         if h == h:
             a["hit"].append(h)
     return acc
@@ -122,7 +125,7 @@ def table(d, regime, p):
     bc_maps = {reps[k]["md5"] for k, g in regime.items() if g in ("B", "C")}
 
     p("Per play. acc is the ScoreV1-style 300/100/50 ratio over judged objects; aim is mean")
-    p("|cursor - target| at the press in radii; hit is mean signed error (ms, + late), UR = 10 x SD.")
+    p("|cursor - target| at the press in radii; hit is mean signed error (ms, + late) net of the per-map offset, blank where that offset is ambiguous; UR = 10 x SD.")
     p("* = a D map also played under B or C.")
     p(f"  {'map':<46} {'time':>11} {'reg':>3} {'n':>5} {'300/100/50/X':>16} {'acc':>6} {'aim':>6} {'hit':>6} {'UR':>6}")
     rows = sorted((k for k, g in regime.items() if g in ("A", "B", "C", "D")), key=lambda k: local_time(reps[k]))
