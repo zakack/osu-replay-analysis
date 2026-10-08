@@ -35,8 +35,9 @@ if (args.Length == 0)
     Console.Error.WriteLine("  scene <replay> [out]  emit the viewer's input: slider polylines, cursor frames, judgements");
     Console.Error.WriteLine("  rhythm [gap] [tol]... extract rhythmic groups and constant-snap runs across the corpus");
     Console.Error.WriteLine("  geometry              extract per-object geometry, cross-checking the angle against lazer");
+    Console.Error.WriteLine("  onset                 when the cursor sets off toward each object, against when it appeared");
     Console.Error.WriteLine("    these, and verify, take --corpus <path> and --out <path>");
-    Console.Error.WriteLine("    verify and the sweeps take --threads <n>, defaulting to every logical processor");
+    Console.Error.WriteLine("    verify, onset and the sweeps take --threads <n>, defaulting to every logical processor");
     Console.Error.WriteLine("  tail-sweep [ms]...    trim the end off replays that stopped early and report the drift");
     Console.Error.WriteLine("  sweep [ms]...         shift every replay frame time and report the drift in click judgements");
     return 2;
@@ -553,6 +554,23 @@ switch (args[0])
         Console.WriteLine($"angle cross-check (slider-free turns): {checkedAngles - diverged} of {checkedAngles} agree with lazer"
                           + (diverged > 0 ? $", worst divergence {worst:0.#####} rad" : string.Empty));
         Console.WriteLine($"written: {geometryOut}");
+        return 0;
+    }
+
+    case "onset":
+    {
+        // A separate file from geometry.csv rather than more columns in it: geometry runs one
+        // replay at a time and takes hours over the corpus, this runs on every core, and the
+        // two can be extended without re-running each other.
+        var (corpusPath, onsetOut) = paths(args, "build/onset.csv");
+        var index = BeatmapIndex.Read("build/beatmap-index.json");
+        var corpus = CorpusSurvey.ReadRecords(corpusPath).Where(r => r.Paired).ToArray();
+
+        using var writer = new StreamWriter(onsetOut);
+        var (done, failed) = Onset.WriteAll(corpus, index, writer, Console.Error);
+
+        Console.WriteLine($"extracted {done} replays, {failed} failed");
+        Console.WriteLine($"written: {onsetOut}");
         return 0;
     }
 
