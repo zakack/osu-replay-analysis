@@ -84,10 +84,19 @@ if [ "$(python3 -c 'import json; print(len(json.load(open("build/corpus-geom-new
 fi
 
 # Onset times live in their own file and are extended the same way. Unlike geometry this
-# runs on every core: the whole corpus took 37 s. A replay with no directed jumps writes no
-# rows and is re-selected every run, which costs about a second.
+# runs on every core: the whole corpus took 38 s. If ora's columns no longer match the file,
+# appended rows would not line up, so the file is rebuilt instead. That is checked against
+# an empty run every time, not only when there is something to add. A replay with no
+# directed jumps writes no rows and is re-selected every run, which costs about a second.
 if [ -f build/onset.csv ]; then
-    python3 - <<'PY' || fail "selecting replays for onset"
+    echo '[]' > build/corpus-onset-new.json
+    "$ora" onset --corpus build/corpus-onset-new.json --out build/onset-new.csv >/dev/null || fail "ora onset (header)"
+    if ! diff -q <(head -1 build/onset.csv) <(head -1 build/onset-new.csv) >/dev/null; then
+        echo "onset: columns changed; rebuilding onset.csv for the whole corpus"
+        "$ora" onset --out build/onset.csv.new | grep -E '^extracted' || fail "ora onset (rebuild)"
+        mv build/onset.csv.new build/onset.csv
+    else
+        python3 - <<'PY' || fail "selecting replays for onset"
 import csv, json, os
 have, last = set(), None
 with open("build/onset.csv", newline="") as fh:
@@ -102,12 +111,11 @@ new = [e for e in json.load(open("build/corpus.json"))
 json.dump(new, open("build/corpus-onset-new.json", "w"))
 print(f"onset: {len(new)} replays to extract")
 PY
-    if [ "$(python3 -c 'import json; print(len(json.load(open("build/corpus-onset-new.json"))))')" -gt 0 ]; then
-        "$ora" onset --corpus build/corpus-onset-new.json --out build/onset-new.csv \
-            | grep -E '^extracted' || fail "ora onset"
-        diff -q <(head -1 build/onset.csv) <(head -1 build/onset-new.csv) >/dev/null \
-            || fail "onset-new.csv header differs from onset.csv; not appended"
-        tail -n +2 build/onset-new.csv >> build/onset.csv
+        if [ "$(python3 -c 'import json; print(len(json.load(open("build/corpus-onset-new.json"))))')" -gt 0 ]; then
+            "$ora" onset --corpus build/corpus-onset-new.json --out build/onset-new.csv \
+                | grep -E '^extracted' || fail "ora onset"
+            tail -n +2 build/onset-new.csv >> build/onset.csv
+        fi
     fi
 fi
 

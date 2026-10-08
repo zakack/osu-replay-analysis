@@ -31,6 +31,10 @@ namespace Sim;
 /// A midpoint, not an onset, but the least sensitive to how the hand idles before leaving.</item>
 /// <item><c>leave</c>: the first time the cursor is half a radius from where it was when the
 /// previous object ended, whichever way it went.</item>
+/// <item><c>react</c>: the first time at or after the object <em>appears</em> that the cursor's
+/// speed toward it, from wherever the cursor is then, reaches <see cref="react_threshold"/>.
+/// The three above search from the previous object's end, which on a long gap is before the
+/// target can be seen; this one is meant for rows where <c>appearTime &gt; prevTime</c>.</item>
 /// </list>
 ///
 /// Every time is in <b>map time</b>, the timebase replay frames and object times share, so it
@@ -50,9 +54,15 @@ public static class Onset
     private const double half_window = 17;
     private const double window_after = 50;
     private const double velocity_fraction = 0.25;
+    /// <summary>
+    /// Radii per real millisecond. Before an object appears the player cannot know where it
+    /// is, so speed toward it then is drift; across the corpus that drift exceeds 0.035 in 1%
+    /// of 3.4M pre-appearance samples (median 0, 95th percentile 0.011).
+    /// </summary>
+    private const double react_threshold = 0.035;
 
     public const string CsvHeader =
-        "replay,startTime,appearTime,prevTime,preemptMs,rate,spacingRadii,startDistRadii,onsetVel,half,leave";
+        "replay,startTime,appearTime,prevTime,preemptMs,rate,spacingRadii,startDistRadii,onsetVel,half,leave,react";
 
     public static string ExtractCsv(ReplayRecord record, IReadOnlyDictionary<string, IndexEntry> index)
     {
@@ -128,6 +138,21 @@ public static class Onset
                 lastMoved = moved;
             }
 
+            double appear = startTime - target.TimePreempt;
+            double? react = null;
+            for (int i = lowerBound(path, appear); i < path.Length && path[i].Time <= end; i++)
+            {
+                double t = path[i].Time;
+                if (towardSpeed(path, t, aim, radius) * rate is { } v)
+                {
+                    if (v >= react_threshold)
+                    {
+                        react = t;
+                        break;
+                    }
+                }
+            }
+
             output.Append(replay).Append(',')
                   .Append(f(startTime)).Append(',')
                   .Append(f(startTime - target.TimePreempt)).Append(',')
@@ -138,7 +163,8 @@ public static class Onset
                   .Append((startDist / radius).ToString("0.####", CultureInfo.InvariantCulture)).Append(',')
                   .Append(f(onsetVel)).Append(',')
                   .Append(f(half)).Append(',')
-                  .Append(f(leave)).Append('\n');
+                  .Append(f(leave)).Append(',')
+                  .Append(f(react)).Append('\n');
         }
 
         return output.ToString();
@@ -193,6 +219,21 @@ public static class Onset
 
         progress?.Write("\n");
         return (done - failed, failed);
+    }
+
+    /// <summary>
+    /// The cursor's speed toward <paramref name="aim"/>, from where it is at <paramref name="t"/>,
+    /// in radii per map millisecond (multiply by the rate for real time), over ±<see cref="half_window"/> ms.
+    /// </summary>
+    private static double? towardSpeed((double Time, Vector2 Position)[] path, double t, Vector2 aim, float radius)
+    {
+        if (at(path, t) is not { } p || at(path, t - half_window) is not { } a || at(path, t + half_window) is not { } b)
+            return null;
+        var to = aim - p;
+        float d = to.Length;
+        if (d < 1e-3f)
+            return null;
+        return Vector2.Dot(b - a, to / d) / (2 * half_window) / radius;
     }
 
     private static double cross(double t0, float v0, double t1, float v1, float level) =>
