@@ -39,6 +39,10 @@ daily challenge's Mirror week is the first use: a board of flipped plays per map
 pulls the same maps unflipped to stand against it.
 
     python3 tools/reference/fetch.py --beatmaps <id,id,...> --out build/reference-<name>
+
+Or by checksum, which is what the local corpus keys on, so the id lookup is skipped:
+
+    python3 tools/reference/fetch.py --checksums $(python3 tools/reference/top_maps.py 200)
 """
 import collections, csv, json, os, sys, time, urllib.error, urllib.parse, urllib.request
 
@@ -114,7 +118,7 @@ def named(ids, bearer):
 
 def main():
     global OUT, MANIFEST
-    flagged = {"--mods", "--beatmaps", "--out"}
+    flagged = {"--mods", "--beatmaps", "--checksums", "--out"}
     args = [a for i, a in enumerate(sys.argv[1:], 1)
             if not a.startswith("--") and sys.argv[i - 1] not in flagged]
     if "--out" in sys.argv:
@@ -131,6 +135,8 @@ def main():
 
     if "--beatmaps" in sys.argv:
         wanted = named(sys.argv[sys.argv.index("--beatmaps") + 1].split(","), bearer)
+    elif "--checksums" in sys.argv:
+        wanted = [(c, None) for c in sys.argv[sys.argv.index("--checksums") + 1].split(",") if c]
     else:
         wanted = targets(count)
 
