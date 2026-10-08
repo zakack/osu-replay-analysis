@@ -10,8 +10,14 @@ namespace Extract;
 /// A replay's <c>.osr</c> header identifies its beatmap by MD5, but lazer's file store is
 /// addressed by SHA-256. Only lazer's realm database holds the mapping between them, so
 /// pairing a replay with its beatmap is an index build, not a search.
+///
+/// <see cref="Offset"/> is the player's per-beatmap offset as it stands now. It shifts gameplay
+/// time and so every recorded hit error on that map, and no score records the value it was
+/// played with; realm keeps only the current one. Snapshots of it over time are the only
+/// history there is.
 /// </summary>
-public sealed record IndexEntry(string Md5, string Sha256, string Path, string Artist, string Title, string Difficulty);
+public sealed record IndexEntry(string Md5, string Sha256, string Path, string Artist, string Title, string Difficulty,
+                                double Offset = 0);
 
 public static class BeatmapIndex
 {
@@ -60,7 +66,8 @@ public static class BeatmapIndex
                     Path.Combine(filesRoot, file.File.GetStoragePath()),
                     beatmap.Metadata.Artist,
                     beatmap.Metadata.Title,
-                    beatmap.DifficultyName));
+                    beatmap.DifficultyName,
+                    beatmap.UserSettings?.Offset ?? 0));
             }
         });
 
