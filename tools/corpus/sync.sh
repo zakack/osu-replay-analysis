@@ -83,6 +83,34 @@ if [ "$(python3 -c 'import json; print(len(json.load(open("build/corpus-geom-new
     python3 tools/analysis/where.py reduce || fail "where.py reduce"
 fi
 
+# Onset times live in their own file and are extended the same way. Unlike geometry this
+# runs on every core: the whole corpus took 37 s. A replay with no directed jumps writes no
+# rows and is re-selected every run, which costs about a second.
+if [ -f build/onset.csv ]; then
+    python3 - <<'PY' || fail "selecting replays for onset"
+import csv, json, os
+have, last = set(), None
+with open("build/onset.csv", newline="") as fh:
+    rows = csv.reader(fh)
+    next(rows)
+    for row in rows:
+        if row[0] != last:
+            have.add(row[0])
+            last = row[0]
+new = [e for e in json.load(open("build/corpus.json"))
+       if e["Paired"] and os.path.basename(e["Path"]) not in have]
+json.dump(new, open("build/corpus-onset-new.json", "w"))
+print(f"onset: {len(new)} replays to extract")
+PY
+    if [ "$(python3 -c 'import json; print(len(json.load(open("build/corpus-onset-new.json"))))')" -gt 0 ]; then
+        "$ora" onset --corpus build/corpus-onset-new.json --out build/onset-new.csv \
+            | grep -E '^extracted' || fail "ora onset"
+        diff -q <(head -1 build/onset.csv) <(head -1 build/onset-new.csv) >/dev/null \
+            || fail "onset-new.csv header differs from onset.csv; not appended"
+        tail -n +2 build/onset-new.csv >> build/onset.csv
+    fi
+fi
+
 added=$(( $(ls build/$player | wc -l) - before ))
 echo "added $added replays"
 [ "$added" -gt 0 ] && notify-send -a osu-replay-analysis "Corpus updated" "+$added replays" || true
