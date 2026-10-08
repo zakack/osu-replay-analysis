@@ -367,3 +367,9 @@ same outputs. The miss rate after replay and pattern: B4 +0.58 pp and T1 +0.50 p
 `setup-timeline.csv` (2026-10-07 audio row); per the player, the first maps of a session often ran under a quantum left by REAPER mic FX work, before a manual reset to 32/48000
 
 A within-session step in mean hit offset a few maps in would be this, not warm-up. Ends 2026-10-07: the launch wrapper now sets the clock.
+
+## 2026-10-07 — hit timing ~4 ms earlier in the first session off Lutris
+
+`python3 tools/analysis/session.py` → `build/session-D.txt` (hit control: D −3.45 ms vs C +1.02, T4 +0.45; earlier on every same-map pair)
+
+The same evening changed the tablet (can't move timing), the core count from 4 to 24, and dropped kosu's PIPEWIRE_LATENCY=32/48000 from lazer's environment. The last is the likelier lever: see the 2026-10-05 ~11 ms quantum step.
