@@ -3,8 +3,10 @@
 # records. Called by tools/corpus/osu-lazer as `session-log start` before the game and
 # `session-log end <start-time>` after it.
 #
-# Automatic: the monitor's DDC state (brightness separates the 80% gaming profile from the
-# 45% Standard one; the raw preset and Dell feature codes ride along unmapped) and the
+# Automatic: the monitor's DDC state and a profile read from it. Brightness is the only
+# reliable tell: gaming runs at 80, Standard at 50 (confirmed 2026-10-08), and the player
+# changes either rarely, so anything at or above 70 is "gaming". The raw preset and Dell
+# feature codes ride along unmapped, in case Dark Stabilizer turns out to live in one. And the
 # PipeWire clock force. Asked: headphones or speakers, which share one analog output on the
 # Scarlett and so leave no trace anywhere. Speakers sit ~0.6 m away, 1.7 ms more than
 # headphones.
@@ -30,7 +32,10 @@ end)
     python3 - "$started" "$(date -Iseconds)" "$output" "$ddc_state" "$pw_state" >> "$log" <<'PY'
 import json, sys
 start, end, output, ddc, pw = sys.argv[1:]
-print(json.dumps({"start": start, "end": end, "output": output, "ddc": ddc, "pipewire": pw}))
+import re
+b = re.search(r"VCP 10 C (\d+)", ddc)
+profile = ("gaming" if int(b.group(1)) >= 70 else "standard") if b else "unknown"
+print(json.dumps({"start": start, "end": end, "output": output, "monitor": profile, "ddc": ddc, "pipewire": pw}))
 PY
     ;;
 esac
