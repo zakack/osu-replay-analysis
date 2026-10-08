@@ -40,6 +40,10 @@ preset = re.search(r"VCP 14 SNC (x[0-9a-f]+)", ddc)
 b = re.search(r"VCP 10 C (\d+)", ddc)
 profile = {"x0c": "game1", "x05": "standard"}.get(preset.group(1) if preset else "",
           ("gaming?" if int(b.group(1)) >= 70 else "standard?") if b else "unknown")
+# MPRT (backlight strobing) is a Response Time option that leaves the preset alone; it
+# shows as display mode DC x05 and locks brightness, so it needs its own name.
+if re.search(r"VCP DC SNC x05", ddc):
+    profile += "-mprt"
 print(json.dumps({"start": start, "end": end, "output": output, "monitor": profile, "ddc": ddc, "pipewire": pw}))
 PY
     ;;
