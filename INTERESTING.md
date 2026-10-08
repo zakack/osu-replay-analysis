@@ -379,3 +379,9 @@ The same evening changed the tablet (can't move timing), the core count from 4 t
 `pw-metadata -n settings 0` read clock.force-quantum 32 after the D session, and the player did not change it in between
 
 So the graph ran at 32 in both. What differed is kosu's per-stream PIPEWIRE_LATENCY (may change lazer's own buffering, unverified) and 4 vs 24 cores. Either is still open.
+
+## 2026-10-08 — the 4-core limit makes hits register ~2.3 ms later (blind ABBA, p≈0.002)
+
+`tools/experiments/cores-ab.sh`; `build/experiments/cores-ab-*.log` and `cores-ab-rows.json`; 27 Cherry Pop [che] plays, 01:00–01:52 EDT Oct 8
+
+Both 4-core blocks agree (+2.57, +2.62 ms) against +0.32 at 24 cores; UR unchanged (110 vs 112). It's taskset 0-3 = two P-cores with hyperthreading. About half the ~4 ms gap between C and D, so the rest may be noise or the PIPEWIRE_LATENCY variable. Every kosu-era score carries this offset.
