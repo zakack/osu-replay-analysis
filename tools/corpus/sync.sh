@@ -34,6 +34,30 @@ before=$(ls build/$player | wc -l)
 # index knows the map.
 "$ora" index >/dev/null || fail "ora index"
 
+# Per-beatmap offsets shift recorded hit error and no score stores them; realm keeps only
+# the current value. Diff it against the last snapshot and log each change, bounded by the
+# two snapshot times, so a change can be placed in the session it happened in.
+python3 - <<'PY' || fail "offset history"
+import csv, json, os, time
+state, history = "build/offset-state.json", "build/offset-history.csv"
+now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+index = json.load(open("build/beatmap-index.json"))
+current = {k: v.get("Offset", 0) for k, v in index.items()}
+if os.path.exists(state):
+    last = json.load(open(state))
+    new_file = not os.path.exists(history)
+    changed = [k for k, o in current.items() if abs(o - last["offsets"].get(k, 0)) > 1e-9]
+    with open(history, "a", newline="") as fh:
+        w = csv.writer(fh)
+        if new_file:
+            w.writerow(["after", "before", "md5", "title", "difficulty", "old", "new"])
+        for k in changed:
+            v = index[k]
+            w.writerow([last["time"], now, k, v["Title"], v["Difficulty"], last["offsets"].get(k, 0), current[k]])
+    print(f"offsets: {len(changed)} beatmaps changed since {last['time']}")
+json.dump({"time": now, "offsets": current}, open(state, "w"))
+PY
+
 # Never --since. Export numbers filename collisions against the scores selected in the same
 # run, so a partial selection would count a colliding new score as already present and
 # drop it. The full selection is cheap because existing files are skipped.
