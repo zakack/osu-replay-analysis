@@ -2,6 +2,11 @@
 # Installed as ~/.local/bin/osu-lazer, ahead of the pacman-owned /usr/bin/osu-lazer on PATH,
 # so the `osu` launcher and the desktop entries reach it. Plays the game, then asks systemd
 # to refresh the corpus once it closes.
+
+# The player's audio setup: pin the graph to 48 kHz and clear any forced quantum, so the
+# graph's own latency cap applies. Absent on any other machine, so it is optional.
+[ -x ~/.local/bin/pw-force ] && RATE=48000 QUANTUM=0 ~/.local/bin/pw-force
+
 /usr/bin/osu-lazer "$@"
 status=$?
 systemctl --user start --no-block corpus-sync.service
