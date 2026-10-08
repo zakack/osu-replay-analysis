@@ -1,5 +1,5 @@
 #!/bin/bash
-# Bring build/zaksynack and build/corpus.json up to date with lazer's store. Run after the
+# Bring build/zaksynack, build/corpus.json, build/geometry.csv and build/where.pickle up to date with lazer's store. Run after the
 # game closes (see osu-lazer beside this), or by hand; it is idempotent and incremental.
 #
 # Why after close: index and scores both File.Copy the live client.realm, and a copy taken
@@ -55,6 +55,33 @@ print(f"corpus: {len(old)} -> {len(new)}")
 sys.exit(1 if lost or unpaired else 0)
 PY
 mv build/corpus.json.new build/corpus.json
+
+# Geometry is per replay, so only replays not yet in geometry.csv are extracted, to a side
+# file first so a failed run never leaves a half-written block in the 1.7GB CSV. Then
+# where.py's cache is rebuilt from it; together about a minute after a session.
+python3 - <<'PY' || fail "selecting replays for geometry"
+import csv, json, os
+have, last = set(), None
+with open("build/geometry.csv", newline="") as fh:
+    rows = csv.reader(fh)
+    next(rows)
+    for row in rows:
+        if row[0] != last:
+            have.add(row[0])
+            last = row[0]
+new = [e for e in json.load(open("build/corpus.json"))
+       if e["Paired"] and os.path.basename(e["Path"]) not in have]
+json.dump(new, open("build/corpus-geom-new.json", "w"))
+print(f"geometry: {len(new)} replays to extract")
+PY
+if [ "$(python3 -c 'import json; print(len(json.load(open("build/corpus-geom-new.json"))))')" -gt 0 ]; then
+    "$ora" geometry --corpus build/corpus-geom-new.json --out build/geometry-new.csv \
+        | grep -E '^(extracted|angle)' || fail "ora geometry"
+    diff -q <(head -1 build/geometry.csv) <(head -1 build/geometry-new.csv) >/dev/null \
+        || fail "geometry-new.csv header differs from geometry.csv; not appended"
+    tail -n +2 build/geometry-new.csv >> build/geometry.csv
+    python3 tools/analysis/where.py reduce || fail "where.py reduce"
+fi
 
 added=$(( $(ls build/$player | wc -l) - before ))
 echo "added $added replays"

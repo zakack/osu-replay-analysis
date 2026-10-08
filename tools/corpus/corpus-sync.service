@@ -4,7 +4,7 @@ Description=Bring the osu! replay corpus up to date with lazer's store
 [Service]
 Type=oneshot
 WorkingDirectory=%h/Projects/osu-replay-analysis
-# Started by tools/corpus/osu-lazer when the game closes; no timer. Two to four minutes,
+# Started by tools/corpus/osu-lazer when the game closes; no timer. Three to five minutes,
 # most of it survey re-decoding every replay.
 ExecStart=%h/Projects/osu-replay-analysis/tools/corpus/sync.sh
 Nice=10

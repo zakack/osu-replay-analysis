@@ -373,3 +373,9 @@ A within-session step in mean hit offset a few maps in would be this, not warm-u
 `python3 tools/analysis/session.py` → `build/session-D.txt` (hit control: D −3.45 ms vs C +1.02, T4 +0.45; earlier on every same-map pair)
 
 The same evening changed the tablet (can't move timing), the core count from 4 to 24, and dropped kosu's PIPEWIRE_LATENCY=32/48000 from lazer's environment. The last is the likelier lever: see the 2026-10-05 ~11 ms quantum step.
+
+## 2026-10-08 — correction to the ~4 ms lead above: the graph quantum was not the lever
+
+`pw-metadata -n settings 0` read clock.force-quantum 32 after the D session, and the player did not change it in between
+
+So the graph ran at 32 in both. What differed is kosu's per-stream PIPEWIRE_LATENCY (may change lazer's own buffering, unverified) and 4 vs 24 cores. Either is still open.
