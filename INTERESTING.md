@@ -391,3 +391,9 @@ Both 4-core blocks agree (+2.57, +2.62 ms) against +0.32 at 24 cores; UR unchang
 Player adjusted Ghost Rule [N a s y a's Extra]'s per-map offset before one of the 07:38/07:45 EDT Oct 8 runs (+5.0, +4.0 ms); realm holds only the current BeatmapUserSettings.Offset, not its history
 
 Gameplay time includes the offset, so hit error shifts with it. Any timing finding on a map the player has tuned is confounded; worth exporting the current offset into the beatmap index at least.
+
+## 2026-10-08 — Ghost Rule [N a s y a's Extra]: top players hit early, more so late in the map; the player's offset pushes the other way
+
+`build/reference-timing` (fetch.py --beatmaps 5394206,933875), `build/geometry-reference-timing.csv`; 34 no-mod lazer players, per-player median then median
+
+Crowd −3.0 ms (IQR −4.2..−0.8), drifting to −4..−6 ms from 150 s on. Player's finishes +5.0 / +3.0 ms, with a per-map offset moved 0 → −1.8, so the offset compensates the player's lateness at 210 bpm rather than the map. Cherry Pop [che]: crowd −1.0, player −1.0 this morning on 24 cores.
