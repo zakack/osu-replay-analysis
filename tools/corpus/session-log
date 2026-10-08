@@ -4,8 +4,9 @@
 # `session-log end <start-time>` after it.
 #
 # Automatic: the monitor's DDC state and a profile read from it. Brightness is the only
-# reliable tell: gaming runs at 80, Standard at 50 (confirmed 2026-10-08), and the player
-# changes either rarely, so anything at or above 70 is "gaming". The raw preset and Dell
+# reliable tell: gaming runs at 80 (read 2026-10-08), Standard at about 45, and the player
+# changes either rarely, so anything at or above 70 is "gaming". --mfg DEL matters: a second
+# monitor (Westinghouse) is display 1, and an unqualified ddcutil reads that one. The raw preset and Dell
 # feature codes ride along unmapped, in case Dark Stabilizer turns out to live in one. And the
 # PipeWire clock force. Asked: headphones or speakers, which share one analog output on the
 # Scarlett and so leave no trace anywhere. Speakers sit ~0.6 m away, 1.7 ms more than
@@ -13,7 +14,7 @@
 cd "$(dirname "$(readlink -f "$0")")/../.."
 log=build/sessions.jsonl
 
-ddc() { timeout 5 ddcutil getvcp 10 14 EA EB EC ED F0 --brief 2>/dev/null | awk '{printf "%s%s", (NR>1?";":""), $0}'; }
+ddc() { timeout 5 ddcutil --mfg DEL getvcp 10 14 DC E0 E1 E2 E3 F0 --brief 2>/dev/null | awk '{printf "%s%s", (NR>1?";":""), $0}'; }
 pw() { pw-metadata -n settings 0 2>/dev/null | grep -oE "clock\.force-(quantum|rate)' value:'[0-9]+" | tr -d "'" | sed 's/ value:/=/' | paste -sd';'; }
 
 case "$1" in
