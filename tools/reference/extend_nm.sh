@@ -31,9 +31,10 @@ PY
 before=$(python3 -c 'import json; print(len(json.load(open("build/corpus-nm.json"))))')
 "$ora" survey --out build/corpus-nm.json.new build/reference-nm | grep -E '^(paired|decoded)'
 python3 - <<'PY'
-import json, sys
-old = {e["Path"] for e in json.load(open("build/corpus-nm.json"))}
-new = {e["Path"] for e in json.load(open("build/corpus-nm.json.new"))}
+import json, os, sys
+# By file name: the step-6 survey stored relative paths, a survey now stores absolute ones.
+old = {os.path.basename(e["Path"]) for e in json.load(open("build/corpus-nm.json"))}
+new = {os.path.basename(e["Path"]) for e in json.load(open("build/corpus-nm.json.new"))}
 if old - new:
     sys.exit(f"corpus-nm.json.new lost {len(old - new)} entries; not replaced")
 PY
@@ -60,12 +61,16 @@ print(f"{os.path.basename(sys.argv[1])}: {len(new)} replays to extract")
 PY
     if [ "$(python3 -c 'import json; print(len(json.load(open("build/corpus-nm-new.json"))))')" -gt 0 ]; then
         "$ora" "$command" --corpus build/corpus-nm-new.json --out "$csv.new" | { grep -E '^(extracted|written)' || true; }
-        if ! diff -q <(head -1 "$csv") <(head -1 "$csv.new") >/dev/null; then
-            echo "$csv.new header differs from $csv; not appended" >&2
-            exit 1
+        if diff -q <(head -1 "$csv") <(head -1 "$csv.new") >/dev/null; then
+            tail -n +2 "$csv.new" >> "$csv"
+            rm "$csv.new"
+        else
+            # The extractor's columns changed since the CSV was written, so its old rows
+            # cannot take new ones. Re-extract the whole corpus into a side file and swap.
+            echo "$(basename "$csv"): columns changed; re-extracting every replay"
+            "$ora" "$command" --corpus build/corpus-nm.json --out "$csv.new" | { grep -E '^(extracted|written)' || true; }
+            mv "$csv.new" "$csv"
         fi
-        tail -n +2 "$csv.new" >> "$csv"
-        rm "$csv.new"
     fi
 }
 
