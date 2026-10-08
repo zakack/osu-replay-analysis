@@ -385,3 +385,9 @@ So the graph ran at 32 in both. What differed is kosu's per-stream PIPEWIRE_LATE
 `tools/experiments/cores-ab.sh`; `build/experiments/cores-ab-*.log` and `cores-ab-rows.json`; 27 Cherry Pop [che] plays, 01:00–01:52 EDT Oct 8
 
 Both 4-core blocks agree (+2.57, +2.62 ms) against +0.32 at 24 cores; UR unchanged (110 vs 112). It's taskset 0-3 = two P-cores with hyperthreading. About half the ~4 ms gap between C and D, so the rest may be noise or the PIPEWIRE_LATENCY variable. Every kosu-era score carries this offset.
+
+## 2026-10-08 — per-beatmap offsets move recorded hit error, and no score records them
+
+Player adjusted Ghost Rule [N a s y a's Extra]'s per-map offset before one of the 07:38/07:45 EDT Oct 8 runs (+5.0, +4.0 ms); realm holds only the current BeatmapUserSettings.Offset, not its history
+
+Gameplay time includes the offset, so hit error shifts with it. Any timing finding on a map the player has tuned is confounded; worth exporting the current offset into the beatmap index at least.
