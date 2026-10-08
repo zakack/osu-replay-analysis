@@ -1,0 +1,36 @@
+#!/bin/bash
+# One line per lazer session in build/sessions.jsonl: what the rig was doing that no replay
+# records. Called by tools/corpus/osu-lazer as `session-log start` before the game and
+# `session-log end <start-time>` after it.
+#
+# Automatic: the monitor's DDC state (brightness separates the 80% gaming profile from the
+# 45% Standard one; the raw preset and Dell feature codes ride along unmapped) and the
+# PipeWire clock force. Asked: headphones or speakers, which share one analog output on the
+# Scarlett and so leave no trace anywhere. Speakers sit ~0.6 m away, 1.7 ms more than
+# headphones.
+cd "$(dirname "$(readlink -f "$0")")/../.."
+log=build/sessions.jsonl
+
+ddc() { timeout 5 ddcutil getvcp 10 14 EA EB EC ED F0 --brief 2>/dev/null | awk '{printf "%s%s", (NR>1?";":""), $0}'; }
+pw() { pw-metadata -n settings 0 2>/dev/null | grep -oE "clock\.force-(quantum|rate)' value:'[0-9]+" | tr -d "'" | sed 's/ value:/=/' | paste -sd';'; }
+
+case "$1" in
+start)
+    date -Iseconds
+    printf '%s\t%s\n' "$(ddc)" "$(pw)" > build/.session-start
+    ;;
+end)
+    started=$2
+    IFS=$'\t' read -r ddc_state pw_state < build/.session-start 2>/dev/null
+    # Wait for an answer for up to ten minutes; ignoring it records "unanswered".
+    output=$(timeout 600 notify-send -a "osu! session" -u normal \
+        -A headphones=Headphones -A speakers=Speakers \
+        "What did you listen on?" "For the replay corpus. Ignore to skip." 2>/dev/null)
+    [ -z "$output" ] && output=unanswered
+    python3 - "$started" "$(date -Iseconds)" "$output" "$ddc_state" "$pw_state" >> "$log" <<'PY'
+import json, sys
+start, end, output, ddc, pw = sys.argv[1:]
+print(json.dumps({"start": start, "end": end, "output": output, "ddc": ddc, "pipewire": pw}))
+PY
+    ;;
+esac

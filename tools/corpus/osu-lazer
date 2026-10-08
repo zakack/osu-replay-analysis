@@ -7,7 +7,12 @@
 # graph's own latency cap applies. Absent on any other machine, so it is optional.
 [ -x ~/.local/bin/pw-force ] && RATE=48000 QUANTUM=0 ~/.local/bin/pw-force
 
+log=$(dirname "$(readlink -f "$0")")/session-log
+started=$("$log" start)
+
 /usr/bin/osu-lazer "$@"
 status=$?
 systemctl --user start --no-block corpus-sync.service
+# Detached, so a question nobody answers never holds the launcher open.
+setsid -f "$log" end "$started" >/dev/null 2>&1
 exit $status
