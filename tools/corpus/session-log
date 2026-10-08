@@ -3,9 +3,10 @@
 # records. Called by tools/corpus/osu-lazer as `session-log start` before the game and
 # `session-log end <start-time>` after it.
 #
-# Automatic: the monitor's DDC state and a profile read from it. Brightness is the only
-# reliable tell: gaming runs at 80 (read 2026-10-08), Standard at about 45, and the player
-# changes either rarely, so anything at or above 70 is "gaming". --mfg DEL matters: a second
+# Automatic: the Dell's DDC state and the profile read from it, by preset code (VCP 14):
+# x0c is "Game 1" (brightness 80, Dark Stabilizer 2/3, Response Time Extreme) and x05 is
+# Standard (45, off, Fast), both read 2026-10-08. E2 (x1e vs x00) and F0 (x0d vs x00) also
+# differ between them; which of those is Dark Stabilizer or Response Time is unknown. --mfg DEL matters: a second
 # monitor (Westinghouse) is display 1, and an unqualified ddcutil reads that one. The raw preset and Dell
 # feature codes ride along unmapped, in case Dark Stabilizer turns out to live in one. And the
 # PipeWire clock force. Asked: headphones or speakers, which share one analog output on the
@@ -34,8 +35,11 @@ end)
 import json, sys
 start, end, output, ddc, pw = sys.argv[1:]
 import re
+# The preset code names the profile; brightness is the fallback for one not seen yet.
+preset = re.search(r"VCP 14 SNC (x[0-9a-f]+)", ddc)
 b = re.search(r"VCP 10 C (\d+)", ddc)
-profile = ("gaming" if int(b.group(1)) >= 70 else "standard") if b else "unknown"
+profile = {"x0c": "game1", "x05": "standard"}.get(preset.group(1) if preset else "",
+          ("gaming?" if int(b.group(1)) >= 70 else "standard?") if b else "unknown")
 print(json.dumps({"start": start, "end": end, "output": output, "monitor": profile, "ddc": ddc, "pipewire": pw}))
 PY
     ;;
