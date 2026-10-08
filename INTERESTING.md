@@ -361,3 +361,9 @@ needs the reference players' target and cursor columns (their geometry CSVs pred
 ## 2026-10-06 — location costs little in misses, and most of it is the bottom-right and top-left corners
 
 same outputs. The miss rate after replay and pattern: B4 +0.58 pp and T1 +0.50 pp over the 3.96% mean, the middle row about -0.2 pp; horizontal headings +0.2-0.3 pp, upward -0.2 pp. B4 stays worst under HR in screen coordinates (+1.13 pp). T1's excess falls from +0.88 pp (T1 regime) to +0.33 pp (T4); B4's does not. Hit error: corners about +0.8 ms late, the middle about 0.5 ms early, rightward and up-right jumps about 0.84 ms early, leftward and downward about 0.6 ms late.
+
+## 2026-10-07 — audio quantum varied within sessions, set by REAPER, fixed by hand mid-session
+
+`setup-timeline.csv` (2026-10-07 audio row); per the player, the first maps of a session often ran under a quantum left by REAPER mic FX work, before a manual reset to 32/48000
+
+A within-session step in mean hit offset a few maps in would be this, not warm-up. Ends 2026-10-07: the launch wrapper now sets the clock.
