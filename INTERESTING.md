@@ -397,3 +397,9 @@ Gameplay time includes the offset, so hit error shifts with it. Any timing findi
 `build/reference-timing` (fetch.py --beatmaps 5394206,933875), `build/geometry-reference-timing.csv`; 34 no-mod lazer players, per-player median then median
 
 Crowd −3.0 ms (IQR −4.2..−0.8), drifting to −4..−6 ms from 150 s on. Player's finishes +5.0 / +3.0 ms, with a per-map offset moved 0 → −1.8, so the offset compensates the player's lateness at 210 bpm rather than the map. Cherry Pop [che]: crowd −1.0, player −1.0 this morning on 24 cores.
+
+## 2026-10-09 — Miniministop: a doubled, delayed instrument, and a +28 ms offset to follow the other one
+
+Miniministop Hitoyasumi no Uta [Chromstrata's Hitoyasumi] etc., offset +28.1 (build/beatmap-index.json); per-play median hit error in build/where.pickle: −17 → −8.5 ms on 2025-01-23, +12..+18 ms on 2026-09-10; crowd-implied offset 0 (37 players)
+
+Player says the song doubles an instrument on a short delay and their ear locks to the one the mapper didn't snap. The "music layer the player wasn't tracking" trap from CLAUDE.md, measurable: the offset now overshoots by ~15 ms, so either the ear moved or part of it is an old-setup leftover.
