@@ -439,3 +439,9 @@ Slower than an auditory reaction. Player notes lazer's combobreak sound still pl
 `python3 tools/analysis/stream_eras.py`: per 10k stream circles, strings 56.0 (doubletap exclusive) → 32.4 (analog); stray taps 20.9 → 12.3, dropped 3.1 → 1.1, doubles 3.4 → 1.7; QMK toggle era had 16.2 doubles
 
 Player confirms unwanted extra clicks were rife before analog and calls it a game-changer. Not BPM-controlled; analog era is six weeks.
+
+## 2026-10-09 — stream "strays" are the cursor off every circle, almost never a timing-window miss
+
+stray split by press outcome (streams.py tap "nothing" vs "window"), per 10k stream circles: off-circle 9.7–20.3, outside-window 0.0–0.7 in every input era
+
+So a stray is the aim hand: an in-rhythm tap with nothing under the cursor. The tapping-hand causes proper are dropped taps and doubles.
