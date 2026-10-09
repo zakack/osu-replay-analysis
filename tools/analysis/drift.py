@@ -529,6 +529,88 @@ def report(out_path: str | None) -> None:
     print(text)
 
 
+def _band(v, bands, upper_inclusive):
+    for lo, hi, label in bands:
+        if lo <= v and (v <= hi if upper_inclusive else v < hi):
+            return label
+    return "?"
+
+
+def _side(tab, mask, slope=None):
+    """Per-row pieces of the within-run statistics for one side of a comparison, fitted rows only."""
+    mask = mask & (tab["pos"] >= FIT_POS[0]) & (tab["pos"] <= FIT_POS[1])
+    idx = np.flatnonzero(mask)
+    run = tab["run"][idx]
+    u, inv, cnt = np.unique(run, return_inverse=True, return_counts=True)
+    idx = idx[cnt[inv] >= MIN_RUN_POINTS]
+    run, x, y = tab["run"][idx], tab["pos"][idx].astype(float), tab["err"][idx]
+    u, r = np.unique(run, return_inverse=True)
+    c = np.bincount(r)
+    xc = x - (np.bincount(r, x) / c)[r]
+    yc = y - (np.bincount(r, y) / c)[r]
+    b = (xc * yc).sum() / (xc * xc).sum() if slope is None else slope
+    sabs = math.sqrt(math.pi / 2) * np.minimum(np.abs(yc - b * xc), CLIP)
+    sc = sabs - (np.bincount(r, sabs) / c)[r]
+    dev = math.sqrt(math.pi / 2) * np.minimum(np.abs(yc) / np.sqrt(1 - 1 / c[r]), CLIP)
+    return {"idx": idx, "xy": xc * yc, "xx": xc * xc, "txy": xc * sc, "dev": dev, "one": np.ones(len(idx))}
+
+
+def matched(tab, sess, base, boot=BOOT):
+    """Session minus baseline with the baseline matched to the session's composition.
+
+    Slope depends on run length and BPM, so a session's map mix moves it on its own. Each
+    session beatmap is compared with the same beatmap in the baseline when the baseline played
+    it, and otherwise with the baseline's (run length x BPM band) cell, never with both. Per
+    key, the statistic is computed on each side; the difference is averaged with the session's
+    own weights (its Sxx for slope and growth, its circle count for within-run spread), over
+    keys present on both sides. The CI resamples beatmaps on each side independently."""
+    S, B = _side(tab, sess), _side(tab, base)
+    shared = set(tab["md5"][S["idx"]]) & set(tab["md5"][B["idx"]])
+
+    def keys(side):
+        i = side["idx"]
+        return [("m", m) if m in shared else
+                ("c", _band(L, LEN_BANDS, True), _band(bpm, BPM_BANDS, False))
+                for m, L, bpm in zip(tab["md5"][i], tab["len"][i], tab["bpm"][i])]
+
+    ks, kb = keys(S), keys(B)
+    common = sorted(set(ks) & set(kb), key=str)
+    kid = {k: j for j, k in enumerate(common)}
+    out = {"keys": len(common), "maps shared": len(shared)}
+
+    def mats(side, klist):
+        sel = np.array([k in kid for k in klist], bool)
+        m_u, m = np.unique(tab["md5"][side["idx"]][sel], return_inverse=True)
+        kk = np.array([kid[k] for k, ok in zip(klist, sel) if ok], int)
+        cell = m * len(common) + kk
+        size = len(m_u) * len(common)
+        A = {f: np.bincount(cell, side[f][sel], minlength=size).reshape(len(m_u), len(common))
+             for f in ("xy", "xx", "txy", "dev", "one")}
+        return A, len(m_u), int(sel.sum())
+
+    As, Ms, ns = mats(S, ks)
+    Ab, Mb, nb = mats(B, kb)
+    out["coverage"] = ns / max(1, len(ks))
+    if not common:
+        return out
+    rng = np.random.default_rng(2)
+    ws = np.vstack([np.ones(Ms), rng.multinomial(Ms, np.full(Ms, 1 / Ms), size=boot)]).astype(float)
+    wb = np.vstack([np.ones(Mb), rng.multinomial(Mb, np.full(Mb, 1 / Mb), size=boot)]).astype(float)
+    T = lambda w, A, f: w @ A[f]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        for name, num, den, weight in (("slope", "xy", "xx", "xx"), ("growth", "txy", "xx", "xx"),
+                                       ("within", "dev", "one", "one")):
+            vs = T(ws, As, num) / T(ws, As, den)
+            vb = T(wb, Ab, num) / T(wb, Ab, den)
+            w = T(ws, As, weight)
+            ok = np.isfinite(vs) & np.isfinite(vb) & (w > 0)
+            w = np.where(ok, w, 0)
+            diff = (np.where(ok, vs - vb, 0) * w).sum(1) / w.sum(1)
+            sess_v = (np.where(ok, vs, 0) * w).sum(1) / w.sum(1)
+            out[name] = (sess_v[0], sess_v[0] - diff[0], diff[0], tuple(np.nanpercentile(diff[1:], [2.5, 97.5])))
+    return out
+
+
 def latest(days: int = 30, pool: int = 1) -> None:
     tab = table(update())
     kept = tab["reason"] == 0
@@ -543,7 +625,7 @@ def latest(days: int = 30, pool: int = 1) -> None:
     last = "+".join(sorted(chosen, key=ends.get))
     sess = kept & in_sess
     t0 = tab["t"][in_sess].min()
-    base = kept & (tab["t"] < t0) & (tab["t"] >= t0 - days * 86400)
+    base = kept & ~in_sess & (tab["t"] < t0) & (tab["t"] >= t0 - days * 86400)
     era = kept & (tab["era"] == CURRENT_ERA) & (tab["t"] < t0)
 
     start = dt.datetime.fromtimestamp(t0, EDT)
@@ -562,27 +644,34 @@ def latest(days: int = 30, pool: int = 1) -> None:
         p(f"    {n[len(PLAYER) + 1:-4]}")
     p(f"\n  {'':<22}{'session':>24}{f'trailing {days} d':>24}{'analog era':>24}")
     p(f"  {'circles / runs / maps':<22}{f'{fs.n}/{fs.runs}/{fs.maps}':>24}{f'{fb.n}/{fb.runs}/{fb.maps}':>24}{f'{fe.n}/{fe.runs}/{fe.maps}':>24}")
+    for key, label in (("slope", "slope ms/tap"), ("growth", "spread growth ms/tap"),
+                       ("within", "within-run SD ms"), ("entry", "entry tap ms")):
+        p(f"  {label:<22}{fs.fmt(key, 24)}{fb.fmt(key, 24)}{fe.fmt(key, 24)}")
+    p(f"  {'level ms (secondary)':<22}{_level(tab, sess):>+24.1f}{_level(tab, base):>+24.1f}{_level(tab, era):>+24.1f}")
+
+    # The verdict: composition-matched, not the raw columns above, which move with the map mix.
+    mt = matched(tab, sess, base)
+    p(f"\n  matched to the session's mix: {mt['maps shared']} beatmaps paired within-map, the rest by "
+      f"run length x BPM cell; {mt['keys']} keys, {100 * mt['coverage']:.0f}% of session circles covered")
+    p(f"  {'':<22}{'session':>10}{'matched base':>14}{'difference [95% CI]':>28}")
     flags = []
     for key, label, worse in (("slope", "slope ms/tap", "abs"), ("growth", "spread growth ms/tap", "up"),
-                              ("within", "within-run SD ms", "up"), ("entry", "entry tap ms", "abs")):
-        p(f"  {label:<22}{fs.fmt(key, 24)}{fb.fmt(key, 24)}{fe.fmt(key, 24)}")
-        lo, hi = fs.entry_ci if key == "entry" else fs.ci[key]
-        ref = getattr(fb, key)
-        if math.isnan(ref) or math.isnan(lo) or fs.maps < MIN_FLAG_MAPS:
+                              ("within", "within mean-abs SD ms", "up")):
+        if key not in mt:
             continue
-        if lo <= ref <= hi:
+        sv, bv, d, (lo, hi) = mt[key]
+        p(f"  {label:<22}{sv:>+10.3f}{bv:>+14.3f}{f'{d:+.3f} [{lo:+.3f},{hi:+.3f}]':>28}")
+        if fs.maps < MIN_FLAG_MAPS or not (lo > 0 or hi < 0):
             continue
-        val = getattr(fs, key)
-        bad = abs(val) > abs(ref) if worse == "abs" else val > ref
-        flags.append(f"{label}: session {val:+.3f}, CI [{lo:+.3f},{hi:+.3f}] excludes the baseline {ref:+.3f} "
-                     f"-> {'REGRESSION' if bad else 'improved'}")
-    p(f"  {'level ms (secondary)':<22}{_level(tab, sess):>+24.1f}{_level(tab, base):>+24.1f}{_level(tab, era):>+24.1f}")
+        bad = abs(sv) > abs(bv) if worse == "abs" else d > 0
+        flags.append(f"{label}: session {sv:+.3f} vs matched baseline {bv:+.3f}, difference CI [{lo:+.3f},{hi:+.3f}] "
+                     f"excludes zero -> {'REGRESSION' if bad else 'improved'}")
     p("")
     if fs.maps < MIN_FLAG_MAPS:
         p(f"not flagged: {fs.maps} beatmaps, and a bootstrap over fewer than {MIN_FLAG_MAPS} cannot carry a CI; "
           f"pool sessions with --sessions {pool + 1}")
     elif not flags:
-        p("no change: every session CI contains the trailing baseline")
+        p("no change: every matched difference CI contains zero")
     for f in flags:
         p(f)
 
