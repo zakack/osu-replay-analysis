@@ -75,11 +75,14 @@ CLIP = 50.0          # ms; a residual beyond this is a 50 or a stray, not drift
 BOOT = 2000
 MIN_N = 200          # step 5's floor for a per-position cell
 MIN_RUN_POINTS = 3   # a run contributes to a slope with this many kept circles
-# Slopes are fitted over positions 2-16. Position 1 is the entry into the stream and sits on its
-# own (about +4 ms against the run, then -4 at position 2), which a line would read as drift; and
+# Slopes are fitted over positions 4-16. The entry is a transient: the first tap about +4 ms
+# against the run, the second and third -4 and -3 as the hand overcorrects, settled by the
+# fourth. A line through 2-16 reads that settling as drift (+0.66 ms/tap in the analog era, falling
+# with run length as the transient is diluted); from 4 on it is +0.4 and the entry column owns
+# taps 1-3. Some decay with run length remains, so read slope beside the length split. And
 # a run's weight in a pooled slope grows as its length cubed, so without a cap a handful of
 # 64-tap marathon streams decide the number and the beatmap bootstrap swings with them.
-FIT_POS = (2, 16)
+FIT_POS = (4, 16)
 MIN_FLAG_MAPS = 8    # `latest` flags nothing on fewer beatmaps: the bootstrap resamples maps
 
 EDT = dt.timezone(dt.timedelta(hours=-4))
