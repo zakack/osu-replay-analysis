@@ -71,7 +71,8 @@ def input_regime(day: str) -> str | None:
 
 
 def shifts(objects, presses, snap, beat):
-    """Yield (direction, end, taps_to_recover, lag_ms, lag_intervals) per shift in a run.
+    """Yield (direction, end, taps_to_recover, lag_ms, lag_intervals, start_t, end_t) per
+    shift in a run. Times are map time; the caller divides by the rate.
 
     Ends, read off the first circle after the chain (k) and the chain's last circle:
       pushback  "extra tap"      k was judged by an unmatched press: the panic tap
@@ -81,12 +82,20 @@ def shifts(objects, presses, snap, beat):
       ahead     "dropped tap"    no press was meant for the last shifted circle or for k
                 "expired"        k was judged by nothing
       both      "not re-synced"  the chain reached the end of the run
-                "other"          anything else"""
+                "other"          anything else
+
+    Start of a shift: pushback, the tap meant for the first shifted circle (it strayed or
+    was refused), or that circle's time if no tap was meant for it; ahead, the circle
+    before the chain, the one whose tap went to its successor. End: the recovery tap for
+    "extra tap", the circle whose tap was left out for "dropped tap", the expiring circle's
+    time for "expired"."""
     interval = snap * beat
     r = S.classify(objects, ["Great"] * len(objects), [None] * len(objects), presses, snap, beat)
     if r["verdict"] != "ok":
         return
     judge, tap = r["judge"], r["tap"]
+    times = [p[0] for p in presses]
+    meant = {i: times[j] for i, j in S.align(objects, times, interval) if i is not None and j is not None}
     by_target = {}
     for t, outcome, target in presses:
         if outcome == "hit" and target is not None:
@@ -104,18 +113,33 @@ def shifts(objects, presses, snap, beat):
         last = k - 1
         count = last - q + 1
         name = "pushback" if d == "next" else "ahead"
+        t0 = meant.get(q, objects[q]) if d == "next" else objects[q - 1]
         if k >= n:
-            yield name, "not re-synced", count, None, None
+            yield name, "not re-synced", count, None, None, t0, None
         elif judge[k] == "none":
-            yield name, "expired", count, None, None
+            yield name, "expired", count, None, None, t0, objects[k]
         elif d == "next" and judge[k] == "extra":
             t = by_target.get(round(objects[k], 1))
             lag = None if t is None else t - objects[k]
-            yield name, "extra tap", count, lag, None if lag is None else lag / interval
+            yield name, "extra tap", count, lag, None if lag is None else lag / interval, t0, t
         elif d == "prev" and (tap[last] == "dropped" or tap[k] == "dropped"):
-            yield name, "dropped tap", count, None, None
+            yield name, "dropped tap", count, None, None, t0, objects[last] if tap[last] == "dropped" else objects[k]
         else:
-            yield name, "other", count, None, None
+            yield name, "other", count, None, None, t0, None
+
+
+def rates() -> dict[str, float]:
+    """Replay -> playback rate, from onset.csv, which carries lazer's own value per row."""
+    import csv
+    out, last = {}, None
+    with open("build/onset.csv", newline="") as fh:
+        rows = csv.reader(fh)
+        i = next(rows).index("rate")
+        for row in rows:
+            if row[0] != last:
+                out[row[0]] = float(row[i] or 1)
+                last = row[0]
+    return out
 
 
 def boot_rate(items, key_ok):
@@ -146,7 +170,8 @@ def main(out_path: str | None) -> None:
     presses = S.load_presses({r for r, _ in runs})
     md5 = {os.path.basename(e["Path"]): e["BeatmapMd5"] for e in json.load(open("build/corpus.json"))}
 
-    rows = []   # (direction, end, count, lag_ms, lag_int, era, regime, md5)
+    rate = rates()
+    rows = []   # (direction, end, count, lag_ms, lag_int, era, regime, md5, interval_ms, ms, month)
     for replay, events in runs:
         ps = presses.get(replay)
         m = STAMP.search(replay)
@@ -158,8 +183,11 @@ def main(out_path: str | None) -> None:
         interval = snap * beat
         lo = bisect.bisect_left(ps, (objects[0] - interval,))
         hi = bisect.bisect_right(ps, (objects[-1] + interval, "~"))
-        for s in shifts(objects, ps[lo:hi], snap, beat):
-            rows.append(s + (hitsound_era(day), input_regime(day), md5.get(replay)))
+        rr = rate.get(replay, 1.0)
+        for d, end, count, lag, lagi, t0, t1 in shifts(objects, ps[lo:hi], snap, beat):
+            ms = None if t1 is None else (t1 - t0) / rr
+            rows.append((d, end, count, None if lag is None else lag / rr, lagi, hitsound_era(day),
+                         input_regime(day), md5.get(replay), interval / rr, ms, day[:7]))
 
     lines = []
     p = lines.append
@@ -184,6 +212,10 @@ def main(out_path: str | None) -> None:
                 ints = sorted(r[4] for r in rs if r[4] is not None)
                 if lags:
                     line += f"  extra-tap lag {statistics.median(lags):+.0f} ms ({statistics.median(ints):+.2f} int)"
+            ms = sorted(r[9] for r in rs if r[1] == recover[d] and r[9] is not None)
+            if len(ms) >= 4:
+                mq = statistics.quantiles(ms, n=4)
+                line += f"  ms to recover {statistics.median(ms):.0f} (IQR {mq[0]:.0f}-{mq[2]:.0f})"
             p(line)
 
     block("all tapped stream runs", rows)
@@ -196,6 +228,45 @@ def main(out_path: str | None) -> None:
     p("\nhitsound era within EXCLUSIVE only (input held fixed)")
     for era in ("CUE-1", "NOCUE-1", "CUE-2", "NOCUE-2"):
         block(f"EXCLUSIVE x {era}", [r for r in rows if r[6] == "EXCLUSIVE" and r[5] == era])
+
+    # The reaction test. If re-syncing is a reaction to hearing the slip, the time from the
+    # slip to the recovery tap is roughly fixed and the tap count grows as taps get faster.
+    # If the tap count is fixed, the recovery is counted out in taps, not reacted to.
+    p("\nreaction test: recoveries by real tap interval (ms per tap, rate applied)")
+    edges = (0, 55, 65, 75, 85, 100, 120, 1000)
+    for d in ("pushback", "ahead"):
+        p(f"  {d} via {recover[d]}:")
+        for lo_, hi_ in zip(edges, edges[1:]):
+            sel = [r for r in rows if r[0] == d and r[1] == recover[d] and r[9] is not None and lo_ <= r[8] < hi_]
+            if len(sel) < 20:
+                continue
+            taps = sorted(r[2] for r in sel)
+            ms = sorted(r[9] for r in sel)
+            p(f"    {lo_:>3}-{hi_:<4} ms/tap  n={len(sel):5}  taps {statistics.median(taps):.0f}  ms {statistics.median(ms):4.0f}"
+              f"  (ms IQR {statistics.quantiles(ms, n=4)[0]:.0f}-{statistics.quantiles(ms, n=4)[2]:.0f})")
+    for d in ("pushback", "ahead"):
+        sel = [r for r in rows if r[0] == d and r[1] == recover[d] and r[9] is not None]
+        if len(sel) > 50:
+            xs = [r[8] for r in sel]
+            for label, ys in (("taps", [r[2] for r in sel]), ("ms", [r[9] for r in sel])):
+                mx, my = statistics.fmean(xs), statistics.fmean(ys)
+                b = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs)
+                p(f"  {d} slope of {label}-to-recover on ms/tap: {b:+.3f}  "
+                  f"(reaction predicts taps falling with ms/tap and ms flat; counting predicts taps flat)")
+
+    # A deliberate change of policy shows up as a step by month, independent of the eras.
+    p("\nby month: pushback recovery by extra tap, and how long the recoveries take")
+    p("  month     era      n    extra-tap%   taps  ms     ahead n  dropped%")
+    for month in sorted({r[10] for r in rows}):
+        pb = [r for r in rows if r[10] == month and r[0] == "pushback"]
+        ah = [r for r in rows if r[10] == month and r[0] == "ahead"]
+        if len(pb) < 30:
+            continue
+        ok = [r for r in pb if r[1] == "extra tap"]
+        ms = [r[9] for r in ok if r[9] is not None]
+        p(f"  {month}  {hitsound_era(month + '-15'):<8} {len(pb):5}  {100 * len(ok) / len(pb):6.1f}%"
+          f"    {statistics.median([r[2] for r in ok]) if ok else float('nan'):4.0f}  {statistics.median(ms) if ms else float('nan'):4.0f}"
+          f"   {len(ah):6}  {100 * sum(r[1] == 'dropped tap' for r in ah) / max(1, len(ah)):6.1f}%")
 
     text = "\n".join(lines) + "\n"
     if out_path:
