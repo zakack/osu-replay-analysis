@@ -409,3 +409,9 @@ Player says the song doubles an instrument on a short delay and their ear locks 
 Miniministop [Chromstrata's Hitoyasumi], 2026-10-09_09-53 (offset +28.1, speakers): 9-object rolling median hit error −4..−11 ms over 1–9 s, +24..+32 over 14–21 s, back to ~0 by 26 s; the crowd (map-bias.csv) stays within −5..+3 over the same span
 
 Player reported feeling their ear switch from the singer to the accordion, which trails it, partway through that attempt. Raw timing ≈ −33 ms (on the singer) early on and ≈ 0 (on the accordion, where the mapper and crowd are) in the middle. A per-object layer-following detector looks feasible: a sustained step about the size of the delay between layers, absent from the crowd.
+
+## 2026-10-09 — click-after-arrival timing matches top players, yet late clicks miss far more for the player
+
+`build/lateclick.txt`; press − closest approach +1.0 ms for both on 108,768 shared objects; within-play IQR 51.9 vs 48.9 ms
+
+The lag comparison only counts presses that hit, so it is conditioned on success; what differs may be closest-approach distance or speed through the circle, not click timing.
