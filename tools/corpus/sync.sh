@@ -112,18 +112,25 @@ fi
 # appended rows would not line up, so the file is rebuilt instead. That is checked against
 # an empty run every time, not only when there is something to add. A replay with no
 # directed jumps writes no rows and is re-selected every run, which costs about a second.
-if [ -f build/onset.csv ]; then
-    echo '[]' > build/corpus-onset-new.json
-    "$ora" onset --corpus build/corpus-onset-new.json --out build/onset-new.csv >/dev/null || fail "ora onset (header)"
-    if ! diff -q <(head -1 build/onset.csv) <(head -1 build/onset-new.csv) >/dev/null; then
-        echo "onset: columns changed; rebuilding onset.csv for the whole corpus"
-        "$ora" onset --out build/onset.csv.new | grep -E '^extracted' || fail "ora onset (rebuild)"
-        mv build/onset.csv.new build/onset.csv
-    else
-        python3 - <<'PY' || fail "selecting replays for onset"
-import csv, json, os
+# Per-replay extractors with their own files (ora onset, ora clicks): extend each with the
+# replays it lacks, or rebuild it whole when the extractor's columns have changed, since rows
+# with a different column set cannot be appended. Both run on every core.
+incremental() {
+    local cmd=$1 csv=build/$1.csv
+    [ -f "$csv" ] || return 0
+    echo '[]' > "build/corpus-$cmd-new.json"
+    "$ora" "$cmd" --corpus "build/corpus-$cmd-new.json" --out "build/$cmd-new.csv" >/dev/null || fail "ora $cmd (header)"
+    if ! diff -q <(head -1 "$csv") <(head -1 "build/$cmd-new.csv") >/dev/null; then
+        echo "$cmd: columns changed; rebuilding $csv for the whole corpus"
+        "$ora" "$cmd" --out "$csv.new" | grep -E '^extracted' || fail "ora $cmd (rebuild)"
+        mv "$csv.new" "$csv"
+        return 0
+    fi
+    python3 - "$cmd" "$csv" <<'PY' || fail "selecting replays for $cmd"
+import csv, json, os, sys
+cmd, path = sys.argv[1:]
 have, last = set(), None
-with open("build/onset.csv", newline="") as fh:
+with open(path, newline="") as fh:
     rows = csv.reader(fh)
     next(rows)
     for row in rows:
@@ -132,16 +139,17 @@ with open("build/onset.csv", newline="") as fh:
             last = row[0]
 new = [e for e in json.load(open("build/corpus.json"))
        if e["Paired"] and os.path.basename(e["Path"]) not in have]
-json.dump(new, open("build/corpus-onset-new.json", "w"))
-print(f"onset: {len(new)} replays to extract")
+json.dump(new, open(f"build/corpus-{cmd}-new.json", "w"))
+print(f"{cmd}: {len(new)} replays to extract")
 PY
-        if [ "$(python3 -c 'import json; print(len(json.load(open("build/corpus-onset-new.json"))))')" -gt 0 ]; then
-            "$ora" onset --corpus build/corpus-onset-new.json --out build/onset-new.csv \
-                | grep -E '^extracted' || fail "ora onset"
-            tail -n +2 build/onset-new.csv >> build/onset.csv
-        fi
+    if [ "$(python3 -c "import json; print(len(json.load(open('build/corpus-$cmd-new.json'))))")" -gt 0 ]; then
+        "$ora" "$cmd" --corpus "build/corpus-$cmd-new.json" --out "build/$cmd-new.csv" \
+            | grep -E '^extracted' || fail "ora $cmd"
+        tail -n +2 "build/$cmd-new.csv" >> "$csv"
     fi
-fi
+}
+incremental onset
+incremental clicks
 
 added=$(( $(ls build/$player | wc -l) - before ))
 echo "added $added replays"
