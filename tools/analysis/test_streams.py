@@ -47,6 +47,30 @@ def test_pushback_after_dropped_tap():
     assert s["class"] == "pushback" and s["origin"] == "dropped", s
 
 
+def test_ahead_after_extra_tap():
+    # An extra tap between circles 2 and 3 lands on circle 3 early; from then on every tap
+    # meets the circle after the one it was meant for, a whole interval early.
+    presses = [(t, "hit", t) for t in OBJ[:3]] + [(OBJ[2] + 40, "hit", OBJ[3])]
+    presses += [(OBJ[k], "hit", OBJ[k + 1]) for k in range(3, 9)]
+    results = ["Great"] * 3 + ["Meh"] * 7
+    errors = [0.0] * 3 + [-60.0] + [-STEP] * 6
+    r = run(presses, results, errors)
+    s = r["strings"][0]
+    assert s["class"] == "ahead" and s["origin"] == "double", (s, r["judge"], r["double"])
+
+
+def test_ahead_after_skipped_circle():
+    # The cursor leaves circle 3 before its tap: that tap lands on circle 4, circle 3 times
+    # out, and every later tap meets the circle after the one it was meant for.
+    presses = [(t, "hit", t) for t in OBJ[:3]]
+    presses += [(OBJ[k], "hit", OBJ[k + 1]) for k in range(3, 9)]
+    results = ["Great"] * 3 + ["Miss"] + ["Meh"] * 6
+    errors = [0.0] * 3 + [None] + [-STEP] * 6
+    r = run(presses, results, errors)
+    s = r["strings"][0]
+    assert s["class"] == "ahead" and s["origin"] == "cursor left early", (s, r["judge"])
+
+
 def test_own_late():
     presses = [(t + 70, "hit", t) for t in OBJ]
     r = run(presses, ["Great"] * 2 + ["Meh"] * 5 + ["Great"] * 3, [70.0] * 10)

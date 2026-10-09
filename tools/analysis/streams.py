@@ -44,8 +44,11 @@ of who judged its members: "pushback" when the tap meant for the next circle did
 above) and some earlier circle in the run took its own tap, so the grid is anchored;
 otherwise a shift present from the run's first circle is read as lateness on entry, "own-late"/"own-early" when each circle took its own tap and the tap was simply
 off, "ahead" when the previous circle's tap did, "phase-shift" or "unalignable" from the run
-checks. Its origin is the nearest failed tap (dropped, notelocked, stray) or double tap at
-or up to two circles before the string's first member, else "none".
+checks; "ahead" is the mirror of pushback, each circle taken a whole interval early by the
+tap meant for the one before. For a shifted chain the origin is the failed tap (dropped,
+notelocked, stray), double tap, or for "ahead" a tap that landed on the next circle
+because the cursor had already left its own ("cursor left early"), at the head of the chain,
+which can be well before the first 50, or "entered shifted" when the chain runs back to the run's first circle.
 
     python3 tools/analysis/streams.py cache     # once: build/streams.pickle from rhythm.csv
     python3 tools/analysis/streams.py report [--out build/streams.txt]
@@ -217,19 +220,51 @@ def _explain(start, end, tap, judge, double, errors, verdict, fraction) -> dict:
     elif top == "self":
         signs = [e for e in errors[start:end] if e is not None]
         cls = "own-late" if signs and statistics.median(signs) > 0 else "own-early"
-    elif top == "prev":
+    elif top == "prev" and "self" in judge[:start]:
         cls = "ahead"
+    elif top == "prev":
+        signs = [e for e in errors[start:end] if e is not None]
+        cls = "own-early" if not signs or statistics.median(signs) < 0 else "own-late"
     else:
         cls = top
-    # The cause: the nearest thing that went wrong with a tap, at or just before the string.
+    # The cause sits where the shift began, which can be well before the 50s do: walk back
+    # along the chain of circles judged by the same neighbour, then look at the taps at its
+    # head. A chain reaching the run's first circle entered the run already shifted.
     origin = "none"
-    for q in range(start, max(-1, start - 3), -1):
-        if tap[q] in CAUSES:
-            origin = tap[q]
-            break
-        if double[q]:
-            origin = "double"
-            break
+    if top in ("next", "prev"):
+        q = start
+        while q > 0 and judge[q - 1] == top:
+            q -= 1
+        if q == 0:
+            origin = "entered shifted"
+        elif top == "prev":
+            # The circle before the chain decides it. Taken by an unmatched press: a double
+            # tap pulled the stream a circle ahead. Taken by no press at all: its own tap went
+            # on to the next circle because the cursor had already left it, and it missed.
+            # (Every tap inside the chain lands on a neighbour by definition, so the taps
+            # there are the symptom, not the cause.)
+            if judge[q - 1] == "extra" or double[q - 1] or double[q]:
+                origin = "double"
+            elif tap[q - 1] in CAUSES:
+                origin = tap[q - 1]
+            elif judge[q - 1] == "none":
+                origin = "cursor left early"
+        else:
+            for r in (q, q - 1):
+                if tap[r] in CAUSES:
+                    origin = tap[r]
+                    break
+                if double[r]:
+                    origin = "double"
+                    break
+    else:
+        for q in range(start, max(-1, start - 3), -1):
+            if tap[q] in CAUSES:
+                origin = tap[q]
+                break
+            if double[q]:
+                origin = "double"
+                break
     return {"start": start, "end": end, "class": cls, "fraction": None, "origin": origin}
 
 
@@ -321,9 +356,10 @@ def report(out_path: str | None) -> None:
     cls = collections.Counter(s[0] for s in strings)
     for c, n in cls.most_common():
         p(f"  {c:<12} {n:6}  {100 * n / max(1, len(strings)):5.1f}%")
-    p("\norigin (label of the circle just before the string), pushback strings only:")
-    for o, n in collections.Counter(s[1] for s in strings if s[0] == "pushback").most_common():
-        p(f"  {o:<12} {n:6}")
+    for k in ("pushback", "ahead"):
+        p(f"\norigin of {k} strings (the tap at the head of the shifted chain):")
+        for o, n in collections.Counter(s[1] for s in strings if s[0] == k).most_common():
+            p(f"  {o:<16} {n:6}")
 
     def split(key, edges, label):
         p(f"\nby {label}: share of each class")
@@ -334,13 +370,14 @@ def report(out_path: str | None) -> None:
             c = collections.Counter(s[0] for s in sel)
             p(f"  {lo_:>5}-{hi_:<5} n={len(sel):5}  " + "  ".join(
                 f"{k} {100 * c[k] / len(sel):4.1f}%" for k in ("pushback", "own-late", "own-early", "dropped", "notelock", "phase-shift", "unalignable")))
-    split(lambda s: s[2], (0, 150, 180, 200, 220, 250, 1000), "stream BPM")
+    split(lambda s: s[2], (0, 150, 180, 200, 220, 250, 1000), "map BPM (DT/HT rate not applied)")
     split(lambda s: s[3], (5, 8, 12, 17, 25, 33, 1000), "run length (circles)")
 
     # One concrete example of the dominant class, the latest one, to go and look at.
     if strings:
         top = cls.most_common(1)[0][0]
-        ex = max((s for s in strings if s[0] == top), key=lambda s: s[4][-21:])
+        pool = [s for s in strings if s[0] == top and s[2] >= 150] or [s for s in strings if s[0] == top]
+        ex = max(pool, key=lambda s: s[4][-21:])
         p(f"\nexample ({top}): {ex[4]} at {ex[5] / 1000:.1f}s (map time), {ex[2]:.0f} BPM, run of {ex[3]}")
 
     text = "\n".join(lines) + "\n"
