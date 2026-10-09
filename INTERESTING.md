@@ -427,3 +427,9 @@ The cursor arrives early and leaves before the click, which is roughly on time. 
 `python3 tools/analysis/rush.py you|top`; fast jumps ≥0.045 radii/ms
 
 Rushed (closest ≥15 ms before the beat): player 26.9%, top 26.1%, same shape (acute 27.7 vs 26.3; next jump ≥4r 28.5 vs 27.1; next short 13.8 vs 14.7). Late-press miss given rushed: player 14.2% vs 3.4% on time, rising to 17.2% at ≥200 bpm and 24.2% at ≥0.065 r/ms; top ~0 (best runs only — selection). Early arrival looks anticipatory and universal; the hold degrades with demand.
+
+## 2026-10-09 — stream pushback recovery takes ~330 ms regardless of tempo; the cue may be visual or the combobreak sound
+
+`build/recovery.txt` (tools/analysis/recovery.py): median 329 ms (IQR 231–518) from slip to extra tap, flat across 65–120 ms tap intervals; ahead-shift recovery is a fixed 3–5 taps instead
+
+Slower than an auditory reaction. Player notes lazer's combobreak sound still plays when a miss breaks a long enough combo, so the cue could be that sound or the miss marker on screen.
