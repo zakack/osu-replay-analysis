@@ -445,3 +445,9 @@ Player confirms unwanted extra clicks were rife before analog and calls it a gam
 stray split by press outcome (streams.py tap "nothing" vs "window"), per 10k stream circles: off-circle 9.7–20.3, outside-window 0.0–0.7 in every input era
 
 So a stray is the aim hand: an in-rhythm tap with nothing under the cursor. The tapping-hand causes proper are dropped taps and doubles.
+
+## 2026-10-09 — does the tapping hand regress while attention moves to aim?
+
+player starts weeks of aim-on-stream-maps practice from 2026-10-09; monitor is tools/analysis/drift.py latest (in progress), baseline the analog-doubletap era
+
+Player expects the left hand may "get lazy" once unattended. A natural experiment on attention vs automaticity.
