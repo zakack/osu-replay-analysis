@@ -433,3 +433,9 @@ Rushed (closest ≥15 ms before the beat): player 26.9%, top 26.1%, same shape (
 `build/recovery.txt` (tools/analysis/recovery.py): median 329 ms (IQR 231–518) from slip to extra tap, flat across 65–120 ms tap intervals; ahead-shift recovery is a fixed 3–5 taps instead
 
 Slower than an auditory reaction. Player notes lazer's combobreak sound still plays when a miss breaks a long enough combo, so the cue could be that sound or the miss marker on screen.
+
+## 2026-10-09 — doubletap's analog upgrade cut stream 50-strings to the lowest of any era
+
+`python3 tools/analysis/stream_eras.py`: per 10k stream circles, strings 56.0 (doubletap exclusive) → 32.4 (analog); stray taps 20.9 → 12.3, dropped 3.1 → 1.1, doubles 3.4 → 1.7; QMK toggle era had 16.2 doubles
+
+Player confirms unwanted extra clicks were rife before analog and calls it a game-changer. Not BPM-controlled; analog era is six weeks.
