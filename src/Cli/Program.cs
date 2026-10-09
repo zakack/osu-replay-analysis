@@ -34,6 +34,7 @@ if (args.Length == 0)
     Console.Error.WriteLine("  flam <replay> [out]   build a self-contained page that clicks the map and your taps");
     Console.Error.WriteLine("  scene <replay> [out]  emit the viewer's input: slider polylines, cursor frames, judgements");
     Console.Error.WriteLine("  rhythm [gap] [tol]... extract rhythmic groups and constant-snap runs across the corpus");
+    Console.Error.WriteLine("  presses               every button-down and its fate: hit, notelock, outside window, nothing");
     Console.Error.WriteLine("  geometry              extract per-object geometry, cross-checking the angle against lazer");
     Console.Error.WriteLine("  onset                 when the cursor sets off toward each object, against when it appeared");
     Console.Error.WriteLine("    these, and verify, take --corpus <path> and --out <path>");
@@ -572,6 +573,22 @@ switch (args[0])
 
         Console.WriteLine($"extracted {done} replays, {failed} failed");
         Console.WriteLine($"written: {onsetOut}");
+        return 0;
+    }
+
+    case "presses":
+    {
+        // Every button-down and what lazer made of it, for aligning taps to objects in a
+        // stream. clicks.csv keeps at most one stray press per object; this keeps them all.
+        var (corpusPath, pressesOut) = paths(args, "build/presses.csv");
+        var index = BeatmapIndex.Read("build/beatmap-index.json");
+        var corpus = CorpusSurvey.ReadRecords(corpusPath).Where(r => r.Paired).ToArray();
+
+        using var writer = new StreamWriter(pressesOut);
+        var (done, failed) = Onset.WriteAll(corpus, index, writer, Console.Error, Presses.CsvHeader, Presses.ExtractCsv);
+
+        Console.WriteLine($"extracted {done} replays, {failed} failed");
+        Console.WriteLine($"written: {pressesOut}");
         return 0;
     }
 

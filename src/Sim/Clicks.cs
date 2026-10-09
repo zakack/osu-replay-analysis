@@ -119,7 +119,7 @@ public static class Clicks
         // Presses that judged nothing, each to the most recent object the cursor had been
         // inside, within that object's late bound and before the next object's window closes.
         rows.Sort((x, y) => x.Start.CompareTo(y.Start));
-        foreach (var (time, _, outcome) in simulator.PressLog!)
+        foreach (var (time, _, outcome, _, _) in simulator.PressLog!)
         {
             if (outcome == "hit")
                 continue;

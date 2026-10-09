@@ -240,19 +240,24 @@ public sealed class Simulator(IHitPolicy policy)
     /// When set, every press is logged with what became of it: <c>hit</c>, <c>notelock</c>
     /// (hovered a circle in its window but an earlier one was still open), <c>window</c>
     /// (hovered a circle outside its hit window) or <c>nothing</c> (hovered no unjudged
-    /// circle). Off by default; the judgement loop does not depend on it.
+    /// circle). <c>Target</c> is the start time of the circle the press landed on, for every
+    /// outcome but <c>nothing</c>. Off by default; the judgement loop does not depend on it.
     /// </summary>
-    public List<(double Time, Vector2 Cursor, string Outcome)>? PressLog { get; set; }
+    public List<(double Time, Vector2 Cursor, string Outcome, double? Target, OsuAction Action)>? PressLog { get; set; }
 
     private void press(Layout layout, double time, Vector2 cursor, OsuAction action, IReadOnlyList<OsuAction> pressed)
     {
         string outcome = "nothing";
-        try { outcome = pressInner(layout, time, cursor, action, pressed); }
-        finally { PressLog?.Add((time, cursor, outcome)); }
+        double? target = null;
+        try { outcome = pressInner(layout, time, cursor, action, pressed, out target); }
+        finally { PressLog?.Add((time, cursor, outcome, target, action)); }
     }
 
-    private string pressInner(Layout layout, double time, Vector2 cursor, OsuAction action, IReadOnlyList<OsuAction> pressed)
+    private string pressInner(Layout layout, double time, Vector2 cursor, OsuAction action, IReadOnlyList<OsuAction> pressed,
+                              out double? target)
     {
+        target = null;
+
         // Input propagates front to back and the hit object container orders by descending
         // start time, so the earliest unjudged circle under the cursor receives the press.
         // Once one does the press is consumed, even if notelock then refuses the hit.
@@ -268,6 +273,8 @@ public sealed class Simulator(IHitPolicy policy)
 
             if (Vector2.Distance(cursor, hitCircle.StackedPosition) > hitCircle.Radius)
                 continue;
+
+            target = hitCircle.StartTime;
 
             // Lazer records the pressing key on any hovered press, hit or not, and slider
             // tracking reads it back off the head.

@@ -1,0 +1,357 @@
+"""Which tap was meant for which circle in a stream, and what a string of 50s really was.
+
+In a stream the circles overlap and the cursor sits on several at once, so position cannot
+say which circle a press was meant for. Rhythm can. A stream of N circles asks for N taps on
+a fixed grid, so the k-th tap in time was meant for the k-th circle, with room for a tap
+that never came or one too many. That is a monotonic alignment of two time series, solved
+here by a small dynamic programme with fixed costs. Lazer's own account of each press comes
+from build/presses.csv (`ora presses`): what it landed on and whether notelock refused it.
+Intent against outcome is the whole measurement.
+
+Why it matters for a string of 50s. Lazer gives a press to the earliest unjudged circle
+under the cursor. Drop one tap in an overlapping stream and the tap meant for circle n+1
+lands on circle n, a whole interval late; the tap for n+2 lands on n+1, and so on. Every
+circle after the gap is judged by its successor's tap, each one an interval late, until a
+spare tap realigns them. From inside the game that is an inexplicable string of 50s. Here
+it is a run of presses whose intended circle is one ahead of the circle that took them.
+
+Runs. Constant-snap runs from build/rhythm.csv at tolerance 0.02 (the value load.py
+settled on), snap of a third of a beat or finer, split into maximal stretches of tapped
+objects (circles and slider heads) exactly one snap apart, kept when five or longer. A run
+of kick sliders whose heads sit two ticks apart is not tapped as a stream and drops out.
+
+Alignment costs, fixed and in units of the run's tap interval I (ms between circles):
+  match a press to a circle      |press - circle| / I, allowed only up to 1.0
+  leave a press unmatched        EXTRA = 0.6    (a double tap, or a stray)
+  leave a circle unmatched       DROP  = 0.6    (a tap that never came)
+A press half an interval off still matches (0.5 < 0.6 + 0.6 for the extra-plus-drop that
+would replace it), one a full interval off never does. On a tie, matches go as early as
+possible and gaps last: a press exactly between two circles is the earlier circle's late tap,
+two presses on one circle make the second the extra. The result is a function of the times.
+
+Run checks before any of that is trusted. The median gap between successive presses in the
+run window, in beats, against the run's snap:
+  within 12% of the snap          aligned normally
+  within 6% of another snap       "phase shift": tapped at that fraction (1/3 for 1/4...)
+  neither                         "unalignable": flagged and not classified
+
+Per circle in an aligned run, two facts (see classify): what became of the tap meant for
+it (own, elsewhere, notelock, stray, dropped) and which tap judged it, by intent (self, the
+next circle's, the previous circle's, an extra one, none).
+
+A string of three or more consecutive Meh judgements in a run is explained by the majority
+of who judged its members: "pushback" when the tap meant for the next circle did (the chain
+above) and some earlier circle in the run took its own tap, so the grid is anchored;
+otherwise a shift present from the run's first circle is read as lateness on entry, "own-late"/"own-early" when each circle took its own tap and the tap was simply
+off, "ahead" when the previous circle's tap did, "phase-shift" or "unalignable" from the run
+checks. Its origin is the nearest failed tap (dropped, notelocked, stray) or double tap at
+or up to two circles before the string's first member, else "none".
+
+    python3 tools/analysis/streams.py cache     # once: build/streams.pickle from rhythm.csv
+    python3 tools/analysis/streams.py report [--out build/streams.txt]
+"""
+from __future__ import annotations
+
+import collections
+import csv
+import json
+import math
+import os
+import pickle
+import random
+import statistics
+import sys
+
+RHYTHM = "build/rhythm.csv"
+PRESSES = "build/presses.csv"
+CACHE = "build/streams.pickle"
+PLAYER = "zaksynack playing"
+TOLERANCE = "0.02"
+
+MAX_SNAP = 1 / 3 + 0.01
+MIN_RUN = 5
+EXTRA = 0.6
+DROP = 0.6
+MAX_MATCH = 1.0
+RATE_OK = 0.12
+RATE_SNAP = 0.06
+LATTICE = (0.125, 1 / 6, 0.25, 1 / 3, 0.5)
+FRACTION_NAMES = {0.125: "1/8", 1 / 6: "1/6", 0.25: "1/4", 1 / 3: "1/3", 0.5: "1/2"}
+
+
+# ------------------------------------------------------------------------------------------
+# Core: pure functions over times, so the tests can drive them without files
+# ------------------------------------------------------------------------------------------
+
+def align(objects: list[float], presses: list[float], interval: float) -> list[tuple[int | None, int | None]]:
+    """Monotonic alignment. Returns pairs (object index or None, press index or None) in
+    time order: a match, a dropped circle (press None) or an extra press (object None)."""
+    n, m = len(objects), len(presses)
+    inf = float("inf")
+    cost = [[inf] * (m + 1) for _ in range(n + 1)]
+    step = [[0] * (m + 1) for _ in range(n + 1)]
+    cost[0][0] = 0.0
+    for i in range(n + 1):
+        for j in range(m + 1):
+            c = cost[i][j]
+            if c == inf:
+                continue
+            if i < n and j < m:
+                d = abs(presses[j] - objects[i]) / interval
+                if d <= MAX_MATCH and c + d < cost[i + 1][j + 1]:
+                    cost[i + 1][j + 1], step[i + 1][j + 1] = c + d, 1
+            # <= on the gap moves: on a tie, match as early as possible and put gaps last.
+            if j < m and c + EXTRA <= cost[i][j + 1]:
+                cost[i][j + 1], step[i][j + 1] = c + EXTRA, 2
+            if i < n and c + DROP <= cost[i + 1][j]:
+                cost[i + 1][j], step[i + 1][j] = c + DROP, 3
+    pairs = []
+    i, j = n, m
+    while i or j:
+        s = step[i][j]
+        if s == 1:
+            i, j = i - 1, j - 1
+            pairs.append((i, j))
+        elif s == 2:
+            j -= 1
+            pairs.append((None, j))
+        else:
+            i -= 1
+            pairs.append((i, None))
+    pairs.reverse()
+    return pairs
+
+
+def rate_check(presses: list[float], snap: float, beat: float) -> tuple[str, float | None]:
+    """("ok", None), ("phase-shift", fraction) or ("unalignable", None)."""
+    if len(presses) < 3:
+        return "unalignable", None
+    gaps = sorted(b - a for a, b in zip(presses, presses[1:]))
+    r = statistics.median(gaps) / beat
+    if abs(r - snap) <= RATE_OK * snap:
+        return "ok", None
+    for f in LATTICE:
+        if abs(f - snap) > 1e-6 and abs(r - f) <= RATE_SNAP * f:
+            return "phase-shift", f
+    return "unalignable", None
+
+
+def classify(objects: list[float], results: list[str], errors: list[float | None],
+             presses: list[tuple[float, str, float | None]], snap: float, beat: float) -> dict:
+    """One run. ``presses`` are (time, outcome, target start time) in the run's window.
+
+    Two facts per circle, kept apart because a cascade needs both:
+      tap     what became of the press meant for it: own (it judged this circle), elsewhere
+              (it judged a neighbour), notelock, stray, dropped (no press meant for it)
+      judge   which press judged it, by intent: self, next (the tap meant for the next
+              circle: "absorbed"), prev ("ahead"), extra (an unmatched press), none
+    Plus ``double``: circles nearest an unmatched press."""
+    interval = snap * beat
+    times = [p[0] for p in presses]
+    verdict, fraction = rate_check(times, snap, beat)
+    n = len(objects)
+    tap = ["?"] * n
+    judge = ["none"] * n
+    double = [False] * n
+
+    if verdict == "ok":
+        pairs = align(objects, times, interval)
+        intent = {j: i for i, j in pairs if i is not None and j is not None}
+        index_of = {round(t, 1): k for k, t in enumerate(objects)}
+        for i, j in pairs:
+            if i is not None and j is None:
+                tap[i] = "dropped"
+        for j, (t, outcome, target) in enumerate(presses):
+            k = index_of.get(round(target, 1)) if target is not None else None
+            i = intent.get(j)
+            if outcome == "hit" and k is not None:
+                judge[k] = ("extra" if i is None else "self" if i == k else
+                            "next" if i == k + 1 else "prev" if i == k - 1 else "far")
+            if i is None:
+                continue
+            if outcome == "notelock":
+                tap[i] = "notelock"
+            elif outcome in ("nothing", "window"):
+                tap[i] = "stray"
+            else:
+                tap[i] = "own" if k == i else "elsewhere"
+        for i, j in pairs:
+            if i is None:
+                k = min(range(n), key=lambda q: (abs(objects[q] - times[j]), q))
+                double[k] = True
+
+    strings = []
+    k = 0
+    while k < len(results):
+        if results[k] != "Meh":
+            k += 1
+            continue
+        e = k
+        while e < len(results) and results[e] == "Meh":
+            e += 1
+        if e - k >= 3:
+            strings.append(_explain(k, e, tap, judge, double, errors, verdict, fraction))
+        k = e
+    return {"verdict": verdict, "fraction": fraction, "tap": tap, "judge": judge,
+            "double": double, "strings": strings}
+
+
+CAUSES = ("dropped", "notelock", "stray")
+
+
+def _explain(start, end, tap, judge, double, errors, verdict, fraction) -> dict:
+    if verdict != "ok":
+        cls = "phase-shift" if verdict == "phase-shift" else "unalignable"
+        return {"start": start, "end": end, "class": cls, "fraction": fraction, "origin": "-"}
+    votes = collections.Counter(judge[start:end])
+    top = votes.most_common(1)[0][0]
+    if top == "next" and "self" in judge[:start]:
+        cls = "pushback"
+    elif top == "next":
+        # Shifted from the run's first circle: no on-grid tap anchors the alignment, and a
+        # steady tap 0.7 of an interval late reads equally well as 0.3 early for the next
+        # circle. A cascade needs a correctly-placed tap before the drop; without one this
+        # is lateness on entry, which is what lazer judged it as.
+        signs = [e for e in errors[start:end] if e is not None]
+        cls = "own-late" if not signs or statistics.median(signs) > 0 else "own-early"
+    elif top == "self":
+        signs = [e for e in errors[start:end] if e is not None]
+        cls = "own-late" if signs and statistics.median(signs) > 0 else "own-early"
+    elif top == "prev":
+        cls = "ahead"
+    else:
+        cls = top
+    # The cause: the nearest thing that went wrong with a tap, at or just before the string.
+    origin = "none"
+    for q in range(start, max(-1, start - 3), -1):
+        if tap[q] in CAUSES:
+            origin = tap[q]
+            break
+        if double[q]:
+            origin = "double"
+            break
+    return {"start": start, "end": end, "class": cls, "fraction": None, "origin": origin}
+
+
+# ------------------------------------------------------------------------------------------
+# Corpus
+# ------------------------------------------------------------------------------------------
+
+def cache() -> None:
+    """Tapped stream runs from rhythm.csv, the player's only. One pass over ~6GB."""
+    runs: dict[tuple[str, str], list] = collections.defaultdict(list)
+    with open(RHYTHM, newline="") as fh:
+        for r in csv.DictReader(fh):
+            if r["tolerance"] != TOLERANCE or not r["replay"].startswith(PLAYER):
+                continue
+            if not r["snap"] or float(r["snap"]) > MAX_SNAP or r["kind"] not in ("circle", "sliderHead"):
+                continue
+            if int(r["runSize"]) < MIN_RUN:
+                continue
+            runs[(r["replay"], r["runId"])].append(
+                (float(r["time"]), float(r["beatLength"]), float(r["snap"]), r["result"],
+                 float(r["error"]) if r["error"] else None))
+    out = []
+    for (replay, _), events in runs.items():
+        events.sort()
+        # Maximal stretches of tapped objects exactly one snap apart.
+        cur = [events[0]]
+        for ev in events[1:]:
+            gap = (ev[0] - cur[-1][0]) / ev[1]
+            if abs(gap - ev[2]) <= 0.02:
+                cur.append(ev)
+            else:
+                if len(cur) >= MIN_RUN:
+                    out.append((replay, cur))
+                cur = [ev]
+        if len(cur) >= MIN_RUN:
+            out.append((replay, cur))
+    with open(CACHE, "wb") as fh:
+        pickle.dump(out, fh)
+    print(f"{len(out)} tapped stream runs across {len({r for r, _ in out})} replays")
+
+
+def load_presses(replays: set[str]) -> dict[str, list[tuple[float, str, float | None]]]:
+    out: dict[str, list] = collections.defaultdict(list)
+    with open(PRESSES, newline="") as fh:
+        for r in csv.DictReader(fh):
+            if r["replay"] in replays:
+                out[r["replay"]].append((float(r["time"]), r["outcome"],
+                                         float(r["target"]) if r["target"] else None))
+    for v in out.values():
+        v.sort()
+    return out
+
+
+def report(out_path: str | None) -> None:
+    import bisect
+    with open(CACHE, "rb") as fh:
+        runs = pickle.load(fh)
+    presses = load_presses({r for r, _ in runs})
+    md5 = {os.path.basename(e["Path"]): e["BeatmapMd5"] for e in json.load(open("build/corpus.json"))}
+
+    verdicts = collections.Counter()
+    fractions = collections.Counter()
+    strings = []          # (class, origin, bpm, run length, replay, time, md5)
+    for replay, events in runs:
+        ps = presses.get(replay)
+        if ps is None:
+            continue
+        objects = [e[0] for e in events]
+        beat, snap = events[0][1], events[0][2]
+        interval = snap * beat
+        lo = bisect.bisect_left(ps, (objects[0] - interval,))
+        hi = bisect.bisect_right(ps, (objects[-1] + interval, "~"))
+        result = classify(objects, [e[3] for e in events], [e[4] for e in events], ps[lo:hi], snap, beat)
+        verdicts[result["verdict"]] += 1
+        if result["fraction"]:
+            fractions[(FRACTION_NAMES.get(snap, f"{snap:.3f}"), FRACTION_NAMES.get(result["fraction"]))] += 1
+        bpm = 60000 / beat
+        for s in result["strings"]:
+            strings.append((s["class"], s["origin"], bpm, len(objects), replay, objects[s["start"]], md5.get(replay)))
+
+    lines = []
+    p = lines.append
+    total = sum(verdicts.values())
+    p(f"tapped stream runs: {total}  aligned {verdicts['ok']}  phase-shift {verdicts['phase-shift']}  "
+      f"unalignable {verdicts['unalignable']} ({100 * verdicts['unalignable'] / max(1, total):.1f}%)")
+    if fractions:
+        p("phase shifts (map snap -> tapped as): " + ", ".join(f"{a}->{b} {n}" for (a, b), n in fractions.most_common()))
+    p(f"\nstrings of >=3 consecutive 50s inside a stream run: {len(strings)}")
+    cls = collections.Counter(s[0] for s in strings)
+    for c, n in cls.most_common():
+        p(f"  {c:<12} {n:6}  {100 * n / max(1, len(strings)):5.1f}%")
+    p("\norigin (label of the circle just before the string), pushback strings only:")
+    for o, n in collections.Counter(s[1] for s in strings if s[0] == "pushback").most_common():
+        p(f"  {o:<12} {n:6}")
+
+    def split(key, edges, label):
+        p(f"\nby {label}: share of each class")
+        for lo_, hi_ in zip(edges, edges[1:]):
+            sel = [s for s in strings if lo_ <= key(s) < hi_]
+            if not sel:
+                continue
+            c = collections.Counter(s[0] for s in sel)
+            p(f"  {lo_:>5}-{hi_:<5} n={len(sel):5}  " + "  ".join(
+                f"{k} {100 * c[k] / len(sel):4.1f}%" for k in ("pushback", "own-late", "own-early", "dropped", "notelock", "phase-shift", "unalignable")))
+    split(lambda s: s[2], (0, 150, 180, 200, 220, 250, 1000), "stream BPM")
+    split(lambda s: s[3], (5, 8, 12, 17, 25, 33, 1000), "run length (circles)")
+
+    # One concrete example of the dominant class, the latest one, to go and look at.
+    if strings:
+        top = cls.most_common(1)[0][0]
+        ex = max((s for s in strings if s[0] == top), key=lambda s: s[4][-21:])
+        p(f"\nexample ({top}): {ex[4]} at {ex[5] / 1000:.1f}s (map time), {ex[2]:.0f} BPM, run of {ex[3]}")
+
+    text = "\n".join(lines) + "\n"
+    if out_path:
+        open(out_path, "w").write(text)
+    print(text)
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "report"
+    if cmd == "cache":
+        cache()
+    else:
+        report(sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else "build/streams.txt")
