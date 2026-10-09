@@ -451,3 +451,15 @@ So a stray is the aim hand: an in-rhythm tap with nothing under the cursor. The 
 player starts weeks of aim-on-stream-maps practice from 2026-10-09; monitor is tools/analysis/drift.py latest (in progress), baseline the analog-doubletap era
 
 Player expects the left hand may "get lazy" once unattended. A natural experiment on attention vs automaticity.
+
+## 2026-10-09 — the first tap of a stream has drifted later, +1 ms to +6-7 ms
+
+`python3 tools/analysis/drift.py report` (by month, "entry ms" column: position 1 minus positions 2-5)
+
+Entry tap ~+1 to +3 ms in early 2025, +5 to +7 ms every month since May 2026, while within-run spread fell 14 to 9 ms. Could be the press-sound changes from 2026-05-10.
+
+## 2026-10-09 — most of step 5's "spread grows through a stream" was shifted taps
+
+`build/drift.txt`, "step 5 rerun" section
+
+Hit SD rises ~1.0-1.2 ms per position counting every judged circle, but only 0.23-0.43 when only own-tap circles are counted; aim stays flat.
