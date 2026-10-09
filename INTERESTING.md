@@ -415,3 +415,9 @@ Player reported feeling their ear switch from the singer to the accordion, which
 `build/lateclick.txt`; press − closest approach +1.0 ms for both on 108,768 shared objects; within-play IQR 51.9 vs 48.9 ms
 
 The lag comparison only counts presses that hit, so it is conditioned on success; what differs may be closest-approach distance or speed through the circle, not click timing.
+
+## 2026-10-09 — on fast-jump late-click misses, the aim hand rushes and the click is on the beat
+
+`build/clicks.csv` joined to reference velocity, objects ≥0.045 radii/ms: player's late-press misses (n=3,503) have closest approach −24 ms and press +6 ms relative to object time; player's hits +2/+1, top players' hits −2/−1
+
+The cursor arrives early and leaves before the click, which is roughly on time. Candidate drill target: holding the cursor on the circle until the click, not click timing.
