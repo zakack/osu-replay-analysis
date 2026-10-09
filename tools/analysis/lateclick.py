@@ -40,6 +40,17 @@ Where the top-50 no-mod reference covers an object, its press-minus-closest-appr
 hits is set against the player's on the same objects, restricted to the player's plays at
 normal rate, so the what-if's D can be read against the gap to top players.
 
+Turn point (``turnTime``, ``turnDist``, ``turnSide`` from ``ora clicks``): the moment cursor
+speed is lowest around the object, where the hand stops coming in and starts leaving. On fast
+jumps (>= FAST radii/ms) the press is set against it for hits and late-miss misses, player
+and reference, and fast-jump misses are split three ways:
+
+  overshoot     the turn was outside the circle (turnDist > 1) and the click came within one
+                recorder frame of it: the hand stopped in the wrong place and clicked there
+  late click    the turn was inside the circle and the click came more than one frame after
+                it: the hand was there and the finger missed the moment
+  other         everything else, including no click at all
+
     python3 tools/analysis/lateclick.py [--out build/lateclick.txt]
 """
 from __future__ import annotations
@@ -63,6 +74,8 @@ CACHE = "build/where.pickle"
 PLAYER = "zaksynack playing"
 LATE = 8.0                       # ms; about half a recorder frame either side of the approach
 SHIFTS = (5, 10, 15, 20, 30)
+FAST = 0.045                     # radii per real ms: the top two velocity bins and up
+FRAME = 1000 / 60
 BOOT = 300
 RATE_MODS = {"DT", "NC", "HT", "DC"}
 RESULTS = ("Great", "Ok", "Meh", "Miss")
@@ -162,6 +175,87 @@ def boot_ci(groups: dict, stat, n=BOOT):
     if not draws:
         return (math.nan, math.nan)
     return draws[int(0.025 * len(draws))], draws[int(0.975 * len(draws)) - 1]
+
+
+def turn_stats(path: str, keep, fast) -> dict:
+    """Press minus turn time and press-to-turn distance on fast jumps, for hits and for
+    late-miss misses, and the three-way split of fast misses."""
+    out = {"hit_dt": [], "hit_d": [], "miss_dt": [], "miss_d": [], "split": collections.Counter()}
+    with open(path, newline="") as fh:
+        for r in csv.DictReader(fh):
+            if not keep(r) or not r["turnTime"] or r["result"] not in RESULTS:
+                continue
+            if not fast(r):
+                continue
+            turn = float(r["turnTime"])
+            tx, ty = float(r["turnX"]), float(r["turnY"])
+            kind = classify(r)
+            press = None
+            if r["result"] != "Miss":
+                press = num(r["pressTime"])
+            else:
+                press = num(r["strayPressTime"])
+            if press is not None and kind in ("late-press", "early-press", "on-arrival", "late-miss"):
+                key = "hit" if r["result"] != "Miss" else "miss"
+                if key == "hit" or kind == "late-miss":
+                    out[f"{key}_dt"].append(press - turn)
+                    px, py = (r["pressX"], r["pressY"]) if key == "hit" else (r["strayX"], r["strayY"])
+                    if px and py:
+                        out[f"{key}_d"].append(math.hypot(float(px) - tx, float(py) - ty) / float(r["radius"]))
+            if r["result"] == "Miss":
+                td = float(r["turnDist"])
+                if press is not None and td > 1 and abs(press - turn) <= FRAME:
+                    out["split"]["overshoot"] += 1
+                elif press is not None and td <= 1 and press - turn > FRAME:
+                    out["split"]["late click"] += 1
+                else:
+                    out["split"]["other"] += 1
+    return out
+
+
+def turn_report(p, vel, meta) -> None:
+    p("")
+    p(f"turn point (minimum cursor speed) on fast jumps (>= {FAST} radii/ms): press minus turn (dt)")
+    p("and the cursor's distance at the press from the turn point (dist, radii):")
+
+    def fast_player(r):
+        v = vel.get((r["replay"], round(float(r["startTime"]), 1)))
+        return v is not None and v >= FAST
+
+    def q(xs, unit="ms", fmt="+.1f"):
+        if len(xs) < 4:
+            return "n<4"
+        a = statistics.quantiles(xs, n=4)
+        return (f"median {format(statistics.median(xs), fmt)} {unit} "
+                f"(IQR {format(a[0], fmt)}..{format(a[2], fmt)}), n={len(xs):,}")
+
+    def both(label, st):
+        p(f"  {label} hits         dt {q(st['hit_dt'])}; dist {q(st['hit_d'], 'r', '.2f')}")
+        p(f"  {label} late-misses  dt {q(st['miss_dt'])}; dist {q(st['miss_d'], 'r', '.2f')}")
+
+    player = turn_stats(CLICKS, lambda r: r["replay"].startswith(PLAYER) and r["replay"] in meta, fast_player)
+    both("player   ", player)
+    split = player["split"]
+    tot = sum(split.values())
+    if tot:
+        p(f"  player fast-jump misses ({tot:,}): " + ", ".join(
+            f"{k} {100 * split[k] / tot:.1f}%" for k in ("overshoot", "late click", "other")))
+
+    if os.path.exists(REFERENCE):
+        # The reference has no where.py velocity; use the player's for the same object.
+        fast_objects = set()
+        for (name, t), v in vel.items():
+            if v >= FAST and name in meta:
+                fast_objects.add((meta[name][0], t))
+        ref_md5 = {os.path.basename(e["Path"]): e["BeatmapMd5"] for e in json.load(open("build/corpus-nm.json"))}
+        ref = turn_stats(REFERENCE, lambda r: r["replay"] in ref_md5,
+                         lambda r: (ref_md5[r["replay"]], round(float(r["startTime"]), 1)) in fast_objects)
+        both("reference", ref)
+        rs = ref["split"]
+        rt = sum(rs.values())
+        if rt:
+            p(f"  reference fast-jump misses ({rt:,}): " + ", ".join(
+                f"{k} {100 * rs[k] / rt:.1f}%" for k in ("overshoot", "late click", "other")))
 
 
 def main() -> None:
@@ -305,6 +399,8 @@ def main() -> None:
     for md5, (g, _) in ranked[:10]:
         nn = sum(totals[md5].values())
         p(f"    +{100 * g / (300 * nn):5.2f} pp  {names.get(md5, md5[:12])}  ({nn:,} objects)")
+
+    turn_report(p, vel, meta)
 
     # Reference gap.
     p("")

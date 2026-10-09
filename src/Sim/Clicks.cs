@@ -40,6 +40,14 @@ namespace Sim;
 /// outside its window — goes to the most recent object the cursor had been inside, provided
 /// it is no later than that object's start + meh + 100 ms and earlier than the next
 /// object's start + its meh. This is the press a late-click miss was meant to be.</item>
+/// <item><c>turnTime</c>/<c>turnX</c>/<c>turnY</c>: the turn point, where cursor speed is
+/// lowest between 100 ms before it entered the circle (150 ms before the closest approach
+/// if it never did) and the midpoint to the next object, never before the midpoint from the
+/// previous one. <c>turnDist</c> is its distance from the
+/// centre in radii; <c>turnSide</c> its signed offset along the incoming heading (from the
+/// previous object's end), + past the centre, - short of it.</item>
+/// <item><c>pressX</c>/<c>pressY</c>, <c>strayX</c>/<c>strayY</c>: the cursor at the judging
+/// press and at the attributed stray press, so a press can be placed against the turn.</item>
 /// </list>
 ///
 /// Hit windows come from lazer (<c>HitWindows.WindowFor</c>), never derived here, so a
@@ -48,7 +56,7 @@ namespace Sim;
 public static class Clicks
 {
     public const string CsvHeader =
-        "replay,startTime,kind,radius,great,ok,meh,result,pressTime,pressInside,closestTime,closestDist,enterTime,exitTime,firstPressAfter,strayPressTime,strayOutcome";
+        "replay,startTime,kind,radius,great,ok,meh,result,pressTime,pressInside,closestTime,closestDist,enterTime,exitTime,firstPressAfter,strayPressTime,strayOutcome,turnTime,turnX,turnY,turnDist,turnSide,pressX,pressY,strayX,strayY";
 
     public static string ExtractCsv(ReplayRecord record, IReadOnlyDictionary<string, IndexEntry> index)
     {
@@ -80,16 +88,22 @@ public static class Clicks
 
         var rows = new List<Row>();
 
+        var targets = new List<(OsuHitObject Object, OsuHitObject Target)>();
         foreach (var hitObject in playable.HitObjects.OfType<OsuHitObject>())
         {
-            OsuHitObject? target = hitObject switch
+            OsuHitObject? head = hitObject switch
             {
                 HitCircle c => c,
                 Slider s => s.NestedHitObjects.OfType<SliderHeadCircle>().FirstOrDefault(),
                 _ => null,
             };
-            if (target == null)
-                continue;
+            if (head != null)
+                targets.Add((hitObject, head));
+        }
+
+        for (int n = 0; n < targets.Count; n++)
+        {
+            var (hitObject, target) = targets[n];
 
             var state = byObject.GetValueOrDefault(target);
             var windows = target.HitWindows;
@@ -111,15 +125,45 @@ public static class Clicks
                 windows.WindowFor(HitResult.Great), windows.WindowFor(HitResult.Ok), meh,
                 state is { Judged: true } ? state.Result.ToString() : "Unjudged",
                 state?.TimeOffset is { } offset ? start + offset : null,
-                state?.CursorAtHit is { } at ? Vector2.Distance(at, centre) <= radius : null,
+                state?.CursorAtHit is { } hitAt ? Vector2.Distance(hitAt, centre) <= radius : null,
                 closestTime, closestDist is { } d ? d / radius : null, enter, exit,
                 k < presses.Count && presses[k] <= to + meh ? presses[k] : null));
+
+            if (state?.CursorAtHit is { } pressAt)
+            {
+                rows[^1].PressX = pressAt.X;
+                rows[^1].PressY = pressAt.Y;
+            }
+
+            // The turn: where the hand stops coming in and starts leaving, as the minimum of
+            // cursor speed from just before it arrived to the next object's start. Measured
+            // against the jump's incoming heading, from where the map leaves the previous
+            // object, so + is past the centre and - is short of it.
+            // Bounded by the midpoints to the neighbouring objects as well: a window running to
+            // the next object's start catches the hand already slowing into that one, and on a
+            // dense pattern the previous object's turn sits inside enter - 100.
+            double prevMid = n > 0 ? (targets[n - 1].Target.StartTime + start) / 2 : double.NegativeInfinity;
+            double nextMid = n + 1 < targets.Count ? (start + targets[n + 1].Target.StartTime) / 2 : start + meh + 200;
+            double turnFrom = Math.Max(prevMid, enter is { } en ? en - 100 : (closestTime ?? start) - 150);
+            double turnTo = nextMid;
+            if (n > 0 && turnTo > turnFrom && turn(path, turnFrom, turnTo) is { } tt && at(path, tt) is { } tp)
+            {
+                Vector2 previous = targets[n - 1].Object.StackedEndPosition;
+                Vector2 incoming = centre - previous;
+                float len = incoming.Length;
+                var row = rows[^1];
+                row.TurnTime = tt;
+                row.TurnX = tp.X;
+                row.TurnY = tp.Y;
+                row.TurnDist = Vector2.Distance(tp, centre) / radius;
+                row.TurnSide = len > 1e-3f ? Vector2.Dot(tp - centre, incoming / len) / radius : null;
+            }
         }
 
         // Presses that judged nothing, each to the most recent object the cursor had been
         // inside, within that object's late bound and before the next object's window closes.
         rows.Sort((x, y) => x.Start.CompareTo(y.Start));
-        foreach (var (time, _, outcome, _, _) in simulator.PressLog!)
+        foreach (var (time, cursor, outcome, _, _) in simulator.PressLog!)
         {
             if (outcome == "hit")
                 continue;
@@ -139,6 +183,8 @@ public static class Clicks
                 if (row.StrayTime == null)
                 {
                     row.StrayTime = time;
+                    row.StrayX = cursor.X;
+                    row.StrayY = cursor.Y;
                     row.StrayOutcome = outcome;
                 }
                 break;
@@ -164,7 +210,14 @@ public static class Clicks
                   .Append(f(r.Exit)).Append(',')
                   .Append(f(r.FirstPressAfter)).Append(',')
                   .Append(f(r.StrayTime)).Append(',')
-                  .Append(r.StrayOutcome ?? string.Empty).Append('\n');
+                  .Append(r.StrayOutcome ?? string.Empty).Append(',')
+                  .Append(f(r.TurnTime)).Append(',')
+                  .Append(r.TurnX is { } tx ? tx.ToString("0.#", CultureInfo.InvariantCulture) : string.Empty).Append(',')
+                  .Append(r.TurnY is { } ty ? ty.ToString("0.#", CultureInfo.InvariantCulture) : string.Empty).Append(',')
+                  .Append(r.TurnDist is { } td ? td.ToString("0.###", CultureInfo.InvariantCulture) : string.Empty).Append(',')
+                  .Append(r.TurnSide is { } ts ? ts.ToString("0.###", CultureInfo.InvariantCulture) : string.Empty).Append(',')
+                  .Append(g(r.PressX)).Append(',').Append(g(r.PressY)).Append(',')
+                  .Append(g(r.StrayX)).Append(',').Append(g(r.StrayY)).Append('\n');
         }
 
         return output.ToString();
@@ -177,6 +230,73 @@ public static class Clicks
     {
         public double? StrayTime { get; set; }
         public string? StrayOutcome { get; set; }
+        public float? PressX { get; set; }
+        public float? PressY { get; set; }
+        public float? StrayX { get; set; }
+        public float? StrayY { get; set; }
+        public double? TurnTime { get; set; }
+        public float? TurnX { get; set; }
+        public float? TurnY { get; set; }
+        public double? TurnDist { get; set; }
+        public double? TurnSide { get; set; }
+    }
+
+    /// <summary>Half-width of the speed window: ±25 ms spans three or more 60Hz frames, never
+    /// an adjacent-frame difference.</summary>
+    private const double speed_half_window = 25;
+
+    /// <summary>
+    /// The time of minimum cursor speed in [from, to], evaluated at each frame time by a
+    /// central difference over ±<see cref="speed_half_window"/> ms of interpolated path, and
+    /// refined with a parabola through the minimum and its neighbours, as for the closest
+    /// approach.
+    /// </summary>
+    private static double? turn((double Time, Vector2 Position)[] path, double from, double to)
+    {
+        var samples = new List<(double T, double V)>();
+        for (int i = lowerBound(path, from); i < path.Length && path[i].Time <= to; i++)
+        {
+            double t = path[i].Time;
+            if (samples.Count > 0 && samples[^1].T == t)
+                continue;
+            if (at(path, t - speed_half_window) is { } a && at(path, t + speed_half_window) is { } b)
+                samples.Add((t, Vector2.Distance(a, b) / (2 * speed_half_window)));
+        }
+        if (samples.Count == 0)
+            return null;
+
+        int best = 0;
+        for (int i = 1; i < samples.Count; i++)
+            if (samples[i].V < samples[best].V) best = i;
+
+        if (best == 0 || best == samples.Count - 1)
+            return samples[best].T;
+
+        var (t0, v0) = samples[best - 1];
+        var (t1, v1) = samples[best];
+        var (t2, v2) = samples[best + 1];
+        double denom = (t0 - t1) * (t0 - t2) * (t1 - t2);
+        if (Math.Abs(denom) < 1e-9)
+            return t1;
+        double qa = (t2 * (v1 - v0) + t1 * (v0 - v2) + t0 * (v2 - v1)) / denom;
+        double qb = (t2 * t2 * (v0 - v1) + t1 * t1 * (v2 - v0) + t0 * t0 * (v1 - v2)) / denom;
+        if (qa <= 0)
+            return t1;
+        double tv = -qb / (2 * qa);
+        return tv >= t0 && tv <= t2 ? tv : t1;
+    }
+
+    /// <summary>The cursor at a time, interpolated linearly the way lazer's replay handler does.</summary>
+    private static Vector2? at((double Time, Vector2 Position)[] path, double time)
+    {
+        if (path.Length == 0 || time < path[0].Time || time > path[^1].Time)
+            return null;
+        int hi = lowerBound(path, time);
+        if (hi == 0)
+            return path[0].Position;
+        var (t0, p0) = path[hi - 1];
+        var (t1, p1) = path[hi];
+        return t1 > t0 ? Vector2.Lerp(p0, p1, (float)((time - t0) / (t1 - t0))) : p1;
     }
 
     /// <summary>
@@ -280,6 +400,9 @@ public static class Clicks
         }
         return lo;
     }
+
+    private static string g(float? value) =>
+        value is { } v ? v.ToString("0.#", CultureInfo.InvariantCulture) : string.Empty;
 
     private static string f(double? value) =>
         value is { } v ? v.ToString("0.#", CultureInfo.InvariantCulture) : string.Empty;
