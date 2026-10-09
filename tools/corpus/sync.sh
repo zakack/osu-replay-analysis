@@ -117,13 +117,16 @@ fi
 # with a different column set cannot be appended. Both run on every core.
 incremental() {
     local cmd=$1 csv=build/$1.csv
+    shift
+    local extra=("$@")
     [ -f "$csv" ] || return 0
     echo '[]' > "build/corpus-$cmd-new.json"
-    "$ora" "$cmd" --corpus "build/corpus-$cmd-new.json" --out "build/$cmd-new.csv" >/dev/null || fail "ora $cmd (header)"
+    "$ora" "$cmd" "${extra[@]}" --corpus "build/corpus-$cmd-new.json" --out "build/$cmd-new.csv" >/dev/null || fail "ora $cmd (header)"
     if ! diff -q <(head -1 "$csv") <(head -1 "build/$cmd-new.csv") >/dev/null; then
         echo "$cmd: columns changed; rebuilding $csv for the whole corpus"
-        "$ora" "$cmd" --out "$csv.new" | grep -E '^extracted' || fail "ora $cmd (rebuild)"
+        "$ora" "$cmd" "${extra[@]}" --out "$csv.new" | grep -E '^extracted' || fail "ora $cmd (rebuild)"
         mv "$csv.new" "$csv"
+        grew="$grew $cmd"
         return 0
     fi
     python3 - "$cmd" "$csv" <<'PY' || fail "selecting replays for $cmd"
@@ -143,13 +146,37 @@ json.dump(new, open(f"build/corpus-{cmd}-new.json", "w"))
 print(f"{cmd}: {len(new)} replays to extract")
 PY
     if [ "$(python3 -c "import json; print(len(json.load(open('build/corpus-$cmd-new.json'))))")" -gt 0 ]; then
-        "$ora" "$cmd" --corpus "build/corpus-$cmd-new.json" --out "build/$cmd-new.csv" \
+        "$ora" "$cmd" "${extra[@]}" --corpus "build/corpus-$cmd-new.json" --out "build/$cmd-new.csv" \
             | grep -E '^extracted' || fail "ora $cmd"
         tail -n +2 "build/$cmd-new.csv" >> "$csv"
+        # A replay with nothing to extract writes no rows and is picked again next run.
+        if [ "$(wc -l < "build/$cmd-new.csv")" -gt 1 ]; then grew="$grew $cmd"; fi
     fi
 }
+grew=""
 incremental onset
 incremental clicks
+# The stream analyses (streams.py, drift.py, recovery.py) read rhythm.csv and presses.csv.
+# rhythm's thresholds are the ones the stream analyses were built on: group gap 1 beat,
+# tolerances 0.01/0.02/0.04. Its cache is rebuilt from both whenever either grew (~50 s).
+incremental rhythm 1 0.01 0.02 0.04
+incremental presses
+if [[ "$grew" == *rhythm* || "$grew" == *presses* ]]; then
+    python3 tools/analysis/streams.py cache | tail -1 || fail "streams.py cache"
+fi
+
+# The tapping-hand regression check (tools/analysis/drift.py): the latest sessions against
+# the trailing 30 days. It stays silent below the beatmap count a CI needs, so the pool of
+# recent sessions widens until it holds enough maps; a notification only on REGRESSION.
+for n in 1 2 3 5 8 12 20; do
+    drift=$(python3 tools/analysis/drift.py latest --sessions $n 2>&1) || fail "drift.py latest"
+    grep -q "cannot carry a CI" <<<"$drift" || break
+done
+echo "$drift" | tail -4
+if grep -q REGRESSION <<<"$drift"; then
+    notify-send -a osu-replay-analysis -u critical "Tapping regression?" \
+        "$(grep REGRESSION <<<"$drift" | head -3)" || true
+fi
 
 added=$(( $(ls build/$player | wc -l) - before ))
 echo "added $added replays"
