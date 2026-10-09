@@ -5,8 +5,8 @@
 #
 # Automatic: the Dell's DDC state and the profile read from it, by preset code (VCP 14):
 # x0c is "Game 1" (brightness 80, Dark Stabilizer 2/3, Response Time Extreme) and x05 is
-# Standard (45, off, Fast), both read 2026-10-08. E2 (x1e vs x00) and F0 (x0d vs x00) also
-# differ between them; which of those is Dark Stabilizer or Response Time is unknown. --mfg DEL matters: a second
+# Standard (45, off, Fast), both read 2026-10-08. The Dell-specific codes are kept raw;
+# they do not track the menu reliably (see below). --mfg DEL matters: a second
 # monitor (Westinghouse) is display 1, and an unqualified ddcutil reads that one. The raw preset and Dell
 # feature codes ride along unmapped, in case Dark Stabilizer turns out to live in one. And the
 # PipeWire clock force. Asked: headphones or speakers, which share one analog output on the
@@ -40,10 +40,9 @@ preset = re.search(r"VCP 14 SNC (x[0-9a-f]+)", ddc)
 b = re.search(r"VCP 10 C (\d+)", ddc)
 profile = {"x0c": "game1", "x05": "standard"}.get(preset.group(1) if preset else "",
           ("gaming?" if int(b.group(1)) >= 70 else "standard?") if b else "unknown")
-# MPRT (backlight strobing) is a Response Time option that leaves the preset alone; it
-# shows as display mode DC x05 and locks brightness, so it needs its own name.
-if re.search(r"VCP DC SNC x05", ddc):
-    profile += "-mprt"
+# No MPRT label: DC x05 / E2 x04 / F0 x00 read the same under MPRT and, on 2026-10-09,
+# under Game 1 with Extreme restored by hand, while Game 1 + Extreme read x00 / x1e / x0d
+# the day before. Those codes are recorded raw and not interpreted.
 print(json.dumps({"start": start, "end": end, "output": output, "monitor": profile, "ddc": ddc, "pipewire": pw}))
 PY
     ;;
