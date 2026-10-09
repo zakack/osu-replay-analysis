@@ -403,3 +403,9 @@ Crowd −3.0 ms (IQR −4.2..−0.8), drifting to −4..−6 ms from 150 s on. P
 Miniministop Hitoyasumi no Uta [Chromstrata's Hitoyasumi] etc., offset +28.1 (build/beatmap-index.json); per-play median hit error in build/where.pickle: −17 → −8.5 ms on 2025-01-23, +12..+18 ms on 2026-09-10; crowd-implied offset 0 (37 players)
 
 Player says the song doubles an instrument on a short delay and their ear locks to the one the mapper didn't snap. The "music layer the player wasn't tracking" trap from CLAUDE.md, measurable: the offset now overshoots by ~15 ms, so either the ear moved or part of it is an old-setup leftover.
+
+## 2026-10-09 — an ear switching instruments mid-song, visible in the replay
+
+Miniministop [Chromstrata's Hitoyasumi], 2026-10-09_09-53 (offset +28.1, speakers): 9-object rolling median hit error −4..−11 ms over 1–9 s, +24..+32 over 14–21 s, back to ~0 by 26 s; the crowd (map-bias.csv) stays within −5..+3 over the same span
+
+Player reported feeling their ear switch from the singer to the accordion, which trails it, partway through that attempt. Raw timing ≈ −33 ms (on the singer) early on and ≈ 0 (on the accordion, where the mapper and crowd are) in the middle. A per-object layer-following detector looks feasible: a sustained step about the size of the delay between layers, absent from the crowd.
