@@ -236,7 +236,22 @@ public sealed class Simulator(IHitPolicy policy)
     private static bool isAlive(ObjectState state, double time) =>
         time >= state.HitObject.StartTime - state.HitObject.TimePreempt;
 
+    /// <summary>
+    /// When set, every press is logged with what became of it: <c>hit</c>, <c>notelock</c>
+    /// (hovered a circle in its window but an earlier one was still open), <c>window</c>
+    /// (hovered a circle outside its hit window) or <c>nothing</c> (hovered no unjudged
+    /// circle). Off by default; the judgement loop does not depend on it.
+    /// </summary>
+    public List<(double Time, Vector2 Cursor, string Outcome)>? PressLog { get; set; }
+
     private void press(Layout layout, double time, Vector2 cursor, OsuAction action, IReadOnlyList<OsuAction> pressed)
+    {
+        string outcome = "nothing";
+        try { outcome = pressInner(layout, time, cursor, action, pressed); }
+        finally { PressLog?.Add((time, cursor, outcome)); }
+    }
+
+    private string pressInner(Layout layout, double time, Vector2 cursor, OsuAction action, IReadOnlyList<OsuAction> pressed)
     {
         // Input propagates front to back and the hit object container orders by descending
         // start time, so the earliest unjudged circle under the cursor receives the press.
@@ -260,9 +275,11 @@ public sealed class Simulator(IHitPolicy policy)
 
             var result = hitCircle.HitWindows.ResultFor(time - hitCircle.StartTime);
             var clickAction = policy.CheckHittable(state, time, result, layout.TopLevel);
+            bool hit = false;
 
             if (clickAction == ClickAction.Hit && result != HitResult.None)
             {
+                hit = true;
                 // Recorded here rather than in Apply, because this is the only path that has
                 // a cursor to record: every other judgement is a sweep forcing a miss on an
                 // object whose window has passed, and there was no press to take a position from.
@@ -274,8 +291,10 @@ public sealed class Simulator(IHitPolicy policy)
                     tracker.PostProcessHeadJudgement(time, cursor, pressed, ref sequence);
             }
 
-            return;
+            return hit ? "hit" : result == HitResult.None ? "window" : "notelock";
         }
+
+        return "nothing";
     }
 
     private void sweep(Layout layout, double time, Vector2 cursor, IReadOnlyList<OsuAction> pressed)

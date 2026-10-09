@@ -177,9 +177,16 @@ public static class Onset
     /// </summary>
     public static (int Done, int Failed) WriteAll(IReadOnlyList<ReplayRecord> records,
                                                   IReadOnlyDictionary<string, IndexEntry> index,
-                                                  TextWriter output, TextWriter? progress = null)
+                                                  TextWriter output, TextWriter? progress = null) =>
+        WriteAll(records, index, output, progress, CsvHeader, ExtractCsv);
+
+    /// <summary>The same ordered parallel writer for any per-replay extractor (see <see cref="Clicks"/>).</summary>
+    public static (int Done, int Failed) WriteAll(IReadOnlyList<ReplayRecord> records,
+                                                  IReadOnlyDictionary<string, IndexEntry> index,
+                                                  TextWriter output, TextWriter? progress,
+                                                  string header, Func<ReplayRecord, IReadOnlyDictionary<string, IndexEntry>, string> extract)
     {
-        output.Write(CsvHeader + "\n");
+        output.Write(header + "\n");
         if (records.Count == 0)
             return (0, 0);
 
@@ -190,7 +197,7 @@ public static class Onset
         // static dictionary, and racing the pool into it is how a long run dies (see Batch).
         string? one(int i)
         {
-            try { return ExtractCsv(records[i], index); }
+            try { return extract(records[i], index); }
             catch (Exception e)
             {
                 if (Interlocked.Increment(ref failed) <= 5)

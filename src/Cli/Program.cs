@@ -38,6 +38,7 @@ if (args.Length == 0)
     Console.Error.WriteLine("  onset                 when the cursor sets off toward each object, against when it appeared");
     Console.Error.WriteLine("    these, and verify, take --corpus <path> and --out <path>");
     Console.Error.WriteLine("    verify, onset and the sweeps take --threads <n>, defaulting to every logical processor");
+    Console.Error.WriteLine("  clicks                cursor path against the press per circle: closest approach, inside span, presses");
     Console.Error.WriteLine("  tail-sweep [ms]...    trim the end off replays that stopped early and report the drift");
     Console.Error.WriteLine("  sweep [ms]...         shift every replay frame time and report the drift in click judgements");
     return 2;
@@ -571,6 +572,22 @@ switch (args[0])
 
         Console.WriteLine($"extracted {done} replays, {failed} failed");
         Console.WriteLine($"written: {onsetOut}");
+        return 0;
+    }
+
+    case "clicks":
+    {
+        // Cursor path against the press for every circle and slider head: where the hand was
+        // when the finger fired. Its own file, like onset.csv, and on every core.
+        var (corpusPath, clicksOut) = paths(args, "build/clicks.csv");
+        var index = BeatmapIndex.Read("build/beatmap-index.json");
+        var corpus = CorpusSurvey.ReadRecords(corpusPath).Where(r => r.Paired).ToArray();
+
+        using var writer = new StreamWriter(clicksOut);
+        var (done, failed) = Onset.WriteAll(corpus, index, writer, Console.Error, Clicks.CsvHeader, Clicks.ExtractCsv);
+
+        Console.WriteLine($"extracted {done} replays, {failed} failed");
+        Console.WriteLine($"written: {clicksOut}");
         return 0;
     }
 
