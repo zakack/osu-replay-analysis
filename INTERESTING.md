@@ -475,3 +475,9 @@ Hit SD rises ~1.0-1.2 ms per position counting every judged circle, but only 0.2
 corpus-wide via `build/rhythm.csv` (sliderEnd → circle, gap 0.25 beat) joined to `build/geometry.csv` minJumpRadii < 0.5; play-median-relative
 
 Median +0 ms before 2026-07-24, +3 after; matched 85 maps +1.5 [0,+3]. The −27 ms at No Angels 1390 is that object only. Player's theory for that map: cold sparse opening, "needle takes too long to fall in the groove", quick-retry loops make it worse — testable as opening error vs position in a retry chain, but abandoned retries are never saved.
+
+## 2026-10-10 — tap timing for attempts lazer never saves, without patching the game
+
+`~/Projects/doubletap` `doubletapd -T` (passive hidraw travel trace) + `tools/replay.c` (real state machine offline: presses and `deep` latches); `build/lazer-logs/` for attempt boundaries
+
+Missing pieces: an absolute CLOCK_MONOTONIC t0 in the trace header (it is relative now), and a PipeWire capture of lazer's output stamped from the graph clock, cross-correlated with the map audio. Calibrate per map on saved runs; mp3 decoder padding differs between decoders, so expect a per-map constant.
