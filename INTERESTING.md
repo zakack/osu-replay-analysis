@@ -469,3 +469,9 @@ Hit SD rises ~1.0-1.2 ms per position counting every judged circle, but only 0.2
 `build/geometry-reference.csv` + `geometry-reference-nm.csv`, md5 d5fb2d75d84a4a115c5a3d0992ad0976, each player's error minus own map median
 
 49 of 56 non-DT top players drift earlier across the map, median −0.58 ms/min (≈ −3 ms by the end); last ~70 s sits at −5 to −7 with only 10–25% late. Single red line at 320.8556 — a slightly-off BPM would look exactly like this, but so would a shared player habit. Unclear.
+
+## 2026-10-10 — circle ¼ beat after a slider tail is not rushed, in any hitsound era
+
+corpus-wide via `build/rhythm.csv` (sliderEnd → circle, gap 0.25 beat) joined to `build/geometry.csv` minJumpRadii < 0.5; play-median-relative
+
+Median +0 ms before 2026-07-24, +3 after; matched 85 maps +1.5 [0,+3]. The −27 ms at No Angels 1390 is that object only. Player's theory for that map: cold sparse opening, "needle takes too long to fall in the groove", quick-retry loops make it worse — testable as opening error vs position in a retry chain, but abandoned retries are never saved.
