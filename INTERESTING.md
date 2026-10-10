@@ -463,3 +463,9 @@ Entry tap ~+1 to +3 ms in early 2025, +5 to +7 ms every month since May 2026, wh
 `build/drift.txt`, "step 5 rerun" section
 
 Hit SD rises ~1.0-1.2 ms per position counting every judged circle, but only 0.23-0.43 when only own-tap circles are counted; aim stays flat.
+
+## 2026-10-10 — top-50 drift earlier through There Are No Angels Here [archangeloi.]
+
+`build/geometry-reference.csv` + `geometry-reference-nm.csv`, md5 d5fb2d75d84a4a115c5a3d0992ad0976, each player's error minus own map median
+
+49 of 56 non-DT top players drift earlier across the map, median −0.58 ms/min (≈ −3 ms by the end); last ~70 s sits at −5 to −7 with only 10–25% late. Single red line at 320.8556 — a slightly-off BPM would look exactly like this, but so would a shared player habit. Unclear.
