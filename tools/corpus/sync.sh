@@ -30,6 +30,12 @@ fail() {
 
 before=$(ls build/$player | wc -l)
 
+# Lazer's runtime log is the only record of attempts that never became a score: every quick
+# retry and quit shows as a SoloPlayer entered/exited pair under the map name. Lazer keeps
+# about a week of them, so copy them out; never delete from the archive.
+mkdir -p build/lazer-logs
+cp -n ~/.config/osu-lazer/logs/*.log build/lazer-logs/ 2>/dev/null || true
+
 # index first: a replay of a map downloaded since the last run only pairs once the beatmap
 # index knows the map.
 "$ora" index >/dev/null || fail "ora index"
