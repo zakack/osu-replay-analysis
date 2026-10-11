@@ -126,6 +126,8 @@ for end, rep, name, rank in mine:
             r = np.hypot(*(A @ M - X).T)
             keep = r < max(5.0, 3 * np.median(r))
         out[-1]["outliers"] = int((~keep).sum())
+        out[-1]["affine"] = M.tolist()       # [x, y, 1] screen px -> [x, y] playfield
+        out[-1]["first_ms"], out[-1]["last_ms"] = rp_[0][0], rp_[-1][0]
         out[-1].update(scale=float(np.hypot(*M[0])), resid_p50=float(np.median(r)), resid_p95=float(np.percentile(r, 95)))
         gaps = sorted(p[4] for p in pts)
         print(f"{'':46}    cursor fit {1 / np.hypot(*M[0]):.3f} screen px per osu px, residual median {np.median(r):.2f} p95 {np.percentile(r, 95):.2f} osu px, {(~keep).sum()} dropped;"

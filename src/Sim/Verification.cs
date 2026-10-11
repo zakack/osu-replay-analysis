@@ -145,7 +145,7 @@ public static class Verification
             if (expected == null)
                 return scoped(record, Outcome.NoGroundTruth) with { ClientVersion = clientVersion, ReplayFormat = record.Version };
 
-            var simulation = new Simulator().Run(playable, score);
+            var simulation = new Simulator { Cursor = CursorTrace.For(record.Path) }.Run(playable, score);
 
             if (maximums.Count > 0)
             {

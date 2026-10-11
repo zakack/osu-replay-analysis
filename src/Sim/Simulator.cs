@@ -63,6 +63,9 @@ public sealed class Simulator(IHitPolicy policy)
     /// <summary>Trace tracking state for the slider containing this time, for diagnosis.</summary>
     public (double Time, Action<string> Write)? TraceAround { get; set; }
 
+    /// <summary>The cursor the game was given, recorded outside it; replaces the replay's interpolated one.</summary>
+    public CursorTrace? Cursor { get; set; }
+
     public SimulationResult Run(IBeatmap playable, Score score)
     {
         sequence = 0;
@@ -97,7 +100,7 @@ public sealed class Simulator(IHitPolicy policy)
         }
         var flat = layout.Flat;
         var trackers = layout.Trackers;
-        var sampler = new ReplaySampler(score.Replay, clockRate, StepOverride);
+        var sampler = new ReplaySampler(score.Replay, clockRate, StepOverride, Cursor);
 
         // Stop exactly when the replay stops. Gameplay ends with the frames: a completed
         // play keeps recording past the final object anyway, while a failed or abandoned one
@@ -114,7 +117,7 @@ public sealed class Simulator(IHitPolicy policy)
             foreach (var action in frame.Actions)
             {
                 if (!held.Contains(action))
-                    press(layout, frame.Time, frame.Cursor, action, frame.Actions);
+                    press(layout, frame.Time, (CursorTrace.PressLead != 0 ? Cursor?.At(frame.Time - CursorTrace.PressLead) : null) ?? frame.Cursor, action, frame.Actions);
             }
 
             held = frame.Actions;

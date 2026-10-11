@@ -28,7 +28,7 @@ public readonly record struct GameplayFrame(double Time, Vector2 Cursor, IReadOn
 /// when the jump already exceeds 1.2 of those, so it is a floor on resolution during lag
 /// and a seek guard — not the sampling rate.
 /// </summary>
-public sealed class ReplaySampler(Replay replay, double clockRate = 1, double? stepOverride = null)
+public sealed class ReplaySampler(Replay replay, double clockRate = 1, double? stepOverride = null, CursorTrace? cursor = null)
 {
     /// <summary>
     /// Stand-in for the host's frame time, and a genuinely free parameter.
@@ -134,7 +134,11 @@ public sealed class ReplaySampler(Replay replay, double clockRate = 1, double? s
             if (index + 1 < frames.Count && time >= nextFrameTime)
                 index++;
 
-            yield return new GameplayFrame(time, positionAt(index, time), frames[index].Actions);
+            // A replay frame's own position is what the game sampled at that update, and press
+            // frames in particular are what it judged against; a trace only replaces the
+            // interpolation between frames.
+            var position = time == frames[index].Time ? frames[index].Position : cursor?.At(time) ?? positionAt(index, time);
+            yield return new GameplayFrame(time, position, frames[index].Actions);
         }
     }
 
