@@ -16,24 +16,27 @@ cd "$(dirname "$(readlink -f "$0")")/../.."
 log=build/sessions.jsonl
 
 ddc() { timeout 5 ddcutil --mfg DEL getvcp 10 14 DC E0 E1 E2 E3 F0 --brief 2>/dev/null | awk '{printf "%s%s", (NR>1?";":""), $0}'; }
+# The game's display mode: tools/display/osu-mode switches it before launch, so this is what
+# the session was played at.
+display() { hyprctl monitors -j 2>/dev/null | jq -r '[.[] | select(.focused)][0] | "\(.width)x\(.height)@\(.refreshRate|round)"' 2>/dev/null; }
 pw() { pw-metadata -n settings 0 2>/dev/null | grep -oE "clock\.force-(quantum|rate)' value:'[0-9]+" | tr -d "'" | sed 's/ value:/=/' | paste -sd';'; }
 
 case "$1" in
 start)
     date -Iseconds
-    printf '%s\t%s\n' "$(ddc)" "$(pw)" > build/.session-start
+    printf '%s\t%s\t%s\n' "$(ddc)" "$(pw)" "$(display)" > build/.session-start
     ;;
 end)
     started=$2
-    IFS=$'\t' read -r ddc_state pw_state < build/.session-start 2>/dev/null
+    IFS=$'\t' read -r ddc_state pw_state display_state < build/.session-start 2>/dev/null
     # Wait for an answer for up to ten minutes; ignoring it records "unanswered".
     output=$(timeout 600 notify-send -a "osu! session" -u normal \
         -A headphones=Headphones -A speakers=Speakers \
         "What did you listen on?" "For the replay corpus. Ignore to skip." 2>/dev/null)
     [ -z "$output" ] && output=unanswered
-    python3 - "$started" "$(date -Iseconds)" "$output" "$ddc_state" "$pw_state" >> "$log" <<'PY'
-import json, sys
-start, end, output, ddc, pw = sys.argv[1:]
+    python3 - "$started" "$(date -Iseconds)" "$output" "$ddc_state" "$pw_state" "$display_state" >> "$log" <<'PY'
+import csv, json, sys
+start, end, output, ddc, pw, display = sys.argv[1:]
 import re
 # The preset code names the profile; brightness is the fallback for one not seen yet.
 preset = re.search(r"VCP 14 SNC (x[0-9a-f]+)", ddc)
@@ -43,7 +46,23 @@ profile = {"x0c": "game1", "x05": "standard"}.get(preset.group(1) if preset else
 # No MPRT label: DC x05 / E2 x04 / F0 x00 read the same under MPRT and, on 2026-10-09,
 # under Game 1 with Extreme restored by hand, while Game 1 + Extreme read x00 / x1e / x0d
 # the day before. Those codes are recorded raw and not interpreted.
-print(json.dumps({"start": start, "end": end, "output": output, "monitor": profile, "ddc": ddc, "pipewire": pw}))
+# A setup-timeline row only when the mode played at differs from the last session that
+# recorded one (read before this session's line is written); switching back to the
+# desktop mode between sessions is not a setup change.
+last = None
+for line in open("build/sessions.jsonl"):
+    try:
+        last = json.loads(line).get("display") or last
+    except ValueError:
+        pass
+print(json.dumps({"start": start, "end": end, "output": output, "monitor": profile, "ddc": ddc,
+                  "pipewire": pw, "display": display}))
+if display and last and display != last:
+    with open("setup-timeline.csv", "a", newline="") as f:
+        csv.writer(f).writerow([start[:10], "", "display",
+            f"Game played at {display} (was {last}) from the session starting {start[11:16]}",
+            "build/sessions.jsonl (session-log, hyprctl)", "measured"])
+PY
 PY
     ;;
 esac

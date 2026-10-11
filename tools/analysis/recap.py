@@ -31,6 +31,37 @@ def utc(s):
     return datetime.fromisoformat(s).astimezone(timezone.utc)
 
 
+class Api:
+    """The osu! API, for the pp the server awarded: realm stores none (Pp is null on every
+    local score). Credentials as for tools/reference/fetch.py, from the environment or
+    ~/.config/osu-api.env. Each score's pp is cached in build/pp-cache.json."""
+
+    def __init__(self):
+        import urllib.parse, urllib.request
+        self.u, self.bearer, self.error = urllib, None, None
+        env = dict(os.environ)
+        try:
+            for line in open(os.path.expanduser("~/.config/osu-api.env")):
+                k, _, v = line.strip().partition("=")
+                env.setdefault(k, v)
+        except OSError:
+            pass
+        try:
+            body = urllib.parse.urlencode({"client_id": env["OSU_API_CLIENT"], "client_secret": env["OSU_API_KEY"],
+                                           "grant_type": "client_credentials", "scope": "public"}).encode()
+            with urllib.request.urlopen(urllib.request.Request("https://osu.ppy.sh/oauth/token", data=body,
+                                        headers={"Accept": "application/json"}), timeout=15) as r:
+                self.bearer = json.load(r)["access_token"]
+        except Exception as e:  # no credentials, no network: the recap goes on without pp
+            self.error = f"{type(e).__name__}: {e}"
+
+    def get(self, path, **params):
+        url = "https://osu.ppy.sh/api/v2/" + path + ("?" + self.u.parse.urlencode(params) if params else "")
+        req = self.u.request.Request(url, headers={"Authorization": f"Bearer {self.bearer}", "Accept": "application/json"})
+        with self.u.request.urlopen(req, timeout=15) as r:
+            return json.load(r)
+
+
 sessions = [json.loads(l) for l in open("build/sessions.jsonl") if l.strip()]
 s = sessions[-args.session]
 start, end = utc(s["start"]), utc(s["end"])
@@ -75,16 +106,76 @@ def stats(rep):
                 miss=sum(r[1] == "Miss" for r in rows))
 
 
+api = Api()
+cache_path = "build/pp-cache.json"
+cache = json.load(open(cache_path)) if os.path.exists(cache_path) else {}
+pp, user_id = {}, None
+for p in plays:
+    sid = str(p.get("OnlineId") or -1)
+    if sid == "-1":
+        continue                          # never submitted: a fail, or played offline
+    if sid not in cache and api.bearer:
+        try:
+            sc = api.get(f"scores/{sid}")
+            cache[sid] = {"pp": sc.get("pp"), "user_id": sc.get("user_id")}
+        except Exception as e:
+            api.error = f"{type(e).__name__}: {e}"
+    if sid in cache:
+        pp[sid] = cache[sid]["pp"]
+        user_id = user_id or cache[sid].get("user_id")
+if cache:
+    json.dump(cache, open(cache_path, "w"))
+
 print(f"\n## Plays ({len(plays)} saved, {sum(p['Rank'] == 'F' for p in plays)} failed)")
 if plays:
-    print("time   rank  acc     combo  hit-err  UR    aim(r)  miss  map")
+    print("time   rank  acc     combo  pp     hit-err  UR    aim(r)  miss  map")
 for p in plays:
     k = stats(p["Filename"] + ".osr")
     f = lambda v, w, d: f"{v:{w}.{d}f}" if v is not None else " " * (w - 1) + "-"
-    print(f"{fmt(p['_t'])[11:]}  {p['Rank']:4}  {p['Accuracy'] * 100:5.2f}%  {p['MaxCombo']:5}  "
+    v = pp.get(str(p.get("OnlineId") or -1))
+    print(f"{fmt(p['_t'])[11:]}  {p['Rank']:4}  {p['Accuracy'] * 100:5.2f}%  {p['MaxCombo']:5}  {f(v, 5, 0)}  "
           f"{f(k['med'], 6, 1)}  {f(k['ur'], 5, 0)}  {f(k['aim'], 5, 2)}  {k['miss']:4}  "
           f"{p['Beatmap'][:70]}{' +' + p['Mods'] if p['Mods'] else ''}")
-print("hit-err = median ms (+ late); UR = 10 x SD of hit error; aim(r) = median distance from circle centre at the hit, in circle radii")
+print("pp = what the server awarded (- = none: failed, unranked map, or not submitted); hit-err = median ms (+ late); UR = 10 x SD of hit error; aim(r) = median distance from circle centre at the hit, in circle radii")
+
+# ---- pp ----
+print("\n## pp")
+if not api.bearer and not pp:
+    print(f"(unavailable: {api.error})")
+else:
+    got = [(v, p) for p in plays if (v := pp.get(str(p.get("OnlineId") or -1)))]
+    if got:
+        v, p = max(got, key=lambda g: g[0])
+        print(f"highest this session: {v:.0f}pp on {p['Beatmap'][:60]} ({p['Accuracy'] * 100:.2f}%)")
+    else:
+        print("no play this session was awarded pp")
+    if api.bearer and user_id:
+        try:
+            best = api.get(f"users/{user_id}/scores/best", mode="osu", limit=100) + \
+                   api.get(f"users/{user_id}/scores/best", mode="osu", limit=100, offset=100)
+            pos = {str(b["id"]): i + 1 for i, b in enumerate(best)}
+            ids = {str(p.get("OnlineId")): p for p in plays}
+            entered = sorted((pos[i], ids[i]) for i in ids if i in pos)
+            for n, p in entered:
+                print(f"top-200 play #{n}: {pp[str(p['OnlineId'])]:.0f}pp, {p['Beatmap'][:60]}")
+            if not entered:
+                print(f"no play entered the top 200 (#200 is {best[-1]['pp']:.0f}pp)" if best else "no top plays listed")
+            u = api.get(f"users/{user_id}/osu")
+            total, rank = u["statistics"]["pp"], u["statistics"].get("global_rank")
+            hist = "build/pp-history.jsonl"
+            prev = None
+            if os.path.exists(hist):
+                for line in open(hist):
+                    h = json.loads(line)
+                    if utc(h["at"]) < start:
+                        prev = h
+            print(f"total now {total:.2f}pp, global rank #{rank}"
+                  + (f"; {total - prev['pp']:+.2f}pp and {(prev['rank'] or 0) - (rank or 0):+d} places since {fmt(utc(prev['at']))}"
+                     if prev and prev.get("pp") is not None else "; no earlier total recorded to compare with"))
+            with open(hist, "a") as fh:
+                fh.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(), "pp": total, "rank": rank}) + "\n")
+        except Exception as e:
+            print(f"(top plays and total unavailable: {type(e).__name__}: {e})")
 
 # ---- map comparison ----
 print("\n## Same maps, previous 90 days")

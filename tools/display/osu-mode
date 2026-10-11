@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Switch the monitor mode at runtime via hyprctl and log the change to setup-timeline.csv.
+# Switch the monitor mode at runtime via hyprctl.
 #   osu-mode            show current mode
 #   osu-mode 1080       1920x1080@165 (osu! setup)
 #   osu-mode 1440       2560x1440@120 (desktop)
@@ -10,11 +10,8 @@
 #   function osu_set_mode(output, mode, position, scale)
 #     hl.monitor({ output = output, mode = mode, position = position, scale = scale })
 #   end
-# A change is only logged once `hyprctl monitors` shows the new mode.
 set -euo pipefail
 
-REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
-TIMELINE="$REPO/setup-timeline.csv"
 
 mon_json="$(hyprctl monitors -j | jq '[.[] | select(.focused)][0]')"
 name="$(jq -r .name <<<"$mon_json")"
@@ -59,22 +56,13 @@ if hyprctl eval "$direct" >/dev/null 2>&1 && applied; then
 elif hyprctl eval "$helper" >/dev/null 2>&1 && applied; then
   :
 else
-  echo "mode change did not take effect; nothing logged." >&2
+  echo "mode change did not take effect." >&2
   echo "tried: hyprctl eval '$direct'" >&2
   echo "  and: hyprctl eval '$helper' (needs osu_set_mode in hyprland.lua; see top of script)" >&2
   exit 1
 fi
 echo "$name: $cur -> $mode"
 
-# Log it. The end column stays empty; the next switch's row closes it in effect.
-now_local="$(date '+%H:%M %Z')"
-python3 - "$TIMELINE" "$(date +%F)" "$cur" "$want" "$now_local" <<'PY'
-import csv, sys
-path, day, cur, want, t = sys.argv[1:]
-row = [day, "", "display",
-       f"Monitor mode {cur} -> {want} at {t}, set with tools/display/osu-mode (hyprctl, runtime only)",
-       "tools/display/osu-mode", "measured"]
-with open(path, "a", newline="") as f:
-    csv.writer(f).writerow(row)
-PY
-echo "logged to setup-timeline.csv"
+# Not logged here: switching back and forth between the desktop and osu! modes is not a
+# setup change. tools/corpus/session-log records the mode each session was played at and
+# adds a setup-timeline row only when that changes.

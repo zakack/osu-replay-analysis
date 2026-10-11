@@ -30,7 +30,8 @@ latest session has no plays listed, say the sync may not have finished yet.
 | Section | What it is | Read it as |
 |---|---|---|
 | header | start/end (local time), audio output, monitor profile, PipeWire settings | context only; mention output/monitor only if they differ from the usual (headphones, game1) |
-| Plays | one row per saved replay | `rank F` = failed. `acc` = accuracy. `hit-err` = median timing in ms, **positive = late, negative = early**. `UR` = 10 x SD of timing, lower is steadier; under ~100 is good for this player, over ~200 is a rough play. `aim(r)` = median distance from circle centre at the hit, in circle radii (0 = dead centre, 1 = edge). `miss` = misses |
+| Plays | one row per saved replay | `rank F` = failed. `acc` = accuracy. `pp` = performance points the server awarded ("-" = none: failed, unranked, or not submitted). `hit-err` = median timing in ms, **positive = late, negative = early**. `UR` = 10 x SD of timing, lower is steadier; under ~100 is good for this player, over ~200 is a rough play. `aim(r)` = median distance from circle centre at the hit, in circle radii (0 = dead centre, 1 = edge). `miss` = misses |
+| pp | the session's highest-pp play, any play that is now in the player's top 200, and total pp / global rank with the change since the last recorded total | **pp is the metric players care about most.** A play entering the top 200 leads the recap, with its position (`#1` is the best play on the profile). If the output says pp is unavailable (no network or credentials), say so in one line and carry on |
 | Same maps, previous 90 days | today's best against earlier completed plays of the same difficulty | `[NEW 90-DAY BEST]` is worth leading with. "no completed play in the previous 90 days" means new or long-unplayed, not bad |
 | Attempts | every time gameplay started, from lazer's own log, including quick retries and early quits that never became a replay | attempts much larger than saved plays, or many "under 20 s", means a lot of quick-retrying. The player is deliberately trying to quick-retry *less*, so few retries is good news |
 | Per-map offset changes | offsets the player changed in-game during the session | recorded hit error includes the map's offset, so timing before and after a change is not comparable |
@@ -53,15 +54,16 @@ Rules:
   player.
 - Single plays are noisy. Say "best", "median", or "N plays" — never present one play as a
   trend.
-- Keep it short: a headline line, then at most 5 bullets, then setup caveats. No tables
+- Keep it short: a headline line, then at most 6 bullets, then setup caveats. No tables
   unless asked.
 - Use the player's vocabulary: map names as shown, "early/late", "UR", "quick retry".
 
 Shape:
 
 ```
-**<one-line headline: the most notable result>**
+**<one-line headline: the most notable result; a new top play wins>**
 
+- <pp: new top plays and their position, else the session's highest pp; total change if shown>
 - <best results, new 90-day bests>
 - <maps that went worse than their 90-day median, if any>
 - <timing: early/late pattern, only if consistent across maps>
@@ -89,6 +91,10 @@ From the output for the 2026-10-11 00:50 session (17 saved plays, 3 failed, 18 a
 > Setup: the OpenTabletDriver filter chain changed during this session (Saturn Multifilter,
 > final order from 01:08), and the game has run at 1920x1080@165 since the previous session,
 > so comparisons with earlier plays cross both changes.
+
+(That example predates the pp section. With it, a new top play is the headline: on
+2026-10-11 17:02 the recap should have opened with "98.24% on Twinkle Twinkle for 241pp, a
+new #1 top play", which the version without pp missed.)
 
 Note what the example leaves out: the per-play table, UR and aim numbers that did not stand
 out, the input-trace line, and any explanation of *why* Reign of Fear was early.
