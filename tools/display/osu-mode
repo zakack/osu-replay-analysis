@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Switch the monitor mode at runtime via hyprctl and log the change to setup-timeline.csv.
+#   osu-mode            show current mode
+#   osu-mode 1080       1920x1080@165 (osu! setup)
+#   osu-mode 1440       2560x1440@120 (desktop)
+#   osu-mode WxH@R      any mode the monitor offers
+# Runtime only: `hyprctl reload` or a Hyprland restart goes back to the config's mode.
+# Uses the Lua API (hyprctl eval + hl.monitor). If a direct eval is accepted but not
+# applied, it falls back to a global helper you can define in hyprland.lua:
+#   function osu_set_mode(output, mode, position, scale)
+#     hl.monitor({ output = output, mode = mode, position = position, scale = scale })
+#   end
+# A change is only logged once `hyprctl monitors` shows the new mode.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
+TIMELINE="$REPO/setup-timeline.csv"
+
+mon_json="$(hyprctl monitors -j | jq '[.[] | select(.focused)][0]')"
+name="$(jq -r .name <<<"$mon_json")"
+cur="$(jq -r '"\(.width)x\(.height)@\(.refreshRate|round)"' <<<"$mon_json")"
+
+case "${1:-}" in
+  "")    echo "$name: $cur"; exit 0 ;;
+  1080)  want="1920x1080@165" ;;
+  1440)  want="2560x1440@120" ;;
+  *x*@*) want="$1" ;;
+  *)     echo "usage: osu-mode [1080|1440|WxH@R]" >&2; exit 2 ;;
+esac
+
+if [[ "$cur" == "$want" ]]; then echo "$name already at $want"; exit 0; fi
+
+# Find the exact advertised mode (e.g. 164.96Hz) whose rate rounds to the one asked for.
+res="${want%@*}"; rate="${want#*@}"
+mode="$(jq -r --arg res "$res" --argjson rate "$rate" '
+  .availableModes[] | sub("Hz$";"") | select(startswith($res + "@"))
+  | select((split("@")[1] | tonumber | round) == $rate)' <<<"$mon_json" | head -1)"
+if [[ -z "$mode" ]]; then
+  echo "$name does not offer $want. Available:" >&2
+  jq -r '.availableModes[]' <<<"$mon_json" >&2; exit 1
+fi
+
+if pgrep -x 'osu!' >/dev/null; then
+  echo "warning: lazer is running; restart it so fullscreen picks up the new mode" >&2
+fi
+
+pos="$(jq -r '"\(.x)x\(.y)"' <<<"$mon_json")"
+scale="$(jq -r .scale <<<"$mon_json")"
+applied() {
+  sleep 0.5
+  [[ "$(hyprctl monitors -j | jq -r --arg n "$name" '.[] | select(.name == $n) | "\(.width)x\(.height)@\(.refreshRate|round)"')" == "$want" ]]
+}
+
+direct="hl.monitor({ output = \"$name\", mode = \"$mode\", position = \"$pos\", scale = $scale })"
+helper="osu_set_mode(\"$name\", \"$mode\", \"$pos\", $scale)"
+
+if hyprctl eval "$direct" >/dev/null 2>&1 && applied; then
+  :
+elif hyprctl eval "$helper" >/dev/null 2>&1 && applied; then
+  :
+else
+  echo "mode change did not take effect; nothing logged." >&2
+  echo "tried: hyprctl eval '$direct'" >&2
+  echo "  and: hyprctl eval '$helper' (needs osu_set_mode in hyprland.lua; see top of script)" >&2
+  exit 1
+fi
+echo "$name: $cur -> $mode"
+
+# Log it. The end column stays empty; the next switch's row closes it in effect.
+now_local="$(date '+%H:%M %Z')"
+python3 - "$TIMELINE" "$(date +%F)" "$cur" "$want" "$now_local" <<'PY'
+import csv, sys
+path, day, cur, want, t = sys.argv[1:]
+row = [day, "", "display",
+       f"Monitor mode {cur} -> {want} at {t}, set with tools/display/osu-mode (hyprctl, runtime only)",
+       "tools/display/osu-mode", "measured"]
+with open(path, "a", newline="") as f:
+    csv.writer(f).writerow(row)
+PY
+echo "logged to setup-timeline.csv"
