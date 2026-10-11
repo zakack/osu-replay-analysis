@@ -126,17 +126,21 @@ for p in plays:
 if cache:
     json.dump(cache, open(cache_path, "w"))
 
+bidx = json.load(open("build/beatmap-index.json"))
+bidx = bidx if isinstance(bidx, dict) else {e["Md5"]: e for e in bidx}
+sr = lambda md5: (bidx.get(md5) or {}).get("StarRating", -1)
+
 print(f"\n## Plays ({len(plays)} saved, {sum(p['Rank'] == 'F' for p in plays)} failed)")
 if plays:
-    print("time   rank  acc     combo  pp     hit-err  UR    aim(r)  miss  map")
+    print("time   rank  acc     combo  pp     stars  hit-err  UR    aim(r)  miss  map")
 for p in plays:
     k = stats(p["Filename"] + ".osr")
     f = lambda v, w, d: f"{v:{w}.{d}f}" if v is not None else " " * (w - 1) + "-"
     v = pp.get(str(p.get("OnlineId") or -1))
-    print(f"{fmt(p['_t'])[11:]}  {p['Rank']:4}  {p['Accuracy'] * 100:5.2f}%  {p['MaxCombo']:5}  {f(v, 5, 0)}  "
+    print(f"{fmt(p['_t'])[11:]}  {p['Rank']:4}  {p['Accuracy'] * 100:5.2f}%  {p['MaxCombo']:5}  {f(v, 5, 0)}  {f(sr(p['BeatmapMd5']) if sr(p['BeatmapMd5']) >= 0 else None, 5, 2)}  "
           f"{f(k['med'], 6, 1)}  {f(k['ur'], 5, 0)}  {f(k['aim'], 5, 2)}  {k['miss']:4}  "
           f"{p['Beatmap'][:70]}{' +' + p['Mods'] if p['Mods'] else ''}")
-print("pp = what the server awarded (- = none: failed, unranked map, or not submitted); hit-err = median ms (+ late); UR = 10 x SD of hit error; aim(r) = median distance from circle centre at the hit, in circle radii")
+print("stars = lazer's no-mod star rating as stored locally; pp = what the server awarded (- = none: failed, unranked map, or not submitted); hit-err = median ms (+ late); UR = 10 x SD of hit error; aim(r) = median distance from circle centre at the hit, in circle radii")
 
 # ---- pp ----
 print("\n## pp")

@@ -15,9 +15,14 @@ namespace Extract;
 /// time and so every recorded hit error on that map, and no score records the value it was
 /// played with; realm keeps only the current one. Snapshots of it over time are the only
 /// history there is.
+///
+/// <see cref="StarRating"/> is lazer's own no-mod star rating, as stored in realm by the
+/// client's background processor for the difficulty algorithm the client last ran. It is
+/// recomputed after every algorithm change, so a value is only comparable with values read at
+/// the same time; mod-adjusted ratings are never stored. -1 means not computed yet.
 /// </summary>
 public sealed record IndexEntry(string Md5, string Sha256, string Path, string Artist, string Title, string Difficulty,
-                                double Offset = 0);
+                                double Offset = 0, double StarRating = -1);
 
 public static class BeatmapIndex
 {
@@ -67,7 +72,8 @@ public static class BeatmapIndex
                     beatmap.Metadata.Artist,
                     beatmap.Metadata.Title,
                     beatmap.DifficultyName,
-                    beatmap.UserSettings?.Offset ?? 0));
+                    beatmap.UserSettings?.Offset ?? 0,
+                    beatmap.StarRating));
             }
         });
 
