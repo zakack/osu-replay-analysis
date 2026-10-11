@@ -97,23 +97,36 @@ for end, rep, name, rank in mine:
         for t, _, _ in rp_[:: max(1, len(rp_) // 300)]:
             hist[round((p - t * 1000) / 1000)] += 1
     off_ms, votes = hist.most_common(1)[0]
-    # refine: nearest key press to each replay press
-    res = []
-    for t, _, _ in rp_:
-        tgt = t * 1000 + off_ms * 1000
-        j = bisect.bisect_left(presses, tgt)
-        near = min((abs(presses[k] - tgt), presses[k] - tgt) for k in (j - 1, j) if 0 <= k < len(presses))
-        if near[0] < 8000: res.append(near[1] / 1000)
-    off = off_ms + st.median(res)
-    matched = sum(abs(r - (off - off_ms)) < 2 for r in res)
-    out.append(dict(replay=rep, offset_ms=off, end_minus_last=(end_mono / 1000 - (rp_[-1][0] + off)) / 1000))
+    # refine: nearest key press to each replay press, fitting offset AND drift. The map
+    # clock follows the audio device, whose crystal runs ~50-70 ppm off CLOCK_MONOTONIC on
+    # this machine (2026-10-11), so a 5-minute map drifts ~20 ms end to end.
+    # mono_ms = off + t * (1 + drift)
+    import numpy as np
+    off, drift, tol = float(off_ms), 0.0, 8.0
+    for _ in range(4):
+        ts, rs = [], []
+        for t, _, _ in rp_:
+            tgt = (off + t * (1 + drift)) * 1000
+            j = bisect.bisect_left(presses, tgt)
+            near = min((abs(presses[k] - tgt), presses[k] - tgt) for k in (j - 1, j) if 0 <= k < len(presses))
+            if near[0] < tol * 1000:
+                ts.append(t); rs.append(near[1] / 1000)
+        ts, rs = np.array(ts), np.array(rs)
+        keep = np.abs(rs - np.median(rs)) < max(1.0, tol / 2)
+        b, a = np.polyfit(ts[keep], rs[keep], 1) if keep.sum() > 10 else (0.0, float(np.median(rs)))
+        off += a; drift += b; tol = 4.0
+    res = list(rs - (a + b * ts))
+    matched = sum(abs(r) < 2 for r in res)
+    out.append(dict(replay=rep, offset_ms=off, drift=drift,
+                    end_minus_last=(end_mono / 1000 - (off + rp_[-1][0] * (1 + drift))) / 1000))
+    q = np.percentile(res, [25, 75])
     print(f"{name[:46]:46} {rank:2} presses {len(rp_):4}  matched ±2ms {matched / len(rp_):5.1%}  "
-          f"resid IQR {st.quantiles(res, n=4)[0] - (off - off_ms):+.2f}..{st.quantiles(res, n=4)[2] - (off - off_ms):+.2f} ms  "
+          f"resid IQR {q[0]:+.2f}..{q[1]:+.2f} ms  drift {drift * 1e6:+5.1f} ppm  "
           f"last press → score saved {out[-1]['end_minus_last']:+.1f}s")
     # cursor: affine fit, screen px -> playfield, at replay press positions
     pts = []
     for t, x, y in rp_:
-        c = cursor_at((t + off) * 1000)
+        c = cursor_at((off + t * (1 + drift)) * 1000)
         if c: pts.append((c[0], c[1], x, y, c[2]))
     if len(pts) > 20:
         import numpy as np

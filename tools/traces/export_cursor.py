@@ -21,11 +21,12 @@ for a in json.load(open(stem + ".align.json")):
     if "affine" not in a:
         continue
     (ax, ay), (bx, by), (cx, cy) = a["affine"]
-    lo = bisect.bisect_right(us, (a["first_ms"] - 2000 + a["offset_ms"]) * 1000) - 1
-    hi = bisect.bisect_right(us, (a["last_ms"] + 2000 + a["offset_ms"]) * 1000)
+    off, k = a["offset_ms"], 1 + a.get("drift", 0.0)      # mono_ms = off + map_ms * k
+    lo = bisect.bisect_right(us, (off + (a["first_ms"] - 2000) * k) * 1000) - 1
+    hi = bisect.bisect_right(us, (off + (a["last_ms"] + 2000) * k) * 1000)
     with open(os.path.join(outdir, a["replay"] + ".cursor.csv"), "w") as f:
         f.write("t,x,y\n")
         for i in range(max(lo, 0), hi):
             x, y = int(rows[i][1]), int(rows[i][2])
-            f.write(f"{us[i] / 1000 - a['offset_ms']:.3f},{ax * x + bx * y + cx:.3f},{ay * x + by * y + cy:.3f}\n")
+            f.write(f"{(us[i] / 1000 - off) / k:.3f},{ax * x + bx * y + cx:.3f},{ay * x + by * y + cy:.3f}\n")
     print(a["replay"][:70], hi - max(lo, 0), "rows")

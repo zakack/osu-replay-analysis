@@ -33,9 +33,10 @@ public sealed class CursorTrace
     /// <summary>
     /// A diagnostic, off by default: judge presses against the trace this many milliseconds
     /// before the press frame instead of against the frame's own position. Off is right. On
-    /// 2026-10-11's 14 completed plays, the replay's press positions reproduce every click
-    /// judgement and the trace at the press time reproduces 7, so the game judged a press at
-    /// the cursor of the update that saw it, which is what the press frame records.
+    /// 2026-10-11's 14 completed plays the replay's press positions reproduce every click
+    /// judgement, the trace at the press frame's time reproduces 13 (one Great becomes a Miss),
+    /// and 1 or 2 ms earlier reproduces 8 and 6. The press frame records the cursor the game
+    /// judged against; the trace can only come within a sample of it.
     /// </summary>
     public static readonly double PressLead =
         double.TryParse(Environment.GetEnvironmentVariable("ORA_CURSOR_PRESS_LEAD_MS"), NumberStyles.Float,

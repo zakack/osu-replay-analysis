@@ -481,3 +481,9 @@ Median +0 ms before 2026-07-24, +3 after; matched 85 maps +1.5 [0,+3]. The −27
 `~/Projects/doubletap` `doubletapd -T` (passive hidraw travel trace) + `tools/replay.c` (real state machine offline: presses and `deep` latches); `build/lazer-logs/` for attempt boundaries
 
 Missing pieces: an absolute CLOCK_MONOTONIC t0 in the trace header (it is relative now), and a PipeWire capture of lazer's output stamped from the graph clock, cross-correlated with the map audio. Calibrate per map on saved runs; mp3 decoder padding differs between decoders, so expect a per-map constant.
+
+## 2026-10-11 — lazer's game clock drifts ~65 ppm against CLOCK_MONOTONIC; Wayland delivers the cursor unbatched
+
+`tools/traces/align.py` on `build/traces/2026-10-11T00-50-57` (drift column); per-frame delivery check matched 45,860 replay frames to the 1000 Hz OTD trace
+
+The map clock follows the audio device (Scarlett), ~−65 ppm on nearly every replay: ~20 ms over a 5-minute map. With it fitted, replay cursor positions sit within ±0.5 ms of OTD's latest sample, with no clustering at the 165 Hz refresh period — Hyprland is not batching pointer motion. The earlier "6 ms peaks" in press lag were drift smear plus approximate key edges.
