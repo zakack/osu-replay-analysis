@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""Record OpenTabletDriver's virtual tablet as CSV on stdout until SIGINT/SIGTERM.
+
+The cursor-side twin of `doubletapd -T`. A replay stores the cursor at 60 Hz plus one frame
+per button change, and the judgement it came from saw the cursor at the client's own rate;
+this keeps every position OTD sent, after its filters and area mapping, which is what the
+game was given. Passive: no grab, nothing in the input path.
+
+Timestamps are the kernel's event times, switched to CLOCK_MONOTONIC so they share a clock
+with doubletap traces and PipeWire, as microseconds since t0 in the header. Rows are one per
+SYN_REPORT: position in virtual-desktop pixels (the device's ABS range) and the pen's button
+state as a bitmask of BTN_LEFT.. (bit 0 = BTN_LEFT).
+
+The device comes and goes with otd-daemon; this waits for it, and reopens it if it vanishes
+mid-session, noting each open in a `#` line.
+"""
+import fcntl, hashlib, os, select, signal, struct, sys, time
+
+import evdev
+from evdev import ecodes
+
+NAME = "OpenTabletDriver Virtual Tablet"
+SETTINGS = os.path.expanduser("~/.config/OpenTabletDriver/settings.json")
+EVIOCSCLOCKID = 0x400445A0  # _IOW('E', 0xa0, int)
+
+running = True
+def stop(*_):
+    global running
+    running = False
+signal.signal(signal.SIGINT, stop)
+signal.signal(signal.SIGTERM, stop)
+
+out = sys.stdout
+t0 = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+t0_real = time.time_ns()
+out.write("# cursor trace v1\n")
+out.write(f"# t0_monotonic_ns={t0}\n# t0_realtime_ns={t0_real}\n")
+try:
+    # The area, filters and Circular Area mapping all live here; the hash says which setup
+    # a trace was played under (otd-settings/<sha>.json beside the traces keeps the content).
+    raw = open(SETTINGS, "rb").read()
+    out.write(f"# otd_settings_sha256={hashlib.sha256(raw).hexdigest()}\n")
+except OSError:
+    pass
+out.write("us,x,y,buttons\n")
+out.flush()
+
+def find():
+    for p in evdev.list_devices():
+        try:
+            d = evdev.InputDevice(p)
+        except OSError:
+            continue
+        if d.name == NAME:
+            return d
+        d.close()
+    return None
+
+dev = None
+x = y = buttons = 0
+while running:
+    if dev is None:
+        dev = find()
+        if dev is None:
+            time.sleep(1)
+            continue
+        fcntl.ioctl(dev.fd, EVIOCSCLOCKID, struct.pack("i", time.CLOCK_MONOTONIC))
+        ax, ay = dev.absinfo(ecodes.ABS_X), dev.absinfo(ecodes.ABS_Y)
+        x, y = ax.value, ay.value
+        out.write(f"# open {dev.path} abs_x={ax.min}..{ax.max} abs_y={ay.min}..{ay.max}"
+                  f" at_us={(time.clock_gettime_ns(time.CLOCK_MONOTONIC) - t0) // 1000}\n")
+    try:
+        r, _, _ = select.select([dev], [], [], 0.2)
+        if not r:
+            continue
+        for e in dev.read():
+            if e.type == ecodes.EV_ABS:
+                if e.code == ecodes.ABS_X: x = e.value
+                elif e.code == ecodes.ABS_Y: y = e.value
+            elif e.type == ecodes.EV_KEY and ecodes.BTN_LEFT <= e.code <= ecodes.BTN_EXTRA:
+                bit = 1 << (e.code - ecodes.BTN_LEFT)
+                buttons = buttons | bit if e.value else buttons & ~bit
+            elif e.type == ecodes.EV_SYN and e.code == ecodes.SYN_REPORT:
+                us = (e.sec * 1_000_000_000 + e.usec * 1000 - t0) // 1000
+                out.write(f"{us},{x},{y},{buttons}\n")
+    except OSError:  # ENODEV: otd-daemon restarted
+        out.write("# lost device\n")
+        dev = None
+out.flush()
