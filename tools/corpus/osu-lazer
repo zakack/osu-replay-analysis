@@ -10,8 +10,25 @@
 log=$(dirname "$(readlink -f "$0")")/session-log
 started=$("$log" start)
 
+# Key travel for the whole session, from doubletap's passive tracer (it reads the keyboard
+# alongside the live daemon and changes nothing in the input path). The header anchors it on
+# CLOCK_MONOTONIC and wall time and records the thresholds it was played under, so it can be
+# lined up with replays later; nothing does that yet, this only makes sure the data exists.
+# Reports only arrive while a key moves, so an idle session costs nothing.
+trace=
+if command -v doubletapd >/dev/null; then
+    traces=$(dirname "$(readlink -f "$0")")/../../build/traces
+    mkdir -p "$traces"
+    doubletapd -T 2>/dev/null > >(zstd -q -o "$traces/$(date +%Y-%m-%dT%H-%M-%S).csv.zst") &
+    trace=$!
+    # If the launcher itself is killed, do not leave the tracer running into the next session.
+    trap 'kill -INT "$trace" 2>/dev/null' HUP TERM
+fi
+
 /usr/bin/osu-lazer "$@"
 status=$?
+# SIGINT is the tracer's clean stop: it flushes and exits, and zstd finishes on EOF.
+[ -n "$trace" ] && { kill -INT "$trace" 2>/dev/null; wait "$trace" 2>/dev/null; }
 systemctl --user start --no-block corpus-sync.service
 # Detached, so a question nobody answers never holds the launcher open.
 setsid -f "$log" end "$started" >/dev/null 2>&1
