@@ -171,6 +171,19 @@ if [[ "$grew" == *rhythm* || "$grew" == *presses* ]]; then
     python3 tools/analysis/streams.py cache | tail -1 || fail "streams.py cache"
 fi
 
+# Line each session's doubletap and cursor traces up with the replays saved during it
+# (tools/traces/align.py, which needs presses.csv current). Once per trace; a trace whose
+# zstd stream does not test clean is still being written, and the next sync takes it.
+for t in build/traces/*.csv.zst; do
+    [[ "$t" == *.cursor.csv.zst ]] && continue
+    stem=${t%.csv.zst}
+    [ -e "$stem.align.json" ] && continue
+    zstd -tq "$t" 2>/dev/null || continue
+    [ ! -e "$stem.cursor.csv.zst" ] || zstd -tq "$stem.cursor.csv.zst" 2>/dev/null || continue
+    echo "align $(basename "$stem")"
+    python3 tools/traces/align.py "$stem" | sed 's/^/  /' || fail "align.py $(basename "$stem")"
+done
+
 # The tapping-hand regression check (tools/analysis/drift.py): the latest sessions against
 # the trailing 30 days. It stays silent below the beatmap count a CI needs, so the pool of
 # recent sessions widens until it holds enough maps; a notification only on REGRESSION.

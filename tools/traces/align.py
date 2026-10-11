@@ -48,11 +48,14 @@ for l in kt:
             if d <= ext[k] - rr or d < rel:
                 down[k] = False; ext[k] = d
 presses.sort()
+if not presses:
+    print("no key presses in the trace"); json.dump([], open(stem + ".align.json", "w")); sys.exit(0)
 
 # --- cursor trace ---
-ct = zread(stem + ".cursor.csv.zst").read().splitlines()
+import os
+ct = zread(stem + ".cursor.csv.zst").read().splitlines() if os.path.exists(stem + ".cursor.csv.zst") else []
 ch = header(l for l in ct if l.startswith("#"))
-c0 = int(ch["t0_monotonic_ns"]) // 1000
+c0 = int(ch.get("t0_monotonic_ns", 0)) // 1000
 cur_t, cur_x, cur_y = [], [], []
 for l in ct:
     if l[:1].isdigit():
