@@ -21,12 +21,23 @@ for a in json.load(open(stem + ".align.json")):
     if "affine" not in a:
         continue
     (ax, ay), (bx, by), (cx, cy) = a["affine"]
-    off, k = a["offset_ms"], 1 + a.get("drift", 0.0)      # mono_ms = off + map_ms * k
-    lo = bisect.bisect_right(us, (off + (a["first_ms"] - 2000) * k) * 1000) - 1
-    hi = bisect.bisect_right(us, (off + (a["last_ms"] + 2000) * k) * 1000)
+    k = 1 + a.get("drift", 0.0)                           # mono_ms = offset + map_ms * k
+    segs = a.get("segments") or [dict(from_ms=-1e12, to_ms=1e12, offset_ms=a["offset_ms"])]
+    n = 0
     with open(os.path.join(outdir, a["replay"] + ".cursor.csv"), "w") as f:
         f.write("t,x,y\n")
-        for i in range(max(lo, 0), hi):
-            x, y = int(rows[i][1]), int(rows[i][2])
-            f.write(f"{(us[i] / 1000 - off) / k:.3f},{ax * x + bx * y + cx:.3f},{ay * x + by * y + cy:.3f}\n")
-    print(a["replay"][:70], hi - max(lo, 0), "rows")
+        # one block per segment (a pause or seek starts a new one), each clipped to the
+        # play's own span; rows stay in map-time order because segments are
+        for sg in segs:
+            t_lo = max(sg["from_ms"], a["first_ms"] - 2000)
+            t_hi = min(sg["to_ms"], a["last_ms"] + 2000)
+            if t_hi <= t_lo:
+                continue
+            off = sg["offset_ms"]
+            lo = bisect.bisect_right(us, (off + t_lo * k) * 1000) - 1
+            hi = bisect.bisect_right(us, (off + t_hi * k) * 1000)
+            for i in range(max(lo, 0), hi):
+                x, y = int(rows[i][1]), int(rows[i][2])
+                f.write(f"{max((us[i] / 1000 - off) / k, t_lo):.3f},{ax * x + bx * y + cx:.3f},{ay * x + by * y + cy:.3f}\n")
+                n += 1
+    print(a["replay"][:70], n, "rows")
