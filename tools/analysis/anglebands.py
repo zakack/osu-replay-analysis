@@ -57,8 +57,16 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--width", type=float, default=5.0, help="histogram bin, degrees")
     parser.add_argument("--out", default="build/anglebands.json")
-    parser.add_argument("--source", default="player", choices=("player", "reference"),
+    parser.add_argument("--source", default="player",
+                        choices=("player", "reference", "collected"),
                         help="whose play the behaviour curves come from")
+    parser.add_argument("--archive", default="both",
+                        choices=("both", "dailies", "firehose"),
+                        help="collected source only; the two have very different shapes")
+    parser.add_argument("--max-acc", type=float, default=1.1,
+                        help="collected source only: keep runs at or below this accuracy")
+    parser.add_argument("--min-acc", type=float, default=0.0,
+                        help="collected source only: keep runs at or above this accuracy")
     parser.add_argument("--player", default="zaksynack",
                         help="player source only; the corpus holds other people's imports")
     parser.add_argument("--quiet", action="store_true", help="write the JSON, print little")
@@ -71,13 +79,18 @@ def main() -> int:
     def half(md5):
         return int(hashlib.blake2b(md5.encode(), digest_size=8).hexdigest(), 16) & 1
 
-    which = "corpus.json" if args.source == "player" else "corpus-nm.json"
+    which = {"player": "corpus.json", "reference": "corpus-nm.json",
+             "collected": "corpus-collected.json"}[args.source]
     corpus = json.load(open(os.path.join(ROOT, which)) if False
                        else open(os.path.join(ROOT, "build", which)))
 
     if args.source == "player":
         keep = [r for r in corpus if r.get("Paired")
                 and args.player in os.path.basename(r["Path"])]
+    elif args.source == "collected":
+        keep = [r for r in corpus
+                if (args.archive == "both" or r.get("Source") == args.archive)
+                and args.min_acc <= (r.get("Accuracy") or 0) <= args.max_acc]
     else:
         keep = list(corpus)
 
@@ -98,8 +111,9 @@ def main() -> int:
               for _ in (0, 1)]
 
     rows = 0
-    geometry = ("geometry.csv" if args.source == "player"
-                else "geometry-reference-nm.csv")
+    geometry = {"player": "geometry.csv",
+                "reference": "geometry-reference-nm.csv",
+                "collected": "geometry-collected.csv"}[args.source]
     with open(os.path.join(ROOT, "build", geometry)) as f:
         for r in csv.DictReader(f):
             raw = r["signedAngle"]
@@ -144,7 +158,8 @@ def main() -> int:
               open(os.path.join(ROOT, args.out), "w"))
 
     print(f"{rows:,} judged objects, {len(representative):,} beatmaps, "
-          f"source {args.source}\n")
+          f"{len(keep):,} replays, source {args.source}"
+          + (f"/{args.archive}" if args.source == "collected" else "") + "\n")
     if args.quiet:
         print(f"written: {args.out}")
         return 0
