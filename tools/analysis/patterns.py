@@ -75,10 +75,13 @@ DEG = 180.0 / math.pi
 # A symbol has to be discrete, so the ramp cannot be used directly. The nearest honest thing
 # is to cut at its knees and let the continuous value stay an attribute of the instance.
 ANGLE_BANDS = {
-    "none":   None,
-    "2 band": (90.0,),
-    "ppy 3":  (40.0, 140.0),
-    "6 band": (30.0, 60.0, 90.0, 120.0, 150.0),
+    "none":    None,
+    "2 band":  (90.0,),
+    "ppy 3":   (40.0, 140.0),
+    "6 band":  (30.0, 60.0, 90.0, 120.0, 150.0),
+    # The schema's own, measured rather than chosen, so a pattern's spelling and the
+    # findings table cannot disagree about what band an object is in.
+    "schema4": tuple(ANGLE.edges[1:-1]),
 }
 
 def angle_symbol(degrees, edges):
@@ -193,12 +196,16 @@ def segments(objects, edges, with_kind):
     return out
 
 
-def repeats(segs, min_len=2, max_len=24):
-    """Every substring occurring at least twice across the map, with its occurrences.
+def repeats(segs, min_len=2, max_len=24, keep=None):
+    """Every substring of one map, with where it occurs.
 
-    Occurrences are collected over every segment, so a pattern that appears once in each of
-    two phrases counts as repeated -- that is the whole point. Overlap is resolved later, at
-    tiling time, not here.
+    Occurrences are collected over every segment, so a pattern appearing once in each of two
+    phrases counts as repeated. Overlap is resolved later, at tiling time, not here.
+
+    With ``keep``, a pattern survives because the *corpus* vouches for it -- it was seen on
+    enough other beatmaps -- rather than because this map happened to repeat it. That is the
+    difference between a map's own quirk and a pattern in the language: a figure played on
+    forty maps is a thing worth naming and practising even where a map uses it once.
     """
     found = collections.defaultdict(list)
     for start, syms in segs:
@@ -206,7 +213,25 @@ def repeats(segs, min_len=2, max_len=24):
         for i in range(n):
             for L in range(min_len, min(max_len, n - i) + 1):
                 found[tuple(syms[i:i + L])].append(start + i)
+    if keep is not None:
+        return {p: locs for p, locs in found.items() if p in keep}
     return {p: locs for p, locs in found.items() if len(locs) >= 2}
+
+
+def vocabulary(spelled, min_len, max_len, min_maps):
+    """Sequences the corpus shares: {pattern: number of beatmaps it appears on}.
+
+    Counted once per beatmap, never once per occurrence, so a map that repeats one figure
+    two hundred times cannot vote itself a vocabulary.
+    """
+    maps = collections.defaultdict(set)
+    for md5, segs in spelled.items():
+        for _, syms in segs:
+            n = len(syms)
+            for i in range(n):
+                for L in range(min_len, min(max_len, n - i) + 1):
+                    maps[tuple(syms[i:i + L])].add(md5)
+    return {p: len(m) for p, m in maps.items() if len(m) >= min_maps}
 
 
 def tile(found, total, min_len):
@@ -240,7 +265,13 @@ def tile(found, total, min_len):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--maps", nargs="+", required=True, help="beatmap md5 prefixes")
+    parser.add_argument("--maps", nargs="*", default=[], help="beatmap md5 prefixes")
+    parser.add_argument("--shared", action="store_true",
+                        help="instead, every beatmap the reference corpus also covers")
+    parser.add_argument("--cross", type=int, default=0,
+                        help="only count patterns the corpus shares across at least this "
+                             "many beatmaps; 0 keeps the within-map rule")
+    parser.add_argument("--max-maps", type=int, default=0, help="cap the map count")
     parser.add_argument("--min-len", type=int, default=3)
     parser.add_argument("--examples", type=int, default=1)
     parser.add_argument("--show", default="ppy 3", choices=list(ANGLE_BANDS),
@@ -253,10 +284,20 @@ def main() -> int:
     index = json.load(open(os.path.join(ROOT, "build", "beatmap-index.json")))
 
     chosen = {}
+    if args.shared:
+        reference = {r["BeatmapMd5"] for r in
+                     json.load(open(os.path.join(ROOT, "build", "corpus-nm.json")))}
+        for record in corpus:
+            if record["BeatmapMd5"] in reference and record.get("Paired"):
+                chosen.setdefault(record["BeatmapMd5"], os.path.basename(record["Path"]))
     for prefix in args.maps:
         md5 = next(r["BeatmapMd5"] for r in corpus if r["BeatmapMd5"].startswith(prefix))
         path = next(r["Path"] for r in corpus if r["BeatmapMd5"] == md5 and r.get("Paired"))
         chosen[md5] = os.path.basename(path)
+    if args.max_maps:
+        chosen = dict(list(chosen.items())[:args.max_maps])
+    if not chosen:
+        raise SystemExit("no beatmaps chosen; pass --maps or --shared")
 
     if args.cache and os.path.exists(args.cache):
         blob = json.load(open(args.cache))
@@ -266,6 +307,50 @@ def main() -> int:
         loaded, total = read_maps(chosen)
         if args.cache:
             json.dump({"objects": loaded, "total": total}, open(args.cache, "w"))
+
+    if args.cross:
+        edges = ANGLE_BANDS[args.show]
+        spelled = {md5: segments(loaded[md5], edges, False) for md5 in chosen}
+        shared = vocabulary(spelled, args.min_len, 8, args.cross)
+
+        print(f"{len(chosen)} beatmaps, turn spelled {args.show!r}, pattern length "
+              f"{args.min_len}-8, kept when seen on {args.cross}+ beatmaps\n")
+        print(f"sequences shared across the corpus: {len(shared):,}")
+
+        claimed = tiled = objects = 0
+        spread: collections.Counter = collections.Counter()
+        for md5 in chosen:
+            found = repeats(spelled[md5], min_len=args.min_len, max_len=8, keep=shared)
+            # Ranked by how widely the corpus uses a pattern, then by how much of this map
+            # it would explain. A figure seen on forty maps is a better name for these
+            # objects than a longer one seen on three.
+            order = sorted(found, key=lambda p: (-shared[p], -len(p) * len(found[p])))
+            taken = [None] * len(loaded[md5])
+            for pattern in order:
+                hits = []
+                for at in sorted(found[pattern]):
+                    if any(taken[j] is not None for j in range(at, at + len(pattern))):
+                        continue
+                    hits.append(at)
+                if not hits:
+                    continue
+                for at in hits:
+                    for j in range(at, at + len(pattern)):
+                        taken[j] = pattern
+                spread[pattern] += len(hits)
+            claimed += sum(1 for t in taken if t is not None)
+            tiled += sum(1 for t in taken if t is not None and len(set(t)) > 1)
+            objects += total[md5]
+
+        print(f"objects covered by a shared pattern: {claimed / objects:.0%}  "
+              f"(not one symbol repeated: {tiled / objects:.0%})")
+        print(f"distinct patterns actually used as tiles: {len(spread):,}\n")
+        print(f"{'maps':>6}{'instances':>11}  pattern")
+        for pattern, n in sorted(spread.items(),
+                                 key=lambda kv: -(shared[kv[0]] * kv[1]))[:10]:
+            print(f"{shared[pattern]:>6}{n:>11}  " + "  ".join(pattern[:4])
+                  + (" ..." if len(pattern) > 4 else ""))
+        return 0
 
     print(f"min pattern length {args.min_len}, chirality folded, patterns confined to "
           f"rhythm groups.\nSnap and spacing are always in the symbol; the rows vary how "
