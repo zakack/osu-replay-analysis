@@ -568,3 +568,29 @@ Aim error does not track the miss rate -- at 3.5-4.5 radii squares have the *low
 error (0.383) and the highest miss rate. Probably survivorship, since aim error only exists
 where a press landed, but worth checking against the collected miss corpus rather than one
 player's single plays.
+
+## 2026-10-12 — (correction) squares are not the hardest shape; the *middling* angles are
+
+`scratchpad/hardshape.py` over build/geometry-collected.csv
+
+The entry above is wrong where it is specific. It was measured on one player's own replays,
+which lazer only keeps automatically for passes -- this player began saving fails recently --
+so it reads difficulty off good days, on 278-363 objects per cell.
+
+Re-run on the collected archives (6,232 server-side replays, 4,978 players, no save reflex,
+2,362-13,748 objects per cell), miss rate against the same-spacing baseline:
+
+               3.5-4.5   4.5-6   6-8
+    star point   1.23x   1.42x  1.25x
+    triangle     1.20x   1.23x  0.75x
+    square       1.55x   1.27x  1.16x
+    pentagon+    1.73x   1.99x     --
+
+Squares are harder than baseline everywhere but are not the worst; pentagons and rounder
+figures are, where there are enough of them. The general claim survives and sharpens: the
+costly turns are the *middling* ones, 72-135 degrees, which is exactly where ppy's 40-140
+ramp pays the least. The peak is simply further round than the first measurement said.
+
+Also gone is the dissociation -- aim error tracks miss rate here (square 0.405 vs 0.382
+baseline), where on the player's own passes squares had the lowest aim error and the highest
+miss rate. That was survivorship, as suspected.
