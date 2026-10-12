@@ -175,7 +175,9 @@ fi
 # (tools/traces/align.py, which needs presses.csv current). Once per trace; a trace whose
 # zstd stream does not test clean is still being written, and the next sync takes it.
 for t in build/traces/*.csv.zst; do
-    [[ "$t" == *.cursor.csv.zst ]] && continue
+    # Only the key trace is a stem. The cursor trace and align.py's own key-event cache sit
+    # beside it under the same suffix.
+    [[ "$t" == *.cursor.csv.zst || "$t" == *.events.csv.zst ]] && continue
     stem=${t%.csv.zst}
     [ -e "$stem.align.json" ] && continue
     zstd -tq "$t" 2>/dev/null || continue

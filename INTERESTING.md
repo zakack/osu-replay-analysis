@@ -499,3 +499,15 @@ Stack offset reaches ~280px at the base of the stack. Any spacing/geometry bin f
 `dotnet run --project src/Cli -c Release -- scene /home/zak/.config/osu-lazer/files/7/7f/7ff7784c987e1dbb6ca507b08796ba93e3db8056e70220fc7273541a31592cad`
 
 Mean hit error by 32-note quarter: +13, -13, -39, -20 ms. It starts late and drifts early. The same stream in the full-map plays has not been compared yet.
+
+## 2026-10-11 — clip plays align in identical pairs and triples
+
+`build/traces/2026-10-11T19-40-32.align.json` (journalctl --user -u corpus-sync, the 20:3x run)
+
+Several Twinkle clip scores share exactly the same alignment stats (presses, drift, residuals), differing only in "last press → score saved" (+1s / +22s / +43s). Either two scores were saved from one play, or the aligner gives a later short replay the previous play's press run. One row also has a cursor-fit p95 of 225 osu px.
+
+## 2026-10-11 — (follow-up) the identical align rows are distinct plays given one offset
+
+`build/traces/2026-10-11T19-40-32.align.json`, rows sharing offset_ms (e.g. 934287848 ×3)
+
+The ranks differ (D/B/C), so these are separate plays: align.py hands a later play the earlier play's press run. The tablet USB disconnects (kernel log 19:47:31, 20:09:15) do not line up with them or with the 225 px row (19:43).
