@@ -184,11 +184,21 @@ switch (args[0])
 
         string scratch = Path.Combine("build", "realm-copy");
 
-        var entries = BeatmapIndex.Build(lazerRoot, scratch);
+        var built = BeatmapIndex.Build(lazerRoot, scratch);
+
+        // Fetched beatmaps go into the written index, not only into what Read returns.
+        // Read augments in memory, which serves extraction; every Python tool that names a
+        // beatmap loads this JSON instead, and would print question marks for them.
+        var byMd5 = new Dictionary<string, IndexEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in built)
+            byMd5[entry.Md5] = entry;
+
+        int fetched = BeatmapIndex.Augment(byMd5, BeatmapIndex.MirrorDirectory);
+        var entries = byMd5.Values.ToList();
         BeatmapIndex.Write(entries, "build/beatmap-index.json");
 
         int present = entries.Count(e => File.Exists(e.Path));
-        Console.WriteLine($"indexed beatmaps: {entries.Count}");
+        Console.WriteLine($"indexed beatmaps: {entries.Count} ({fetched} from the mirror fetch)");
         Console.WriteLine($"files present on disk: {present}");
         Console.WriteLine("written: build/beatmap-index.json");
 

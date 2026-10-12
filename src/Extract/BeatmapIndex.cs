@@ -114,6 +114,33 @@ public static class BeatmapIndex
         return index;
     }
 
+    /// <summary>
+    /// Artist, title and difficulty name out of an <c>.osu</c> header.
+    ///
+    /// Filled in because an entry without them is unnameable, and the tools that report a
+    /// beatmap by name read the written index rather than calling <see cref="Read"/>. A
+    /// fetched beatmap that cannot be named turns every report mentioning it into a row of
+    /// question marks.
+    /// </summary>
+    private static (string Artist, string Title, string Version) headerMetadata(string path)
+    {
+        string artist = string.Empty, title = string.Empty, version = string.Empty;
+
+        foreach (string line in File.ReadLines(path))
+        {
+            if (line.StartsWith("[Difficulty]", StringComparison.Ordinal))
+                break;
+            if (line.StartsWith("Artist:", StringComparison.Ordinal))
+                artist = line[7..].Trim();
+            else if (line.StartsWith("Title:", StringComparison.Ordinal))
+                title = line[6..].Trim();
+            else if (line.StartsWith("Version:", StringComparison.Ordinal))
+                version = line[8..].Trim();
+        }
+
+        return (artist, title, version);
+    }
+
     /// <summary>Where beatmaps the library does not hold are kept, named by their own MD5.</summary>
     public const string MirrorDirectory = "build/mirror-beatmaps";
 
@@ -152,7 +179,8 @@ public static class BeatmapIndex
                     continue;
             }
 
-            index[md5] = new IndexEntry(md5, string.Empty, path, string.Empty, string.Empty, string.Empty);
+            var (artist, title, version) = headerMetadata(path);
+            index[md5] = new IndexEntry(md5, string.Empty, path, artist, title, version);
             added++;
         }
 
