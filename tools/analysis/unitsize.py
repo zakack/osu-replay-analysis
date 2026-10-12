@@ -52,14 +52,29 @@ not its distance from 1.
 import collections, hashlib, math, sys
 sys.path.insert(0, 'tools')
 from bins import load
-from bins.schema import ANGLE, SPACING, RUN_POSITION
+from bins.schema import SPACING, RUN_POSITION
 
 def fold(key):
     return int(hashlib.blake2b(key.encode(), digest_size=8).hexdigest(), 16) & 1
 
 def sp(v): return SPACING.bin(v) if v is not None else None
-def ab(v): return ANGLE.bin(abs(v)) if v is not None else None
-def sg(v): return ANGLE.bin(v) if v is not None else None
+# The schema's ANGLE axis is folded and 5-band since schema 4. This measurement compared a
+# folded 30-degree grid against a signed one, so both are pinned here rather than read from
+# the schema: reading the live axis would silently re-run a different experiment under the
+# numbers recorded in the docstring.
+_GRID = tuple(float(d) for d in range(0, 181, 30))
+_SIGNED = tuple(float(d) for d in range(-180, 181, 30))
+
+def _band(value, edges):
+    if value is None:
+        return None
+    for i in range(len(edges) - 1):
+        if edges[i] <= value < edges[i + 1]:
+            return f"{edges[i]:g}:{edges[i+1]:g}"
+    return f"{edges[-2]:g}:{edges[-1]:g}" if value == edges[-1] else None
+
+def ab(v): return _band(abs(v), _GRID) if v is not None else None
+def sg(v): return _band(v, _SIGNED) if v is not None else None
 def rp(v): return RUN_POSITION.bin(v) if v is not None else None
 
 SCHEMES = {

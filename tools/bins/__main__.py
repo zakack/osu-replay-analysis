@@ -185,7 +185,7 @@ def scheme(args) -> int:
         control = CONTROLS.get(name)
         print(f"\n{name}" + (f"   controlled by {control[0]}" if control else ""))
         for axis in axes:
-            print(f"  {axis.name:<10}{axis.unit:<16}{' '.join(axis.labels)}")
+            print(f"  {axis.name:<13}{axis.unit:<24}{' '.join(axis.labels)}")
         print(f"  cells: {len(list(cells.enumerate_cells(name)))}")
 
     print(f"\nfindings columns: {', '.join(FINDINGS_COLUMNS)}")

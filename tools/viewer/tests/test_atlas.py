@@ -78,7 +78,8 @@ def _obs(start, angle_deg, spacing, delta, **kw):
                   angle=angle_deg, spacing=spacing,
                   velocity=(spacing / delta if delta else None), delta_time=delta,
                   snap="0.25", run_index=1, run_size=8, hit_error=0.0,
-                  aim_error=0.0, result="Great")
+                  aim_error=0.0, result="Great",
+                  target_x=256.0, target_y=192.0, heading=0.0)
     fields.update(kw)
     return Observation(**fields)
 
@@ -88,9 +89,13 @@ def _obs(start, angle_deg, spacing, delta, **kw):
 def test_wedge_contains_every_instance():
     """Every instance on a slide lies inside the boundary that slide draws.
 
-    If the wedge is ever put on the wrong leg, or the angle's sign convention is flipped
-    somewhere between the schema and the canvas, this fails on the first slide. It is the
-    single assertion that ties the drawing back to the binning.
+    If the wedge is ever put on the wrong leg, or the angle convention drifts somewhere
+    between the schema and the canvas, this fails on the first slide. It is the single
+    assertion that ties the drawing back to the binning.
+
+    The bound is on the turn's magnitude, which is what schema 4 keys and draws. Checking
+    the signed angle here would fail on every clockwise turn in a cell -- and the point is
+    that both handednesses belong to the cell now.
     """
     table, _ = corpus()
     md5 = next(k[0] for k in table if k[0].startswith("a5492de7a342"))
@@ -120,8 +125,8 @@ def test_wedge_contains_every_instance():
                     hi = 180.0 if hi is None else hi
                     # schema.Axis makes only the top edge inclusive, and 180 exactly is a
                     # straight turn, which is common rather than exotic.
-                    assert lo <= link.obs.angle <= hi, (
-                        f"{scheme} {slide['cell']}: angle {link.obs.angle} outside "
+                    assert lo <= link.turn <= hi, (
+                        f"{scheme} {slide['cell']}: turn {link.turn} outside "
                         f"[{lo}, {hi}]")
                 if geom["radius"] is not None:
                     lo, hi = slide["bounds"][geom["radius"]]
@@ -180,9 +185,15 @@ def test_membership_matches_the_binning_package():
 def test_canonical_frame_matches_scene_positions():
     """The frame built from the CSV is the frame lazer's own positions describe.
 
-    And, just as importantly, the off-by-one frame is not. tools/viewer/pattern.py takes
-    the apex to be object n when the row's apex is object n-1; the resulting picture is
-    wrong in a way that looks fine, so this asserts the wrong reading is rejected.
+    Two halves since schema 4, and both are needed. The drawn frame keys on turn
+    *magnitude*, so it is checked unsigned; the sign is still on every row and is checked
+    separately against the same positions. Folding the key is only safe if the sign that
+    was folded out is still correct in the data, and a test that compared magnitudes alone
+    would let it rot unnoticed.
+
+    And, just as importantly, the off-by-one frame is rejected. tools/viewer/pattern.py
+    takes the apex to be object n when the row's apex is object n-1; the resulting picture
+    is wrong in a way that looks fine.
     """
     docs = {os.path.basename(p)[:-5]: p for p in glob.glob(os.path.join(ROOT, "build",
                                                                        "scene", "*.json"))}
@@ -196,7 +207,7 @@ def test_canonical_frame_matches_scene_positions():
     for link in links:
         by_replay[link.obs.replay].append(link)
 
-    right, wrong, checked = [], [], 0
+    right, signed, wrong, checked = [], [], [], 0
     for replay, group in by_replay.items():
         doc = docs.get(replay[:-4])
         if doc is None:
@@ -222,20 +233,25 @@ def test_canonical_frame_matches_scene_positions():
             assert abs(legs[1] / radius - exit_) < POSITION_EPS, (
                 f"exit leg at {link.obs.start_time}")
             tolerance = POSITION_ROUNDING / min(legs) + ANGLE_FLOOR
-            right.append(_delta(math.atan2(v1[0] * v2[1] - v1[1] * v2[0],
-                                           v1[0] * v2[0] + v1[1] * v2[1]),
-                                angle) / tolerance)
+            oracle = math.atan2(v1[0] * v2[1] - v1[1] * v2[0],
+                                v1[0] * v2[0] + v1[1] * v2[1])
+            right.append(_delta(abs(oracle), angle) / tolerance)
+            signed.append(_delta(oracle, link.obs.angle / atlas.DEG) / tolerance)
 
             p, q, r = objects[n - 1], objects[n], objects[n + 1]
             w1 = (p["x"] - q["x"], p["y"] - q["y"])
             w2 = (r["x"] - q["x"], r["y"] - q["y"])
-            wrong.append(_delta(math.atan2(w1[0] * w2[1] - w1[1] * w2[0],
-                                           w1[0] * w2[0] + w1[1] * w2[1]), angle))
+            wrong.append(_delta(abs(math.atan2(w1[0] * w2[1] - w1[1] * w2[0],
+                                               w1[0] * w2[0] + w1[1] * w2[1])), angle))
             checked += 1
 
     assert checked > 500, f"only {checked} chains had a scene document to check against"
     assert max(right) < 1.0, (
-        f"angle diverges by {max(right):.2f}x what scene's own position rounding explains")
+        f"the drawn turn diverges by {max(right):.2f}x what scene's own position rounding "
+        f"explains")
+    assert max(signed) < 1.0, (
+        f"the stored signed angle diverges by {max(signed):.2f}x what position rounding "
+        f"explains, so the sign folded out of the key is no longer trustworthy")
 
     agree = sum(1 for d in wrong if d < 1e-3) / len(wrong)
     assert agree < 0.10, (

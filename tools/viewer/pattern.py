@@ -15,9 +15,11 @@ Two claims make this more than a montage, and both come from the feature design:
   selection the author made.
 * **The features are rotation invariant, so the instances can be superimposed.** Each
   traversal is translated to put the apex at the origin and rotated to put the incoming
-  leg on a fixed bearing, then scaled into circle radii. Chirality is *not* folded — the
-  cell is one handedness band already, and mirroring the other one in would erase the
-  asymmetry the charter keeps signed angles to preserve.
+  leg on a fixed bearing, then scaled into circle radii. Turns that went the other way are
+  reflected in, because schema 4 keys a cell on turn magnitude and both handednesses are
+  therefore in it; drawing them as they lie would superimpose two mirror images. The sign
+  stays on every row and stays measurable — it is not part of the key, which is what Mirror
+  week settled.
 
 Cell membership comes from the bins package rather than from arithmetic here, so the
 picture and the table cannot disagree about what is in the bin.
@@ -109,9 +111,22 @@ def traversal(document: dict, apex_index: int, frames: list) -> dict | None:
     bearing = math.atan2(before["y"] - apex["y"], before["x"] - apex["x"])
     cos, sin = math.cos(-bearing), math.sin(-bearing)
 
-    def canon(x, y):
+    def rotate(x, y):
         dx, dy = (x - apex["x"]) / radius, (y - apex["y"]) / radius
-        return round(dx * cos - dy * sin, 4), round(dx * sin + dy * cos, 4)
+        return dx * cos - dy * sin, dx * sin + dy * cos
+
+    # Reflect the turns that went the other way, so a cell's instances superimpose. Schema 4
+    # keys the cell on turn magnitude, so both handednesses are in it by definition, and
+    # drawing them as they lie would overlay two mirror images and call it a pattern. The
+    # sign is untouched in the data; this is the picture agreeing with the bin.
+    #
+    # Taken from the rotated exit rather than from the signed angle, because the frame is
+    # already built here and the two cannot then disagree about which way is which.
+    flip = -1.0 if rotate(after["x"], after["y"])[1] < 0 else 1.0
+
+    def canon(x, y):
+        cx, cy = rotate(x, y)
+        return round(cx, 4), round(cy * flip, 4)
 
     flat = []
     for t, x, y in raw:

@@ -17,6 +17,11 @@ import json
 import math
 import os
 import random
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from bins.schema import ANGLE  # noqa: E402
 
 GEOMETRY_COLUMNS = [
     "replay", "startTime", "kind", "signedAngle", "lazerAngle", "observedAngle",
@@ -35,13 +40,18 @@ RHYTHM_COLUMNS = [
 
 # Where the defect goes. Chosen to be a cell that is ordinary in every other respect,
 # so nothing but the injection can explain it standing out.
-DEFECT = ("120:150", "2.5:3", "0.25")
+DEFECT = ("50:135", "2.5:3", "0.25")
 
 # The geometry each cell label is generated from. Values sit mid-bin so that a small
 # arithmetic slip does not move an observation into a neighbouring cell and turn a real
 # failure into a confusing one.
-_ANGLES = {"-150:-120": -135.0, "-120:-90": -105.0, "0:30": 15.0, "60:90": 75.0,
-           "120:150": 135.0, "150:180": 165.0}
+# Derived from the axis rather than written out, so a change to the band edges cannot
+# leave the fixture generating cells that no longer exist -- which is exactly what schema 4
+# did to the hand-written version of this. Each value sits mid-bin, so a small arithmetic
+# slip does not move an observation into a neighbour and turn a real failure into a
+# confusing one.
+_ANGLES = {label: (ANGLE.edges[i] + ANGLE.edges[i + 1]) / 2
+           for i, label in enumerate(ANGLE.labels)}
 _SPACINGS = {"1:1.5": 1.25, "2:2.5": 2.25, "2.5:3": 2.75, "3:3.5": 3.25, "4.5:6": 5.0}
 _SNAPS = {"0.25": 0.25, "0.5": 0.5, "1": 1.0}
 
@@ -109,7 +119,11 @@ def corpus(directory: str, *, players: int = 40, repeats: int = 12,
                     "kind": "circle",
                     # Radians on the way out, because that is what the real extractor
                     # writes and the conversion is the loader's job to get right.
-                    "signedAngle": f"{_ANGLES[angle] / (180 / math.pi):.6f}",
+                    # Signed, and alternating, although the cell keys on magnitude. That
+                    # is the point: two observations that differ only in which way the turn
+                    # went have to land in one cell, and a fixture that only ever emits one
+                    # sign would pass whether or not they do.
+                    "signedAngle": f"{_ANGLES[angle] * (1 if position % 2 else -1) / (180 / math.pi):.6f}",
                     "lazerAngle": "", "observedAngle": "",
                     "spacingRadii": f"{_SPACINGS[spacing]:g}",
                     "minJumpRadii": f"{_SPACINGS[spacing]:g}",

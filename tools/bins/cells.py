@@ -16,7 +16,9 @@ from .schema import CONTROLS, FACETS, SCHEMES, Axis, Categorical, Observation
 # Axis name -> the Observation attribute it reads. An axis that is added to the schema
 # without a line here fails loudly on the first observation rather than binning nothing.
 FIELDS: dict[str, str] = {
-    "angle": "angle",
+    # The ANGLE axis bins turn magnitude, not the signed angle: schema 4 folded chirality
+    # out of the key and left it in the data.
+    "angle": "turn",
     "spacing": "spacing",
     "velocity": "velocity",
     "snap": "snap",

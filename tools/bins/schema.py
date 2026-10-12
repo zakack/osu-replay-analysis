@@ -9,9 +9,13 @@ Two rules the rest of the package inherits:
 
 * **Bins, not names.** A cell is a tuple of interval labels. "Wide-angle jump" is a
   presentation label applied afterwards, by the layer allowed to be wrong about it.
-* **Nothing is collapsed to make a table smaller.** Chirality is kept, slider-adjacent
-  turns get their own cells rather than falling into circle cells, and correlated
-  findings are emitted rather than deduplicated. Deduplication is the model's job.
+* **Nothing is collapsed to make a table smaller.** Slider-adjacent turns get their own
+  cells rather than falling into circle cells, and correlated findings are emitted rather
+  than deduplicated. Deduplication is the model's job.
+* **Chirality is kept in the data and out of the key.** Every row still carries a signed
+  angle, so an asymmetry remains measurable; the cell keys on magnitude. Mirror week
+  settled that a pattern and its reflection play the same, and keying on the sign halved
+  every cell's count to record a distinction nobody could find.
 
 Bumping ``SCHEMA_VERSION`` is the signal that cached findings are stale.
 """
@@ -20,7 +24,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 DEG = 180 / math.pi
 
@@ -91,10 +95,28 @@ class Categorical:
 # matters once these labels reach a player. tests/Tests/GeometryTests.cs pins it.
 #
 # Magnitudes match lazer's convention: 180 is straight through, 0 is a full reversal.
+# Turn magnitude: 180 is straight through, 0 doubles back on itself.
+#
+# These edges are measured, not chosen. `tools/analysis/jointedges.py` searches every
+# partition exactly and scores it on maps and on players it was not fitted to -- one
+# player over 3,314 beatmaps held out by map, four thousand players over the same 32 maps
+# held out by player, and a thousand firehose maps -- against miss rate and aim error, the
+# two things a turn is a demand on. The optimum is nested: 5/50/160 at three edges, then
+# 135, then 35, with no earlier edge moving. The gain per edge collapses after the fourth
+# (6.6, 6.3, 6.3, then 1.6 and below), which is where this stops.
+#
+# For comparison on the same test: the old 30-degree grid scored 25.4% and ppy's own 40/140
+# knees 17.7%, against 48.6% here. ppy's are not wrong -- they are tuned to rate a map's
+# difficulty, which turns out not to be the angle at which a player starts missing.
+#
+# Misses and aim error want different edges (misses bend near 50, aim near 135 and 160) and
+# one axis serves both at a cost of about five points each. That price is worth paying:
+# fitted to misses alone every edge lands below 50 degrees, leaving 50 to 180 as a single
+# band, and an axis with no word for "wide angle" cannot carry the vocabulary layer.
 ANGLE = Axis(
     "angle",
-    (-180.0, -150.0, -120.0, -90.0, -60.0, -30.0, 0.0, 30.0, 60.0, 90.0, 120.0, 150.0, 180.0),
-    "degrees, signed",
+    (0.0, 5.0, 50.0, 135.0, 160.0, 180.0),
+    "degrees, turn magnitude",
 )
 
 # Spacing in circle radii rather than osu!pixels, so CS drops out of the comparison.
@@ -228,6 +250,16 @@ class Observation:
     target_x: float | None     # playfield units, 0..512
     target_y: float | None     # playfield units, 0..384, y down
     heading: float | None      # degrees, direction of the jump into the object
+
+    @property
+    def turn(self) -> float | None:
+        """The turn's magnitude, which is what a cell keys on; ``angle`` keeps the sign.
+
+        Both exist on purpose. The charter asks for chirality to stay measurable and Mirror
+        week found it carries nothing, so the sign is recorded and the key is not keyed on
+        it. See ANGLE.
+        """
+        return None if self.angle is None else abs(self.angle)
 
 
 @dataclass(frozen=True, slots=True)

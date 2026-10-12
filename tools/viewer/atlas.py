@@ -68,9 +68,21 @@ class Link:
     entry: float
 
     @property
+    def turn(self) -> float:
+        """The turn's magnitude in degrees, which is what the cell keys on.
+
+        Schema 4 folded chirality out of the key, so a cell holds turns that went both ways
+        and drawing them with their signs would superimpose two mirror-image bundles and
+        call the result a pattern. Reflecting the clockwise ones in is not discarding the
+        asymmetry -- the sign is still on every row -- it is drawing the cell the picture
+        claims to be drawing.
+        """
+        return abs(self.obs.angle)
+
+    @property
     def frame(self) -> tuple[float, float, float]:
-        """(entry radius, signed angle in radians, exit radius). The whole transform."""
-        return (self.entry, self.obs.angle / DEG, self.obs.spacing)
+        """(entry radius, turn in radians, exit radius). The whole transform."""
+        return (self.entry, self.turn / DEG, self.obs.spacing)
 
 
 def rate(rows: list) -> float:
@@ -166,7 +178,10 @@ def corpus_table(all_links: list[Link], drops: collections.Counter) -> dict:
     votes: dict = collections.defaultdict(dict)
     for link in all_links:
         key = (link.obs.beatmap_md5, round(link.obs.start_time, 3))
-        triple = (round(link.entry, 4), round(link.obs.angle, 4), round(link.obs.spacing, 4))
+        # Voted on the magnitude, because that is what the cell is. HR mirrors the
+        # playfield and flips the sign; under schema 4 that is the same cell, so counting
+        # it as a disagreement would drop a map's HR plays for no reason.
+        triple = (round(link.entry, 4), round(link.turn, 4), round(link.obs.spacing, 4))
         slot = votes[key].setdefault(triple, [0, link])
         slot[0] += 1
 
@@ -241,7 +256,7 @@ def density(table: dict, keys: list, origin: tuple[float, float],
     for key in keys:
         link = table[key]
         entry[int(link.entry / ENTRY_BUCKET)] += 1
-        exit_[(int((link.obs.angle - a0) / aw),
+        exit_[(int((link.turn - a0) / aw),
                int((link.obs.spacing - r0) / rw))] += 1
     return {
         "n": len(keys),
@@ -474,7 +489,7 @@ def main() -> int:
     instances = {
         "t": [int(link.obs.start_time) for _, link in ordered],
         "e": [round(link.entry * 100) for _, link in ordered],
-        "a": [round(link.obs.angle * 10) for _, link in ordered],
+        "a": [round(link.turn * 10) for _, link in ordered],
         "x": [round(link.obs.spacing * 100) for _, link in ordered],
         "v": [round((link.obs.velocity or 0) * 10000) for _, link in ordered],
     }
