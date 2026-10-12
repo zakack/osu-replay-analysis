@@ -525,3 +525,14 @@ player language. (2) **Map similarity**: for "a map like X but at Y BPM", maps s
 user tags are a concrete starting set — strictly better than a model's recollection of Reddit
 threads. Server-side against a beatmap's online id and ranked maps only, so it is a
 reference-corpus job; clips carry `OnlineID -1` and can never have them.
+
+## 2026-10-12 — where in the phrase beats what shape the turn is
+
+`tools/analysis/unitsize.py`, run on 3.1M circles
+
+Out-of-sample R^2 on held-out beatmaps: adding |angle| to `snap x spacing` buys +0.0010 for
+3.4x the groups; adding run position buys +0.0053 for 2.5x. `snap x spacing x run position`
+(503 groups) beats the current `snap x spacing x signed angle` (1175) outright. Angle is the
+axis the charter's feature design is built around, and on this player it is nearly the least
+informative thing about an object. Unclear whether this is a property of this player, of
+osu! maps, or of hit error as the target -- aim error may well rank angle differently.
