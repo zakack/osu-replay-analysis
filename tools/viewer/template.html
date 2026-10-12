@@ -1,3 +1,5 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Reference Lap</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -357,16 +359,16 @@
 <div class="shell">
   <header class="masthead">
     <div>
-      <h1>Reference Lap</h1>
+      <h1 id="title">Reference Lap</h1>
       <p class="sub">
         <span class="lede" id="map-name">&nbsp;</span><br>
-        Your cursor against five top-50 players on the same beatmap. The seek bar below is
+        <span id="blurb"></span> The seek bar below is
         the play&rsquo;s hit error, one mark per object.
       </p>
     </div>
     <div class="stamp">
       <div><span class="k">Your spread</span><span class="v" id="s-you">&mdash;</span></div>
-      <div><span class="k">Reference</span><span class="v" id="s-ref">&mdash;</span></div>
+      <div><span class="k" id="k-ref">Reference</span><span class="v" id="s-ref">&mdash;</span></div>
       <div><span class="k">Accuracy</span><span class="v" id="s-acc">&mdash;</span></div>
     </div>
   </header>
@@ -403,7 +405,7 @@
         </div>
         <div class="ref-line">
           <span class="glyphs" id="j-glyphs"></span>
-          <span class="ref-mean" id="j-ref">reference</span>
+          <span class="ref-mean" id="j-ref"></span>
         </div>
         <div class="readout"><span>combo</span><span id="j-combo">0</span></div>
         <div class="readout"><span>objects judged</span><span id="j-count">0 / 0</span></div>
@@ -442,6 +444,12 @@
   "use strict";
 
   var DATA = JSON.parse(document.getElementById("payload").textContent);
+
+  // What the ghost field *is*. A reference field is other people; an all-me field is the
+  // same hand on other days, and calling that "reference" would misdescribe every number
+  // derived from it. Older payloads carry no "field", so reference stays the default.
+  var FIELD = DATA.field || "reference";
+  var SELF = FIELD === "your runs";
   var SCENE = DATA.scene;
   var OBJ = SCENE.objects;
   var PF = SCENE.playfield;
@@ -1019,8 +1027,8 @@
     });
 
     elRef.textContent = n
-      ? "reference " + (sum / n > 0 ? "+" : "") + (sum / n).toFixed(1) + " ms"
-      : "reference \u2014";
+      ? FIELD + " " + (sum / n > 0 ? "+" : "") + (sum / n).toFixed(1) + " ms"
+      : FIELD + " \u2014";
   }
 
   function readout(t) {
@@ -1040,7 +1048,7 @@
       elError.style.color = "";
       elWord.textContent = "waiting";
       elGlyphs.textContent = "";
-      elRef.textContent = "reference";
+      elRef.textContent = FIELD;
       return;
     }
 
@@ -1152,8 +1160,14 @@
 
   playBtn.addEventListener("click", function () { setPlaying(!playing); });
 
-  var showMarkers = true;
+  // Same reasoning as the brake above. Markers persist for the whole run, so the field
+  // carries one per press per cursor: at four reference laps that is a readable record of
+  // where everyone put their taps, and at a dozen it is a grey wash with the play hidden
+  // under it. Past that many cursors the button offers them instead of imposing them.
+  var MARKERS_BY_DEFAULT = 6;
+  var showMarkers = ghosts.length <= MARKERS_BY_DEFAULT;
   var markerBtn = document.getElementById("markers");
+  markerBtn.setAttribute("aria-pressed", showMarkers ? "true" : "false");
   markerBtn.addEventListener("click", function () {
     showMarkers = !showMarkers;
     markerBtn.setAttribute("aria-pressed", showMarkers ? "true" : "false");
@@ -1260,6 +1274,18 @@
   document.getElementById("map-name").textContent =
     SCENE.beatmap.artist + " — " + SCENE.beatmap.title + " [" + SCENE.beatmap.difficulty + "]" +
     (SCENE.mods.length ? "  ·  " + SCENE.mods.join(" ") : "  ·  no mod");
+  var heading = SELF ? "Your Own Laps" : "Reference Lap";
+  document.getElementById("title").textContent = heading;
+  document.title = heading;
+  document.getElementById("k-ref").textContent = SELF ? "Your median" : "Reference";
+  document.getElementById("blurb").textContent = DATA.ghosts.length
+    ? (SELF
+        ? "This run against " + DATA.ghosts.length + " of your own other runs of the same "
+          + "beatmap, oldest to newest."
+        : "Your cursor against " + DATA.ghosts.length
+          + " top-50 " + (DATA.ghosts.length === 1 ? "player" : "players")
+          + " on the same beatmap.")
+    : "One run, no comparison field.";
   document.getElementById("s-you").textContent = DATA.you.sd.toFixed(2) + " ms";
   document.getElementById("s-ref").textContent = median.toFixed(2) + " ms";
   document.getElementById("s-acc").textContent = (acc * 100).toFixed(2) + "%";

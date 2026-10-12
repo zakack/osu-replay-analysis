@@ -11,6 +11,12 @@ policy blocks them and a viewer that cannot load its own data is not a viewer.
 With `--auto N` the reference field is chosen for you: the N highest-pp no-mod lazer
 scores on the same beatmap that the corpus already has.
 
+With `--mine N` the field is *you*, N of your own other completed runs on the same beatmap,
+sampled evenly across the span you have been playing it. The comparison stops being "a
+better player's line" and becomes your own spread: the same objects, the same hand, on
+different days. Each ghost is labelled by date and carries its own timing spread, so the
+roster reads as a history rather than a leaderboard.
+
 Reference players contribute frames and per-object errors only, never geometry. They are
 on the same beatmap, so the objects are already in the document once, and object index is
 the join key — the scene pass emits objects in start-time order for every replay of a
@@ -21,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import statistics
 import subprocess
 import sys
@@ -79,6 +86,38 @@ def corpus_lookup(md5: str, limit: int) -> list[str]:
     return [path for _, path, _ in rows[:limit]]
 
 
+def own_runs(md5: str, limit: int, exclude: str) -> list[str]:
+    """N of my own other completed runs on one beatmap, spread across their whole span.
+
+    Evenly sampled rather than best-first or most-recent, because the question an all-me
+    field answers is how much the same hand varies, and taking the top N by anything
+    answers a narrower one. The corpus is in no particular order, so sort before sampling.
+    """
+    corpus = json.load(open(os.path.join(ROOT, "build", "corpus.json")))
+    paths = sorted(record["Path"] for record in corpus
+                   if record["BeatmapMd5"] == md5 and record.get("Paired")
+                   and os.path.abspath(record["Path"]) != os.path.abspath(exclude))
+
+    if len(paths) <= limit:
+        return paths
+
+    # Endpoints included, so the span is actually shown rather than its middle.
+    step = (len(paths) - 1) / (limit - 1) if limit > 1 else 0
+    return [paths[round(i * step)] for i in range(limit)]
+
+
+def when(path: str) -> str:
+    """The run's date, from the name lazer exported it under: `... (2026-01-09_11-55).osr`.
+
+    This is the ghost label for an all-me field, where every name would otherwise be the
+    same word. Falls back to the bare file name, which is wrong-looking rather than silently
+    identical -- two ghosts sharing a label would make the roster unreadable.
+    """
+    stamp = re.search(r"\((\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})\)", os.path.basename(path))
+    return f"{stamp.group(1)} {stamp.group(2)}:{stamp.group(3)}" if stamp \
+        else os.path.splitext(os.path.basename(path))[0][-24:]
+
+
 def username(path: str) -> str:
     """Whoever set the score, from the fetch manifest, falling back to the file name."""
     try:
@@ -101,7 +140,12 @@ def main() -> int:
     parser.add_argument("--reference", nargs="*", default=[], help="other players' replays")
     parser.add_argument("--auto", type=int, default=0,
                         help="instead, take the N best no-mod lazer scores from the corpus")
+    parser.add_argument("--mine", type=int, default=0,
+                        help="instead, take N of your own other runs on the same beatmap")
     args = parser.parse_args()
+
+    if args.auto and args.mine:
+        raise SystemExit("--auto and --mine are different fields; pick one")
 
     if not os.path.exists(ORA):
         raise SystemExit(f"no release build at {ORA}; run: dotnet build -c Release")
@@ -111,10 +155,14 @@ def main() -> int:
         print(f"{len(subject['objects'])} objects, {subject['frameCount']} frames, "
               f"spread {spread(subject)}ms")
 
-        paths = args.reference
+        paths, field = args.reference, "reference"
         if args.auto:
             paths = corpus_lookup(subject["beatmapMd5"], args.auto)
             print(f"reference field: {len(paths)} no-mod lazer scores from the corpus")
+        elif args.mine:
+            paths = own_runs(subject["beatmapMd5"], args.mine, args.replay)
+            field = "your runs"
+            print(f"own field: {len(paths)} of your other runs on this beatmap")
 
         ghosts = []
         for n, path in enumerate(paths):
@@ -126,6 +174,15 @@ def main() -> int:
                 print(f"  skipped {os.path.basename(path)}: different beatmap")
                 continue
 
+            # Same speed, or the overlay compares two different demands. The reference path
+            # filters to no-mod before it gets here; an all-me field cannot, because the
+            # corpus holds every completed run and the player does use rate mods.
+            if other["rate"] != subject["rate"] or other["mods"] != subject["mods"]:
+                print(f"  skipped {when(path)}: {other['mods'] or 'no mod'} at "
+                      f"{other['rate']}x, not {subject['mods'] or 'no mod'} at "
+                      f"{subject['rate']}x")
+                continue
+
             # Where each of their presses landed, not just how they moved. The viewer
             # leaves these on the field the same way it leaves the player's, which is what
             # makes a stream's evenness checkable: a row of marks either steps along the
@@ -135,7 +192,7 @@ def main() -> int:
                      if o.get("hx") is not None and o.get("hitTime") is not None]
 
             ghosts.append({
-                "name": username(path),
+                "name": when(path) if args.mine else username(path),
                 "sd": spread(other),
                 "frames": other["frames"],
                 "marks": marks,
@@ -145,7 +202,8 @@ def main() -> int:
             print(f"  {ghosts[-1]['name']:<18} spread {ghosts[-1]['sd']}ms")
 
     payload = json.dumps(
-        {"scene": subject, "ghosts": ghosts, "you": {"name": "you", "sd": spread(subject)}},
+        {"scene": subject, "ghosts": ghosts, "field": field,
+         "you": {"name": "you", "sd": spread(subject)}},
         separators=(",", ":"))
 
     with open(TEMPLATE) as handle:
