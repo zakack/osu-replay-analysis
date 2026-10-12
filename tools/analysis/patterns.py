@@ -100,6 +100,24 @@ def _num(raw):
     return float(raw) if raw not in ("", None) else None
 
 
+def flow(previous, current):
+    """Did this turn go the same way round as the one before it?
+
+    One bit, and it is not chirality. Per-object sign was folded out because Mirror week
+    found a left turn costs what a right turn costs. Whether two consecutive turns *agree*
+    is a different property, and a mirror cannot touch it: reflecting a map flips both
+    signs, so same stays same. Without it a square and a 90-degree back-and-forth spell
+    identically, and so do a star and a zigzag -- measured on the shared corpus, four
+    turns of 50-135 degrees at 4.5-6 radii are 79% one-way-round, while the same spelling
+    at 2-2.5 radii is 43% alternating.
+
+    ``s`` same way round, ``o`` opposite, ``.`` nothing to compare against.
+    """
+    if previous is None or current is None:
+        return "."
+    return "s" if (previous >= 0) == (current >= 0) else "o"
+
+
 def spell(row, edges, with_kind):
     """One object's symbol, or None if it cannot be spelled.
 
@@ -171,23 +189,35 @@ def read_maps(replays: dict[str, str]) -> dict[str, list[dict]]:
     return objects, total
 
 
-def segments(objects, edges, with_kind):
+def segments(objects, edges, with_kind, with_flow=False):
     """Spelled runs of objects, cut at group boundaries and wherever a symbol is missing.
 
     Yields (start index into `objects`, list of symbols).
     """
     out, current, start = [], [], 0
     last_group = None
+    previous_angle = None
     for i, o in enumerate(objects):
         sym = spell(o, edges, with_kind)
+
         if sym is None or o["group"] != last_group:
             if len(current) >= 2:
                 out.append((start, current))
             current, start = [], i
+            # A phrase begins with nothing to compare against. Carrying the previous
+            # segment's turn across a rest would read a relationship between two objects
+            # with a gap between them.
+            previous_angle = None
             last_group = o["group"] if sym is not None else None
             if sym is None:
                 last_group = None
                 continue
+
+        angle = _num(o["signedAngle"])
+        if with_flow:
+            sym += "|" + flow(previous_angle, angle)
+        previous_angle = angle
+
         if not current:
             start = i
         current.append(sym)
