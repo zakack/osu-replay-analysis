@@ -22,7 +22,8 @@ namespace Extract;
 /// the same time; mod-adjusted ratings are never stored. -1 means not computed yet.
 /// </summary>
 public sealed record IndexEntry(string Md5, string Sha256, string Path, string Artist, string Title, string Difficulty,
-                                double Offset = 0, double StarRating = -1);
+                                double Offset = 0, double StarRating = -1,
+                                int AuthorId = 0, string Author = "");
 
 public static class BeatmapIndex
 {
@@ -73,7 +74,15 @@ public static class BeatmapIndex
                     beatmap.Metadata.Title,
                     beatmap.DifficultyName,
                     beatmap.UserSettings?.Offset ?? 0,
-                    beatmap.StarRating));
+                    beatmap.StarRating,
+                    // Per difficulty, not per set. A guest difficulty on someone else's
+                    // beatmapset is that guest's work, which is what osu.ppy.sh shows and
+                    // what the `.osu` file cannot say: its Creator field is the set host
+                    // and is identical across every difficulty in the set.
+                    // BeatmapUpdaterMetadataLookup fills this id from the server; the
+                    // username beside it is the host's, so the id is the thing to group on.
+                    beatmap.Metadata.Author?.OnlineID ?? 0,
+                    beatmap.Metadata.Author?.Username ?? string.Empty));
             }
         });
 
