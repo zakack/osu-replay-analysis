@@ -511,3 +511,17 @@ Several Twinkle clip scores share exactly the same alignment stats (presses, dri
 `build/traces/2026-10-11T19-40-32.align.json`, rows sharing offset_ms (e.g. 934287848 ×3)
 
 The ranks differ (D/B/C), so these are separate plays: align.py hands a later play the earlier play's press run. The tablet USB disconnects (kernel log 19:47:31, 20:09:15) do not line up with them or with the 225 px row (19:43).
+
+## 2026-10-11 — lazer's user tags are a crowd-sourced vocabulary and a map-similarity seed
+
+`tools/reference/fetch.py` (where an API-side fetch would attach); not to be confused with the
+`.osu` `[Metadata] Tags:` line that `src/Extract/Clip.cs` writes `clip:` provenance into
+
+Two uses, both for the layer CLAUDE.md assigns to the model. (1) **Vocabulary**: user tags are
+voted player descriptors ("wide jumps", "bursts", "difficulty ramp"), so a cell like
+`-30:0|8:10|0.5` could be named by checking which tags the maps populating it actually carry,
+instead of a model inventing a phrase. That makes the naming layer checkable against real
+player language. (2) **Map similarity**: for "a map like X but at Y BPM", maps sharing many
+user tags are a concrete starting set — strictly better than a model's recollection of Reddit
+threads. Server-side against a beatmap's online id and ranked maps only, so it is a
+reference-corpus job; clips carry `OnlineID -1` and can never have them.
