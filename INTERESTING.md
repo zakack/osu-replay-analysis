@@ -536,3 +536,15 @@ Out-of-sample R^2 on held-out beatmaps: adding |angle| to `snap x spacing` buys 
 axis the charter's feature design is built around, and on this player it is nearly the least
 informative thing about an object. Unclear whether this is a property of this player, of
 osu! maps, or of hit error as the target -- aim error may well rank angle differently.
+
+## 2026-10-12 — the timing diagnosis flipped from diffuse to concentrated on a recut alone
+
+`PYTHONPATH=tools python3 -m bins rank` under schema 4 vs the schema 3 table
+
+Same corpus, same player, same metric; only the angle bands changed. Schema 3 called this
+player's timing *diffuse* -- "a baseline, not a pattern, no cell drill fixes it". Schema 4
+calls it *concentrated*. The signal was never absent: `135:160|1:1.5|0.25` (n=138k, 1.41x
+own baseline, 6.9% of recoverable error) was split across four schema 3 cells reading 34.98,
+33.22, 34.45 and 32.99 ms -- two chirality mirrors and a 30-degree edge through the middle --
+each individually under the 5% share bar. A verdict that says "no pattern here" is partly a
+statement about where the bin edges fell.
