@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import collections
 import glob
+import hashlib
 import json
 import os
 import sys
@@ -40,6 +41,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 ARCHIVES = (("dailies", "/mnt/datasets/osu-dailies"),
             ("firehose", "/mnt/datasets/osu-firehose"))
 RATE_MODS = {"DT", "NC", "HT", "DC"}
+
+# Beatmaps the library does not hold, fetched separately and named by their own md5. Checked
+# rather than trusted: a mirror can serve a later revision of a map under the same id, and a
+# beatmap whose contents hash to something else is not the beatmap the replay was set on.
+# Getting that wrong would not raise anywhere -- it would quietly compare a play against
+# different geometry.
+MIRROR = os.path.join("build", "mirror-beatmaps")
 
 
 def osr_md5(path: str) -> str | None:
@@ -82,6 +90,19 @@ def main() -> int:
     out, stats = [], collections.Counter()
     missing_maps = collections.Counter()
 
+    def beatmap_path(md5: str) -> str | None:
+        """Where this beatmap lives: the lazer store, or the mirror fetch, or nowhere."""
+        entry = index.get(md5)
+        if entry is not None:
+            return entry["Path"]
+        fetched = os.path.join(ROOT, MIRROR, f"{md5}.osu")
+        if not os.path.exists(fetched):
+            return None
+        with open(fetched, "rb") as f:
+            if hashlib.md5(f.read()).hexdigest() != md5:
+                return None
+        return fetched
+
     for name, root in ARCHIVES:
         meta = {}
         listing = os.path.join(root, "replays.jsonl")
@@ -104,17 +125,19 @@ def main() -> int:
                 stats[f"{name}: unreadable"] += 1
                 continue
 
-            entry = index.get(md5) if md5 else None
-            if entry is None:
+            where = beatmap_path(md5) if md5 else None
+            if where is None:
                 stats[f"{name}: beatmap not held"] += 1
                 if md5:
                     missing_maps[md5] += 1
                 continue
+            if md5 not in index:
+                stats[f"{name}: from the mirror"] += 1
 
             out.append({
                 "Path": path,
                 "BeatmapMd5": md5,
-                "BeatmapPath": entry["Path"],
+                "BeatmapPath": where,
                 "Paired": True,
                 "Source": name,
                 "UserId": record.get("user_id"),
