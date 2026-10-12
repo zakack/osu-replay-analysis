@@ -82,6 +82,20 @@ ANGLE_BANDS = {
     # The schema's own, measured rather than chosen, so a pattern's spelling and the
     # findings table cannot disagree about what band an object is in.
     "schema4": tuple(ANGLE.edges[1:-1]),
+    # For naming shapes rather than predicting error, which are different jobs. The cell
+    # axis was cut where miss rate and aim error bend; a triangle and a square bend nothing
+    # and are still obviously different patterns.
+    #
+    # The two extra edges are where the corpus is empty, not where geometry says a polygon
+    # ought to be. Over 435 steady one-way-round runs of four turns, the mean turn has
+    # troughs at 70-75 and 95-100 degrees and clusters either side; 50 is already a trough,
+    # which is some reassurance about the cell axis. Measured before placing them, because
+    # "triangles and squares are different" is exactly the kind of thing one can find in
+    # data by expecting it.
+    #
+    # Note the set is a strict refinement of schema4: every naming band nests inside one
+    # cell band, so a pattern's name and its cell can never disagree.
+    "naming": (5.0, 50.0, 72.0, 97.0, 135.0, 160.0),
 }
 
 def angle_symbol(degrees, edges):
@@ -306,6 +320,8 @@ def main() -> int:
     parser.add_argument("--examples", type=int, default=1)
     parser.add_argument("--show", default="ppy 3", choices=list(ANGLE_BANDS),
                         help="which banding to print example patterns from")
+    parser.add_argument("--flow", action="store_true",
+                        help="add the same-way-round bit, which tells a star from a zigzag")
     parser.add_argument("--cache", help="parse once into this JSON and reuse it after; the "
                                         "two source CSVs are 1.4GB and the parse dominates")
     args = parser.parse_args()
@@ -340,11 +356,13 @@ def main() -> int:
 
     if args.cross:
         edges = ANGLE_BANDS[args.show]
-        spelled = {md5: segments(loaded[md5], edges, False) for md5 in chosen}
+        spelled = {md5: segments(loaded[md5], edges, False, with_flow=args.flow)
+                   for md5 in chosen}
         shared = vocabulary(spelled, args.min_len, 8, args.cross)
 
-        print(f"{len(chosen)} beatmaps, turn spelled {args.show!r}, pattern length "
-              f"{args.min_len}-8, kept when seen on {args.cross}+ beatmaps\n")
+        print(f"{len(chosen)} beatmaps, turn spelled {args.show!r}"
+              f"{' + flow' if args.flow else ''}, pattern length {args.min_len}-8, "
+              f"kept when seen on {args.cross}+ beatmaps\n")
         print(f"sequences shared across the corpus: {len(shared):,}")
 
         claimed = tiled = objects = 0

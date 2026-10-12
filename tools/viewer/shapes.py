@@ -28,33 +28,39 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 # What to show, and what a player would call it. The names are presentation only -- nothing
 # downstream reads them, and the charter keeps naming away from membership.
+# Bands under "naming": a0 0-5, a1 5-50 (star point), a2 50-72 (triangle),
+# a3 72-97 (square), a4 97-135 (pentagon and rounder), a5 135-160, a6 160-180.
+# Each entry carries its own run length, because the natural one differs by shape and a
+# fixed run is the wrong detector. A four-object square has two interior turns; asking for
+# four consecutive square corners asks for a hexagon's worth of right angles, and finds 6
+# instances where asking for two finds 188 across 87 beatmaps. A pentagram has five
+# star-point turns by construction and sustains happily.
 WANTED = [
-    ("0.5|6:8|a1|s",     "Star / rosette", "sharp turns, all the same way round, 6-8 radii"),
-    ("0.5|4.5:6|a1|s",   "Star, tighter", "the same figure at 4.5-6 radii"),
-    ("0.5|4.5:6|a2|s",   "Square / circle jumps", "right-angle turns, all the same way round"),
-    ("0.25|1.5:2|a2|s",  "Small square", "right angles at stream spacing"),
-    ("0.5|6:8|a1|o",     "Zigzag jumps", "the same sharp turns, alternating -- not a star"),
-    ("0.25|0:1|a2|o",    "Right-angle back-and-forth", "alternating, nearly stacked"),
-    ("0.25|1:1.5|a3|s",  "Curved stream", "gentle turns, one way round"),
-    ("0.25|0:1|a4|s",    "Straight stream", "no turn to speak of"),
+    ("0.5|6:8|a1|s",    4, "Star / rosette", "star-point turns, all one way round, 6-8 radii"),
+    ("0.5|4.5:6|a1|s",  4, "Star, tighter", "the same figure at 4.5-6 radii"),
+    ("0.5|4.5:6|a2|s",  3, "Triangle jumps", "50-72 degrees, one way round"),
+    ("0.5|4.5:6|a3|s",  2, "Square jumps", "72-97 degrees; two turns, which is all a square has"),
+    ("0.5|6:8|a3|s",    2, "Square jumps, wider", "the same corner at 6-8 radii"),
+    ("0.25|1.5:2|a4|s", 4, "Pentagon and rounder", "97-135 degrees -- what the old band hid"),
+    ("0.5|6:8|a1|o",    4, "Zigzag jumps", "the same star-point turns, alternating"),
+    ("0.25|1:1.5|a5|s", 4, "Curved stream", "gentle turns, one way round"),
 ]
-RUN = 4          # consecutive identical symbols that make an instance
 PER = 8          # tiles per pattern
 
 
-def instances(blob, symbol, limit):
+def instances(blob, symbol, run, limit):
     """Up to `limit` instances of `symbol` repeated RUN times, each from a different map
     where possible, as lists of (x, y)."""
-    edges = P.ANGLE_BANDS["schema4"]
+    edges = P.ANGLE_BANDS["naming"]
     found, seen = [], collections.Counter()
     for md5, rows in blob["objects"].items():
         for start, syms in P.segments(rows, edges, False, with_flow=True):
-            for i in range(len(syms) - RUN + 1):
-                if any(s != symbol for s in syms[i:i + RUN]):
+            for i in range(len(syms) - run + 1):
+                if any(s != symbol for s in syms[i:i + run]):
                     continue
-                # A turn at object j is drawn by j-1, j, j+1, so a run of RUN turns spans
+                # A turn at object j is drawn by j-1, j, j+1, so a run of `run` turns spans
                 # the apexes plus one neighbour at each end.
-                lo, hi = start + i - 1, start + i + RUN + 1
+                lo, hi = start + i - 1, start + i + run + 1
                 if lo < 0 or hi > len(rows):
                     continue
                 pts = []
@@ -64,7 +70,7 @@ def instances(blob, symbol, limit):
                         pts = []
                         break
                     pts.append((float(x), float(y)))
-                if len(pts) >= RUN + 2:
+                if len(pts) >= run + 2:
                     found.append((md5, pts))
     found.sort(key=lambda kv: seen[kv[0]])
     out = []
@@ -101,14 +107,14 @@ def main() -> int:
 
     blob = json.load(open(args.cache))
     blocks = []
-    for symbol, title, note in WANTED:
-        got = instances(blob, symbol, PER)
-        print(f"{symbol:<22}{len(got):>3} drawn   {title}")
+    for symbol, run, title, note in WANTED:
+        got = instances(blob, symbol, run, PER)
+        print(f"{symbol:<20}x{run}{len(got):>4} drawn   {title}")
         if not got:
             continue
         tiles = "".join(f'<div class="tile">{svg(p)}</div>' for p in got)
         blocks.append(f'<section><h2>{title}</h2>'
-                      f'<p class="sym"><code>{symbol}</code> &middot; {note}</p>'
+                      f'<p class="sym"><code>{symbol}</code> &times;{run} &middot; {note}</p>'
                       f'<div class="row">{tiles}</div></section>')
 
     html = f"""<meta charset="utf-8">
