@@ -70,14 +70,19 @@ def main() -> int:
     parser.add_argument("--player", default="zaksynack",
                         help="player source only; the corpus holds other people's imports")
     parser.add_argument("--quiet", action="store_true", help="write the JSON, print little")
+    parser.add_argument("--split", default="beatmap", choices=("beatmap", "player"),
+                        help="what the two halves are split on. Splitting on the beatmap "
+                             "asks whether a shape survives unseen maps; splitting on the "
+                             "player, with the same maps both sides, asks whether it is "
+                             "this population's or just these people's")
     args = parser.parse_args()
 
     # Behaviour is accumulated in two halves split on the beatmap, so band edges can be
     # chosen on one half and scored on the other. Edges fitted and judged on the same maps
     # are edges fitted to this corpus's noise, and the whole point of the exercise is that
     # they are about to be frozen into a schema version.
-    def half(md5):
-        return int(hashlib.blake2b(md5.encode(), digest_size=8).hexdigest(), 16) & 1
+    def half(key):
+        return int(hashlib.blake2b(str(key).encode(), digest_size=8).hexdigest(), 16) & 1
 
     which = {"player": "corpus.json", "reference": "corpus-nm.json",
              "collected": "corpus-collected.json"}[args.source]
@@ -99,7 +104,13 @@ def main() -> int:
     for record in keep:
         name = os.path.basename(record["Path"])
         one_per_map.setdefault(record["BeatmapMd5"], name)
-        side[name] = half(record["BeatmapMd5"])
+        if args.split == "player":
+            who = record.get("UserId")
+            if who is None:
+                continue
+            side[name] = half(who)
+        else:
+            side[name] = half(record["BeatmapMd5"])
     representative = set(one_per_map.values())
 
     nb = int(round(180.0 / args.width))
