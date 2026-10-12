@@ -34,9 +34,17 @@ spells as one symbol repeated 128 times and tiles itself perfectly, which is a r
 but tells nobody anything. **Non-constant** coverage -- tiles whose symbols are not all
 identical -- is what says whether osu! maps repeat multi-object *shapes* at all.
 
-Four alphabets are run, because the full spelling is about 1,150 symbols wide and exact
-repeats at that resolution are rare. The falloff across the ladder is the finding, not a
-nuisance: it prices what each axis costs in repeatability.
+Snap and spacing are always in the symbol. What varies across the rows is how finely the
+turn is spelled, because that is the axis that decides whether anything repeats at all: a
+30-degree grid over a continuous quantity breaks a repeat whenever one object of it sits
+near a band edge, and measured here it costs more than half the shapes on some maps.
+
+The bands worth having are not a grid. ppy's own aim evaluator does not bin angle -- it
+ramps between 40 and 140 degrees on the unsigned angle -- so those two knees are the only
+externally motivated place to cut, and `ppy 3` beats the 30-degree grid on every map tried.
+Note what that does and does not say: coarsening is not approximate matching. Matching stays
+exact, and which band an object is in stays a property of that object alone, which is the
+charter's rule and the thing an edit-distance match would give up.
 
     python3 tools/analysis/patterns.py --maps <md5> <md5> ...
 """
@@ -58,34 +66,57 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 TOLERANCE = "0.02"      # the rhythm run segmentation the findings table uses
 DEG = 180.0 / math.pi
 
-# snap, spacing, |angle|, kind -- each level adds one component to the symbol.
-ALPHABETS = ("snap", "snap+spacing", "snap+spacing+|angle|", "snap+spacing+|angle|+kind")
+# How coarsely to spell the turn. The 30-degree grid is the findings table's, and it is an
+# arbitrary grid: nothing about play changes at 60 degrees. ppy's own aim evaluator does not
+# bin angle at all -- SnapAimEvaluator ramps smoothly between 40 and 140 degrees, on the
+# unsigned angle, which is where "acute" stops and "wide" starts in the only published model
+# of this. Those two numbers are the one externally motivated place to cut.
+#
+# A symbol has to be discrete, so the ramp cannot be used directly. The nearest honest thing
+# is to cut at its knees and let the continuous value stay an attribute of the instance.
+ANGLE_BANDS = {
+    "none":   None,
+    "2 band": (90.0,),
+    "ppy 3":  (40.0, 140.0),
+    "6 band": (30.0, 60.0, 90.0, 120.0, 150.0),
+}
+
+def angle_symbol(degrees, edges):
+    """Which band an unsigned turn falls in. 180 is straight through, 0 doubles back."""
+    if edges is None:
+        return ""
+    lo = 0.0
+    for i, e in enumerate(edges):
+        if degrees < e:
+            return f"a{i}"
+        lo = e
+    return f"a{len(edges)}"
 
 
 def _num(raw):
     return float(raw) if raw not in ("", None) else None
 
 
-def spell(row, level):
-    """One object's symbol at one alphabet level, or None if it cannot be spelled."""
+def spell(row, edges, with_kind):
+    """One object's symbol, or None if it cannot be spelled.
+
+    Always snap and spacing; the turn at whatever resolution `edges` asks for. Folded,
+    because a pattern and its mirror image are the same pattern.
+    """
     snap = row["snap"]
     if not snap:
         return None
-    parts = [snap]
-    if level >= 1:
-        s = _num(row["spacingRadii"])
-        b = SPACING.bin(s) if s is not None else None
-        if b is None:
-            return None
-        parts.append(b)
-    if level >= 2:
+    s = _num(row["spacingRadii"])
+    band = SPACING.bin(s) if s is not None else None
+    if band is None:
+        return None
+    parts = [snap, band]
+    if edges is not None:
         a = _num(row["signedAngle"])
-        # Folded. A pattern and its mirror image are the same pattern.
-        b = ANGLE.bin(abs(a) * DEG) if a is not None else None
-        if b is None:
+        if a is None:
             return None
-        parts.append(b)
-    if level >= 3:
+        parts.append(angle_symbol(abs(a) * DEG, edges))
+    if with_kind:
         parts.append(row["kind"][:2])
     return "|".join(parts)
 
@@ -137,7 +168,7 @@ def read_maps(replays: dict[str, str]) -> dict[str, list[dict]]:
     return objects, total
 
 
-def segments(objects, level):
+def segments(objects, edges, with_kind):
     """Spelled runs of objects, cut at group boundaries and wherever a symbol is missing.
 
     Yields (start index into `objects`, list of symbols).
@@ -145,7 +176,7 @@ def segments(objects, level):
     out, current, start = [], [], 0
     last_group = None
     for i, o in enumerate(objects):
-        sym = spell(o, level)
+        sym = spell(o, edges, with_kind)
         if sym is None or o["group"] != last_group:
             if len(current) >= 2:
                 out.append((start, current))
@@ -212,6 +243,8 @@ def main() -> int:
     parser.add_argument("--maps", nargs="+", required=True, help="beatmap md5 prefixes")
     parser.add_argument("--min-len", type=int, default=3)
     parser.add_argument("--examples", type=int, default=1)
+    parser.add_argument("--show", default="ppy 3", choices=list(ANGLE_BANDS),
+                        help="which banding to print example patterns from")
     parser.add_argument("--cache", help="parse once into this JSON and reuse it after; the "
                                         "two source CSVs are 1.4GB and the parse dominates")
     args = parser.parse_args()
@@ -235,38 +268,47 @@ def main() -> int:
             json.dump({"objects": loaded, "total": total}, open(args.cache, "w"))
 
     print(f"min pattern length {args.min_len}, chirality folded, patterns confined to "
-          f"rhythm groups.\n'objs' is every object on the map; 'grp' the share of them "
-          f"inside a group, which is all a pattern\ncan ever claim. 'shape' is coverage "
-          f"by tiles that are not one symbol repeated.\n")
-    header = (f"{'map':<32}{'objs':>6}{'grp':>5}  {'alphabet':<22}{'syms':>6}"
-              f"{'pats':>6}{'cover':>7}{'shape':>7}{'med':>5}")
+          f"rhythm groups.\nSnap and spacing are always in the symbol; the rows vary how "
+          f"finely the turn is spelled.\n'shape' is coverage by tiles that are not one "
+          f"symbol repeated -- the number that matters,\nsince a stream tiles itself at "
+          f"any resolution. 'grp' is the share of objects inside a group.\n")
+    header = (f"{'map':<30}{'objs':>6}{'grp':>5}  {'turn spelled as':<16}{'kind':>5}"
+              f"{'syms':>6}{'pats':>6}{'cover':>7}{'shape':>7}{'med':>5}")
     print(header)
 
     for md5 in chosen:
         objects = loaded[md5]
         objs = total[md5]
         meta = index.get(md5, {})
-        name = f"{str(meta.get('Title','?'))[:22]} [{str(meta.get('Difficulty','?'))[:8]}]"
-        for level, alphabet in enumerate(ALPHABETS):
-            segs = segments(objects, level)
-            found = repeats(segs, min_len=args.min_len)
-            claimed, kept = tile(found, len(objects), args.min_len)
-            cover = sum(1 for c in claimed if c is not None) / max(objs, 1)
-            nonconst = sum(1 for c in claimed if c is not None
-                           and len(set(c)) > 1) / max(objs, 1)
-            alpha = len({s for _, syms in segs for s in syms})
-            lens = sorted(len(p) for p, _ in kept)
-            med = lens[len(lens)//2] if lens else 0
-            grouped = f"{len(objects)/max(objs,1):.0%}" if level == 0 else ""
-            print(f"{name if level==0 else '':<32}{objs if level==0 else '':>6}{grouped:>5}  "
-                  f"{alphabet:<22}{alpha:>6}{len(kept):>6}{cover:>6.0%}{nonconst:>7.0%}{med:>5}")
-
-            if level == len(ALPHABETS) - 1 and args.examples:
-                shaped = [(p, locs) for p, locs in kept if len(set(p)) > 1]
-                shaped.sort(key=lambda kv: -len(kv[1]) * len(kv[0]))
-                for p, locs in shaped[:args.examples]:
-                    print(f"{'':<39}{'most-repeated shape: ':<22}"
-                          f"x{len(locs)}  " + "  ".join(p[:4]) + (" ..." if len(p) > 4 else ""))
+        name = f"{str(meta.get('Title','?'))[:20]} [{str(meta.get('Difficulty','?'))[:6]}]"
+        first = True
+        best = None
+        for label, edges in ANGLE_BANDS.items():
+            for with_kind in (False, True):
+                segs = segments(objects, edges, with_kind)
+                found = repeats(segs, min_len=args.min_len)
+                claimed, kept = tile(found, len(objects), args.min_len)
+                cover = sum(1 for c in claimed if c is not None) / max(objs, 1)
+                shape = sum(1 for c in claimed if c is not None
+                            and len(set(c)) > 1) / max(objs, 1)
+                alpha = len({s for _, syms in segs for s in syms})
+                lens = sorted(len(p) for p, _ in kept)
+                med = lens[len(lens)//2] if lens else 0
+                grouped = f"{len(objects)/max(objs,1):.0%}" if first else ""
+                print(f"{name if first else '':<30}{objs if first else '':>6}{grouped:>5}  "
+                      f"{label:<16}{('yes' if with_kind else 'no'):>5}{alpha:>6}"
+                      f"{len(kept):>6}{cover:>6.0%}{shape:>7.0%}{med:>5}")
+                first = False
+                if label == args.show and with_kind and args.examples:
+                    best = kept
+        if best and args.examples:
+            shaped = [(p, locs) for p, locs in best if len(set(p)) > 1]
+            shaped.sort(key=lambda kv: -len(kv[1]) * len(kv[0]))
+            for p, locs in shaped[:args.examples]:
+                print(f"{'':<37}{args.show + ' shapes: ':<16}"
+                      f"x{len(locs)}  " + "  ".join(p) if len(p) <= 5 else
+                      f"{'':<37}{args.show + ' shapes: ':<16}x{len(locs)}  "
+                      + "  ".join(p[:5]) + " ...")
         print()
     return 0
 
