@@ -487,3 +487,15 @@ Missing pieces: an absolute CLOCK_MONOTONIC t0 in the trace header (it is relati
 `tools/traces/align.py` on `build/traces/2026-10-11T00-50-57` (drift column); per-frame delivery check matched 45,860 replay frames to the 1000 Hz OTD trace
 
 The map clock follows the audio device (Scarlett), ~−65 ppm on nearly every replay: ~20 ms over a 5-minute map. With it fitted, replay cursor positions sit within ±0.5 ms of OTD's latest sample, with no clustering at the 165 Hz refresh period — Hyprland is not batching pointer motion. The earlier "6 ms peaks" in press lag were drift smear plus approximate key edges.
+
+## 2026-10-11 — a 64-deep single-point stacked stream
+
+`5083c1084c688ae21109bfc6a47223d0` (WMFJ - Viral TikTok Video [Bugs Bunny]), t≈100.6–106.7s; found by `tools/experiments/clip-stacking`
+
+Stack offset reaches ~280px at the base of the stack. Any spacing/geometry bin for this map is dominated by stacking, not the mapper's intent.
+
+## 2026-10-11 — clip play of Twinkle Twinkle's 128-note stream rushes mid-stream
+
+`dotnet run --project src/Cli -c Release -- scene /home/zak/.config/osu-lazer/files/7/7f/7ff7784c987e1dbb6ca507b08796ba93e3db8056e70220fc7273541a31592cad`
+
+Mean hit error by 32-note quarter: +13, -13, -39, -20 ms. It starts late and drifts early. The same stream in the full-map plays has not been compared yet.

@@ -43,6 +43,10 @@ if (args.Length == 0)
     Console.Error.WriteLine("  clicks                cursor path against the press per circle: closest approach, inside span, presses");
     Console.Error.WriteLine("  tail-sweep [ms]...    trim the end off replays that stopped early and report the drift");
     Console.Error.WriteLine("  sweep [ms]...         shift every replay frame time and report the drift in click judgements");
+    Console.Error.WriteLine("  clip-find <id|text>   find a beatmap in realm by online beatmap id or artist/title/difficulty text");
+    Console.Error.WriteLine("  clip-list <md5> [from-ms to-ms]  the map as constant-snap runs, or every object in a time range");
+    Console.Error.WriteLine("  clip <md5> <first> <last> [label]  cut objects first..last into a practice .osz in build/clips");
+    Console.Error.WriteLine("    --lead-in-from <index> also writes objects index..first-1 as a lead-in, recorded apart from the clip");
     return 2;
 }
 
@@ -73,6 +77,82 @@ for (int i = 1; i < args.Length - 1; i++)
 
 switch (args[0])
 {
+    case "clip-find":
+    case "clip-list":
+    case "clip":
+    {
+        // Practice clips: see docs/practice-maps.md and the clip skill. Realm is only ever
+        // read through a copy, as with `index`.
+        string lazerRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "osu-lazer");
+        string scratch = Path.Combine("build", "clip-scratch");
+        var positional = new List<string>();
+        int? leadInFrom = null;
+
+        for (int i = 1; i < args.Length; i++)
+        {
+            if (args[i] == "--lead-in-from" && i + 1 < args.Length)
+                leadInFrom = int.Parse(args[++i], CultureInfo.InvariantCulture);
+            else
+                positional.Add(args[i]);
+        }
+
+        if (args[0] == "clip-find")
+        {
+            if (positional.Count < 1)
+            {
+                Console.Error.WriteLine("clip-find: expected a beatmap id or search text");
+                return 2;
+            }
+
+            var found = Clip.Find(lazerRoot, scratch, string.Join(' ', positional));
+
+            foreach (var f in found.Take(50))
+                Console.WriteLine($"{f.Md5}  b/{f.OnlineId}  {f.Artist} - {f.Title} [{f.Difficulty}]");
+
+            Console.WriteLine(found.Count == 0 ? "no match" : $"{found.Count} match(es)" + (found.Count > 50 ? ", first 50 shown" : ""));
+            return found.Count == 0 ? 1 : 0;
+        }
+
+        if (positional.Count < 1)
+        {
+            Console.Error.WriteLine($"{args[0]}: expected a beatmap MD5");
+            return 2;
+        }
+
+        var source = Clip.Resolve(lazerRoot, scratch, positional[0]);
+
+        if (args[0] == "clip-list")
+        {
+            Console.WriteLine($"{source.Artist} - {source.Title} [{source.Difficulty}]");
+
+            if (positional.Count >= 3)
+                Clip.WriteObjects(source.OsuPath, double.Parse(positional[1], CultureInfo.InvariantCulture), double.Parse(positional[2], CultureInfo.InvariantCulture), Console.Out);
+            else
+                Clip.WriteRuns(source.OsuPath, 8, Console.Out);
+
+            return 0;
+        }
+
+        if (positional.Count < 3)
+        {
+            Console.Error.WriteLine("clip: expected <md5> <first> <last> [label]");
+            return 2;
+        }
+
+        int first = int.Parse(positional[1], CultureInfo.InvariantCulture);
+        var result = Clip.Build(source, first, int.Parse(positional[2], CultureInfo.InvariantCulture), leadInFrom ?? first,
+            string.Join(' ', positional.Skip(3)), Path.Combine("build", "clips"), scratch);
+
+        Console.WriteLine($"source: {source.Artist} - {source.Title} [{source.Difficulty}]");
+        Console.WriteLine($"clip objects {result.First}-{result.Last}; lead-in: {result.LeadInNote}");
+        Console.WriteLine($"written objects {result.WrittenFirst}-{result.WrittenLast}, {result.StartTime:0}-{result.EndTime:0} ms"
+                          + (result.WrittenFirst < result.First - result.LeadIn || result.WrittenLast > result.Last ? " (padded so stacking matches the source)" : ""));
+        Console.WriteLine("stacking matches the source under NM/HR/EZ; online ids stripped");
+        Console.WriteLine($"difficulty: {result.Version}");
+        Console.WriteLine(result.OszPath);
+        return 0;
+    }
+
     case "smoke":
         if (args.Length < 2)
         {
