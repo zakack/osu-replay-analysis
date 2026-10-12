@@ -548,3 +548,23 @@ own baseline, 6.9% of recoverable error) was split across four schema 3 cells re
 33.22, 34.45 and 32.99 ms -- two chirality mirrors and a 30-degree edge through the middle --
 each individually under the 5% share bar. A verdict that says "no pattern here" is partly a
 statement about where the bin edges fell.
+
+## 2026-10-12 — square corners are the hardest jump shape, and ppy's ramp says they should be the easiest
+
+`tools/analysis/patterns.py` naming bands + geometry.csv, 489 beatmaps, one play each
+
+Objects inside a two-turn one-way-round figure, against objects at the same spacing that are
+not in one. Miss rate: at 3.5-4.5 radii, square 8.22% vs 4.27% baseline; at 4.5-6, 8.26% vs
+4.65%; at 6-8, 10.43% vs 5.78%. Squares are the worst shape at every spacing, above star
+points and triangles. Every figure shape beats the non-figure baseline, so turning
+consistently one way is itself hard.
+
+The disagreement: `SnapAimEvaluator` ramps its angle bonus between 40 and 140 degrees, so a
+90-degree corner sits mid-ramp and earns *less* than either a sharp reversal or a near-
+straight flow. The hardest shape measured here is the one the difficulty model rates
+lowest among its neighbours.
+
+Aim error does not track the miss rate -- at 3.5-4.5 radii squares have the *lowest* aim
+error (0.383) and the highest miss rate. Probably survivorship, since aim error only exists
+where a press landed, but worth checking against the collected miss corpus rather than one
+player's single plays.
