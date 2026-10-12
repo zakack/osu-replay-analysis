@@ -22,6 +22,9 @@ GEOMETRY_COLUMNS = [
     "replay", "startTime", "kind", "signedAngle", "lazerAngle", "observedAngle",
     "spacingRadii", "minJumpRadii", "deltaTime", "requiredVelocity", "aimErrorRadii",
     "hitError", "result", "travelRadii", "travelTime", "exitSlackRadii",
+    # The fixture writes the real header, trailing columns included, because a test whose
+    # CSV is a subset of the production one stops catching the thing it exists to catch.
+    "targetX", "targetY", "heading", "cursorX", "cursorY", "cursorSource",
 ]
 
 RHYTHM_COLUMNS = [

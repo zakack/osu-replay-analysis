@@ -56,6 +56,20 @@ REFERENCE_NM = Source("reference", "build/geometry-reference-nm.csv",
                       "build/reference/manifest.json")
 
 
+def _heading(raw: str) -> float | None:
+    """The jump's incoming direction, radians out of the shim like every other angle here.
+
+    Converted on the way in for the same reason ``signedAngle`` is: one unit in the record,
+    so a consumer cannot pick the wrong one. Asserted rather than trusted, because getting
+    it backwards does not raise -- it quietly puts every observation in one band.
+    """
+    value = _num(raw)
+    if value is None:
+        return None
+    assert abs(value) <= math.pi + 1e-4, f"heading not in radians: {value}"
+    return value * DEG
+
+
 def _num(text: str) -> float | None:
     """An empty cell means the extractor had nothing to say, which is not zero. Angles,
     spacing and hit error are all legitimately zero, so conflating the two would move
@@ -198,6 +212,11 @@ def observations(source: Source, *, maps: set[str] | None = None,
                 hit_error=_num(row["hitError"]),
                 aim_error=_num(row["aimErrorRadii"]),
                 result=sys.intern(row["result"]),
+                # Tolerated as absent: geometry CSVs written before the shim emitted these
+                # still load, they just cannot key a scheme that needs them.
+                target_x=_num(row.get("targetX", "")),
+                target_y=_num(row.get("targetY", "")),
+                heading=_heading(row.get("heading", "")),
             )
 
 

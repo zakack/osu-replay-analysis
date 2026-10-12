@@ -221,6 +221,13 @@ class Observation:
     hit_error: float | None    # ms, signed; negative is early
     aim_error: float | None    # radii
     result: str
+    # Where on the screen, and which way in. Not pattern shape -- the charter keeps these as
+    # their own axes precisely because the same shape in a different place is a different
+    # demand on the hand. Extracted since the geometry pass; carried here so a scheme can
+    # use them.
+    target_x: float | None     # playfield units, 0..512
+    target_y: float | None     # playfield units, 0..384, y down
+    heading: float | None      # degrees, direction of the jump into the object
 
 
 @dataclass(frozen=True, slots=True)
