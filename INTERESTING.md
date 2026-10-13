@@ -777,3 +777,23 @@ Caveat before anyone phrases it for a player: sharp turns at 1/4 are mostly tigh
 turn magnitude and spacing are correlated in the map pool, and lag is normalised by radius not by
 the movement. Crossing spacing into the --path key would separate "lags at sharp corners" from
 "lags on short movements".
+
+## 2026-10-13 — tempo drift and pathing are independent; the lag you measure is partly when you pressed
+
+`tools/analysis/streamfail.py --path --by-rate`, both corpora
+
+Grouping runs by which way their tapping tempo drifts: residualised `inside` is within 0.005
+radii between slow-tapping and fast-tapping runs at every turn band, on a quantity running 0.03
+to 0.13. So tapping slow does not favour a pathing strategy -- the compensatory story, cut more
+to keep up with a path you are falling behind on, would show as an inside difference and shows
+nothing. The two faculties are independent and neither can be fixed by fixing the other.
+
+What does move is lag, by a consistent 0.04 radii, and at 135-160 degrees it changes *sign*:
+-0.035 behind the note when tapping fast, +0.025 ahead of it when tapping slow (population
+-0.069 against -0.018). That is a press landing later sampling the cursor later, not the hand
+moving differently -- so every lag figure in this work is partly *when* the press happened.
+Worth remembering before any of it is phrased as a statement about the aiming hand.
+
+Incidentally the coupling of `inside` to press timing is weak (+0.112 population, +0.146 player
+at 1/4), so the corner-cutting result from yesterday is not a late-press artifact. It could have
+been, and was not checked when first reported.

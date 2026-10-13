@@ -199,6 +199,45 @@ through, 0 doubling back). Offsets in radii, at the press, positions 0-9:
   usually works and occasionally overshoots into a miss, or a run already going wrong may
   produce both.
 
+**Does tapping slow favour a pathing strategy?** (`--path --by-rate`, grouping runs by which
+way their tempo drifts instead of by outcome). Two stories predict the same sign, which is why
+the coupling has to come out first: a press landing late arrives after the cursor has moved on
+toward the next note, and "toward the next note" is inward at a corner, so slow tapping
+manufactures an inside reading by itself; and separately, cutting shortens the path, so a hand
+falling behind might cut *to keep up*. `resid` is `inside` with the first divided out.
+
+    1/4, player        taps slower                  taps faster
+    turn            n     lag  inside   resid      n     lag  inside   resid
+    5:50          625  -0.115  +0.065  +0.069    760  -0.160  +0.073  +0.093
+    50:135      3,724  -0.120  +0.084  +0.081  4,190  -0.106  +0.071  +0.076
+    135:160    14,220  +0.025  +0.129  +0.128 13,244  -0.035  +0.114  +0.122
+    160:180    11,943  +0.005  +0.092  +0.091 10,728  -0.038  +0.085  +0.090
+
+* **No. The cutting is the same either way; only the lag moves.** Residualised `inside` is
+  within 0.005 radii between the two groups at every band of the player's 1/4 table and the
+  population's, which on a quantity running 0.03 to 0.13 is nothing. What does change is lag,
+  by a consistent 0.04 radii in the same direction at every shallow band -- and at 135-160 it
+  changes *sign*, from -0.035 behind the note when tapping fast to +0.025 ahead of it when
+  tapping slow. The population shows the same: -0.069 against -0.018 at 135-160.
+
+* **Which is a measurement consequence, not a strategy.** A press landing later samples the
+  cursor later, so the cursor is further along its path; the hand did not move differently.
+  The direct implication is that the lag figures elsewhere in this file are partly *when the
+  player pressed* rather than *where the hand was*, and at 135-160 degrees the tempo drift
+  alone is enough to flip the sign.
+
+* **So the tempo problem and the pathing problem are independent.** That is the useful answer:
+  they are two faculties and neither compensates for the other, so neither can be fixed by
+  fixing the other. The compensatory story -- cut more because you are falling behind -- is
+  not supported, and if a player were doing it deliberately it would show as a residual
+  `inside` difference, which is the column that shows nothing.
+
+* **The coupling itself is weak, which is a relief for the earlier result.** The coefficient
+  is +0.112 for the population at 1/4 and +0.146 for the player, so raw `inside` and the
+  residual barely differ anywhere in these tables. The corner-cutting result above is
+  therefore not a late-press artifact, which it could have been and which was not checked
+  when it was first reported.
+
 **The control this wants before it is phrased for a player.** Sharp turns at 1/4 are mostly
 tight and stacked, so turn magnitude and spacing are correlated in the map pool, and lag is
 normalised by the radius rather than by the movement. A fixed lag in radii therefore looks
@@ -425,6 +464,13 @@ def main() -> int:
                              "by turn magnitude. Negative along-track has those two causes and "
                              "they imply opposite advice; cutting needs a corner and lagging "
                              "does not, which is what separates them")
+    parser.add_argument("--by-rate", action="store_true",
+                        help="with --path, group runs by which way their tapping tempo drifts "
+                             "instead of by outcome, to ask whether tapping slow favours a "
+                             "pathing strategy. Reports the inside component with the press "
+                             "timing divided out as well as raw, because a late press lands "
+                             "after the cursor has moved on toward the next note, which at a "
+                             "corner reads as inward on its own")
     parser.add_argument("--snaps", nargs="*", default=["0.25", "0.5"])
     args = parser.parse_args()
 
@@ -469,8 +515,12 @@ def main() -> int:
     # snap -> outcome -> metric -> list of per-run values
     acc: dict = collections.defaultdict(lambda: collections.defaultdict(
         lambda: collections.defaultdict(list)))
-    # (snap, turn band, outcome) -> n, sum lag, sum inward, count inward > 0
-    path: dict = collections.defaultdict(lambda: [0, 0.0, 0.0, 0])
+    # (snap, turn band, group) -> n, sum lag, sum inward, count inward > 0, sum x
+    # where x = required velocity * hit error: how far the cursor travels along its path in
+    # the time the press was late by. The inside component's mechanical share.
+    path: dict = collections.defaultdict(lambda: [0, 0.0, 0.0, 0, 0.0])
+    # n, sum x, sum inward, sum x*inward, sum x^2 -- for one coefficient per snap.
+    fit: dict = collections.defaultdict(lambda: [0, 0.0, 0.0, 0.0, 0.0])
     counted = 0
 
     def flush(rows: list[dict]):
@@ -498,6 +548,13 @@ def main() -> int:
                 # Per object rather than per run: the question is about the shape of the
                 # offset, not about the run's summary. Still confined to positions 0-9, so
                 # nothing here is measured after a miss.
+                group = outcome
+                if args.by_rate:
+                    taps = [(float(r["run"]), r["error"]) for r in early if r["own"]]
+                    drift = slope(taps) if len(taps) >= MIN_POINTS else None
+                    if drift is None:
+                        continue
+                    group = "taps slower" if drift > 0 else "taps faster"
                 for i, row in enumerate(run):
                     if row["run"] >= BEFORE or i == 0 or i + 1 >= len(run):
                         continue
@@ -513,11 +570,23 @@ def main() -> int:
                     band = ANGLE.bin(row["angle"])
                     if band is None:
                         continue
-                    cell = path[(snap, band, outcome)]
+                    # How far along its path the cursor travels in the time the press was
+                    # late by. Only defined where the press is the object's own.
+                    x = ((row["velocity"] or 0.0) * row["error"]
+                         if row["own"] and row["error"] is not None else None)
+                    cell = path[(snap, band, group)]
                     cell[0] += 1
                     cell[1] += lag
                     cell[2] += inward
                     cell[3] += 1 if inward > 0 else 0
+                    if x is not None:
+                        cell[4] += x
+                        f = fit[snap]
+                        f[0] += 1
+                        f[1] += x
+                        f[2] += inward
+                        f[3] += x * inward
+                        f[4] += x * x
                 continue
 
             taps = [(float(r["run"]), r["error"]) for r in early if r["own"]]
@@ -621,29 +690,38 @@ def main() -> int:
     if args.path:
         print(f"The cursor's offset at the press, split into lagging behind the target and "
               f"cutting the\ninside of the corner, by how sharp the turn is. 180 is straight "
-              f"through and 0 doubles\nback. Cutting needs a corner, so a lagging hand gives "
-              f"a flat 'inside' column and a cutter\ngives one that grows as the turn "
-              f"sharpens. 'inside' is mirror-invariant: reflecting a map\nflips the turn and "
-              f"the offset together, so it is not the per-object chirality Mirror week\n"
-              f"settled -- it is a relationship between two consecutive legs.\n")
+              f"through and 0 doubles\nback. 'inside' is mirror-invariant: reflecting a map "
+              f"flips the turn and the offset\ntogether, so it is not the per-object "
+              f"chirality Mirror week settled.\n")
+        beta = {}
+        for snap, (n, sx, sy, sxy, sxx) in fit.items():
+            var = sxx - (sx * sx / n) if n else 0.0
+            beta[snap] = ((sxy - sx * sy / n) / var) if var else 0.0
+            print(f"snap {snap}: inside regressed on velocity x hit error, coefficient "
+                  f"{beta[snap]:+.3f}. A press landing late\n  arrives after the cursor has "
+                  f"moved on toward the next note, which at a corner reads as\n  inward by "
+                  f"itself, so 'resid' is inside with that mechanical share removed.")
+        print()
+        groups = (("taps slower", "taps faster") if args.by_rate
+                  else ("holds", "breaks at 10+"))
         for snap in args.snaps:
             bands = [b for b in ANGLE.labels
-                     if any((snap, b, o) in path for o in ("holds", "breaks at 10+"))]
+                     if any((snap, b, g) in path for g in groups)]
             if not bands:
                 continue
-            print(f"snap {snap}")
-            print(f"  {'turn':<12}" + "".join(f"{h:>11}" for h in
-                  ("n holds", "lag", "inside", "inside>0", "n breaks", "lag", "inside",
-                   "inside>0")))
+            print(f"snap {snap}" + "".join(f"{'':<14}{g}" for g in groups))
+            print(f"  {'turn':<12}" + "".join(f"{h:>10}" for h in
+                  ("n", "lag", "inside", "resid", "n", "lag", "inside", "resid")))
             for band in bands:
                 cells = ""
-                for outcome in ("holds", "breaks at 10+"):
-                    n, lag, inward, positive = path[(snap, band, outcome)]
+                for group in groups:
+                    n, lag, inward, _positive, sx = path[(snap, band, group)]
                     if not n:
-                        cells += f"{0:>11}{'-':>11}{'-':>11}{'-':>11}"
+                        cells += f"{0:>10}" + f"{'-':>10}" * 3
                         continue
-                    cells += (f"{n:>11,}{lag / n:>+11.3f}{inward / n:>+11.3f}"
-                              f"{positive / n:>10.1%} ")
+                    resid = inward / n - beta.get(snap, 0.0) * (sx / n)
+                    cells += (f"{n:>10,}{lag / n:>+10.3f}{inward / n:>+10.3f}"
+                              f"{resid:>+10.3f}")
                 print(f"  {band:<12}{cells}")
             print()
         return 0
