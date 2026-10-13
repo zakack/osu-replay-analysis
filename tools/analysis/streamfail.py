@@ -178,6 +178,55 @@ through, 0 doubling back). Offsets in radii, at the press, positions 0-9:
     135:160       2,918  -0.060   +0.091   22,421  -0.024   +0.116
     160:180       4,175  -0.067   +0.032   20,007  -0.036   +0.082
 
+**Crossing spacing in, and the top-50 boards** (`--path --by-spacing`, `--source reference`).
+Sharp turns are mostly tight in the map pool and lag is normalised by the radius rather than
+by the movement, so the gradient's axis had to be checked. Mean `inside`, 1/4, cells with 200+
+presses:
+
+    spacing   turn        top 50    player   population
+    0:1       50:135      +0.075    +0.072     +0.078
+    0:1       135:160     +0.064    +0.123     +0.081
+    1:1.5     50:135      +0.067    +0.076     +0.039
+    1:1.5     135:160     +0.124    +0.127     +0.099
+    1:1.5     160:180     +0.135    +0.129     +0.066
+    1.5:2     135:160     +0.129    +0.145          -
+
+    mean lag, 1/4, spacing 1:1.5
+    turn                  top 50    player   population
+    5:50                  -0.002    -0.166          -
+    50:135                -0.029    -0.142     -0.073
+    135:160               -0.027    -0.059     -0.073
+    160:180               -0.045    -0.088     -0.126
+
+* **Cutting inside the polyline is a technique, not an error.** The top-50 boards deviate
+  inward by as much as this player and *more* than the general population: +0.124 and +0.135
+  at 1:1.5 spacing against the player's +0.127 and +0.129 and the population's +0.099 and
+  +0.066. Excellent players do not aim at circle centres either, and they do it more than
+  average players do. So the INTERESTING.md hypothesis has its evidence: the reference path
+  through a stream is not the polyline, and cross-track error measured against circle centres
+  penalises the thing good play does.
+
+* **What separates this player from the top 50 is lag, not inside.** At matched spacing and
+  turn the reference boards sit within 0.05 radii of zero lag everywhere on 1/4 while the
+  player runs -0.14 to -0.17 at the sharper turns -- three to five times as far behind. The
+  two components answer different questions and only one of them is a deficiency.
+
+* **Correction to the reading below: the lag gradient is not purely corner-shaped.** Crossed
+  with spacing, both axes carry gradients of comparable size at 1/4 -- reading across the
+  player's 1:1.5 row gives -0.166 to -0.059, and reading down the 50:135 column gives -0.084
+  to -0.171. At 1/2 it is predominantly spacing: at fixed turn the player's lag runs -0.036 at
+  0:1 radii to -0.165 at 8:10, while at fixed spacing the turn barely moves it. The tenfold
+  figure quoted below came from the 0:5 band, which holds 242 presses in total and does not
+  survive a 200-per-cell floor. The corner does matter at 1/4; it is not the whole of it and
+  it is not the axis at 1/2.
+
+* **New, and only visible once spacing is crossed in: `inside` changes sign with spacing on
+  jumps.** The player's 1/2 table runs +0.129 inward at 0:1 radii through +0.047 at 3.5:4.5 to
+  -0.051 at 6:8 -- inward on tight patterns, *outward* on wide ones, crossing around four
+  radii. A wide jump is ballistic and overshoots the corner; a tight one gets cut. The
+  reference boards sit near zero across the whole 1/2 range, which is consistent with the same
+  two effects cancelling at a different balance point rather than with either being absent.
+
 * **The field's lag is flat in turn magnitude; this player's is not.** The population sits at
   about -0.06 radii at every turn band, from doubling back to straight through -- a generic
   lag with no relation to the corner. The player runs from -0.272 at a reversal to -0.024 at
@@ -271,7 +320,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from analysis.patternpredict import EXCLUDE, MISSED, _num, read_rhythm  # noqa: E402
 from bins.load import TIMESTAMP  # noqa: E402
-from bins.schema import ANGLE  # noqa: E402
+from bins.schema import ANGLE, SPACING  # noqa: E402
 
 DEG = 180.0 / math.pi
 
@@ -339,11 +388,20 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 # timing simply fails to join. The player side has rhythm for every replay, so runs are
 # looked up by replay and time -- strictly better, because each replay then carries its own
 # mods and nothing has to match across them.
+# `reference` is the top-50 boards. It carries almost no misses by construction, so the
+# outcome split and the tempo metrics have little to say there -- but it is the only corpus
+# that answers "how far do excellent players stray from the polyline", which is what --path
+# measures and what the centre-to-centre hypothesis needs.
 SOURCES = {
     "collected": ("build/geometry-collected.csv", "build/rhythm-collected.csv",
                   "build/corpus-collected.json"),
     "player": ("build/geometry.csv", "build/rhythm.csv", "build/corpus.json"),
+    "reference": ("build/geometry-reference-nm.csv", "build/rhythm-reference-nm.csv",
+                  "build/corpus-nm.json"),
 }
+# Which sources have rhythm for every replay, and so join on the replay rather than on the
+# beatmap. The collected side's rhythm pass covered one representative replay per map.
+PER_REPLAY = ("player", "reference")
 
 BEFORE = 10        # positions 0..9: measured, and required to be clean in both groups
 MIN_SIZE = 14      # a run has to be long enough for "breaks at 10 or later" to be possible
@@ -464,6 +522,12 @@ def main() -> int:
                              "by turn magnitude. Negative along-track has those two causes and "
                              "they imply opposite advice; cutting needs a corner and lagging "
                              "does not, which is what separates them")
+    parser.add_argument("--by-spacing", action="store_true",
+                        help="with --path, cross spacing into the key instead of grouping by "
+                             "outcome. Sharp turns are mostly tight and stacked in the map "
+                             "pool, and lag is normalised by the radius rather than by the "
+                             "movement, so a lag gradient along the turn axis could be a "
+                             "gradient along the spacing axis wearing its clothes")
     parser.add_argument("--by-rate", action="store_true",
                         help="with --path, group runs by which way their tapping tempo drifts "
                              "instead of by outcome, to ask whether tapping slow favours a "
@@ -477,10 +541,11 @@ def main() -> int:
     geometry, rhythm_path, corpus_path = (os.path.join(ROOT, p)
                                           for p in SOURCES[args.source])
     records = json.load(open(corpus_path))
-    if args.source == "player":
-        wanted = {os.path.basename(r["Path"]) for r in records if r.get("Paired")
-                  and os.path.basename(r["Path"]).startswith(args.player + " playing ")}
-        if args.since:
+    if args.source in PER_REPLAY:
+        wanted = {os.path.basename(r["Path"]) for r in records if r.get("Paired")}
+        if args.source == "player":
+            wanted = {n for n in wanted if n.startswith(args.player + " playing ")}
+        if args.since and args.source == "player":
             dated = {}
             for name in wanted:
                 found = TIMESTAMP.search(name)
@@ -498,7 +563,7 @@ def main() -> int:
         wanted = set(corpus)
     print(f"{args.source}: {len(wanted):,} replays\n", flush=True)
 
-    if args.source == "player":
+    if args.source in PER_REPLAY:
         runs = read_player_runs(rhythm_path, wanted, set(args.snaps))
         def find(replay, t):
             return runs.get((replay, t))
@@ -570,6 +635,13 @@ def main() -> int:
                     band = ANGLE.bin(row["angle"])
                     if band is None:
                         continue
+                    if args.by_spacing:
+                        # The spacing band takes the group slot, so one accumulator serves
+                        # every way of splitting the same decomposition.
+                        group = (SPACING.bin(row["spacing"])
+                                 if row["spacing"] is not None else None)
+                        if group is None:
+                            continue
                     # How far along its path the cursor travels in the time the press was
                     # late by. Only defined where the press is the object's own.
                     x = ((row["velocity"] or 0.0) * row["error"]
@@ -579,6 +651,7 @@ def main() -> int:
                     cell[1] += lag
                     cell[2] += inward
                     cell[3] += 1 if inward > 0 else 0
+                    counted += 1
                     if x is not None:
                         cell[4] += x
                         f = fit[snap]
@@ -674,6 +747,7 @@ def main() -> int:
                          "cx": cx, "cy": cy, "aim": aim,
                          "angle": (abs(_num(r["signedAngle"]) or 0.0) * DEG
                                    if r["signedAngle"] else None),
+                         "spacing": _num(r["spacingRadii"]),
                          "size": run_size, "error": error, "gap": gap, "own": own,
                          "miss": r["result"] in MISSED, "along": along, "cross": cross,
                          "velocity": _num(r["requiredVelocity"]),
@@ -681,7 +755,9 @@ def main() -> int:
     if held:
         flush(held)
 
-    print(f"{counted:,} runs of {MIN_SIZE}+ objects, clean through position {BEFORE - 1}, "
+    unit = "presses" if args.path else "runs"
+    print(f"{counted:,} {unit} from runs of {MIN_SIZE}+ objects, clean through position "
+          f"{BEFORE - 1}, "
           f"every quantity measured\nover positions 0-{BEFORE - 1} only -- before any miss, "
           f"so what shows up here is a cause and not\na consequence. Magnitudes, since a run "
           f"tapped progressively early and one tapped\nprogressively late are equally off "
@@ -702,6 +778,34 @@ def main() -> int:
                   f"moved on toward the next note, which at a corner reads as\n  inward by "
                   f"itself, so 'resid' is inside with that mechanical share removed.")
         print()
+        if args.by_spacing:
+            print("Rows are spacing, columns are the turn. If the lag gradient is really "
+                  "about the corner it\nsurvives reading across a row at fixed spacing; if "
+                  "it was spacing all along it collapses\nthere and appears down the columns "
+                  "instead. Cells with under 200 presses are left out.\n")
+            for snap in args.snaps:
+                bands = [b for b in ANGLE.labels
+                         if any((snap, b, sp) in path for sp in SPACING.labels)]
+                rows = [sp for sp in SPACING.labels
+                        if sum(path[(snap, b, sp)][0] for b in bands) >= 1_000]
+                if not bands or not rows:
+                    continue
+                for what, column in (("lag", 1), ("inside", 2)):
+                    print(f"snap {snap}, mean {what} in radii")
+                    print(f"  {'spacing':<12}" + "".join(f"{b:>12}" for b in bands))
+                    for sp in rows:
+                        cells = ""
+                        for b in bands:
+                            n, lag, inward = (path[(snap, b, sp)][0], path[(snap, b, sp)][1],
+                                              path[(snap, b, sp)][2])
+                            total = lag if column == 1 else inward
+                            cells += (f"{total / n:>+12.3f}" if n >= 200 else f"{'-':>12}")
+                        print(f"  {sp:<12}{cells}")
+                    print(f"  {'n':<12}" + "".join(
+                        f"{sum(path[(snap, b, sp)][0] for sp in rows):>12,}" for b in bands))
+                    print()
+            return 0
+
         groups = (("taps slower", "taps faster") if args.by_rate
                   else ("holds", "breaks at 10+"))
         for snap in args.snaps:

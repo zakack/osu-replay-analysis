@@ -797,3 +797,28 @@ Worth remembering before any of it is phrased as a statement about the aiming ha
 Incidentally the coupling of `inside` to press timing is weak (+0.112 population, +0.146 player
 at 1/4), so the corner-cutting result from yesterday is not a late-press artifact. It could have
 been, and was not checked when first reported.
+
+## 2026-10-13 — the top 50 cut inside the polyline as much as anyone; what they don't do is lag
+
+`tools/analysis/streamfail.py --source reference --path --by-spacing`, against player and collected
+
+Mean inward deviation from the centre-to-centre polyline on 1/4, spacing 1:1.5 radii, turn
+135-160: top 50 **+0.124** radii, zaksynack +0.127, general population +0.099. At 160-180:
++0.135 / +0.129 / +0.066. So excellent players deviate inward *more* than average ones, and
+about as much as this player. Cutting inside is a technique rather than an error, and the
+"stray" metric in the existing stream work -- defined against circle centres -- penalises it.
+
+What actually separates this player from the boards is the other component. At matched spacing
+and turn the reference sits within 0.05 radii of zero lag everywhere on 1/4; the player runs
+-0.14 to -0.17 at the sharper turns, three to five times further behind. Two components, one
+deficiency.
+
+Also: `inside` changes sign with spacing on 1/2 chains. The player goes +0.129 inward at 0:1
+radii, +0.047 at 3.5:4.5, -0.051 outward at 6:8, crossing near four radii -- a wide jump is
+ballistic and overshoots the corner where a tight one gets cut. The reference sits near zero
+across that whole range.
+
+Correction to the entry above: the player's lag gradient is not purely corner-shaped. Crossed
+with spacing, both axes carry comparable gradients at 1/4, and at 1/2 it is predominantly
+spacing (-0.036 at 0:1 radii to -0.165 at 8:10 at fixed turn). The "tenfold" figure came from
+the 0:5 turn band, which holds 242 presses and does not survive a 200-per-cell floor.
