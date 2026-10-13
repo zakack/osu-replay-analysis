@@ -44,8 +44,10 @@ here; the sigma columns are printed for scale only and are not comparable across
   answer.
 
 Measured 2026-10-13 on 1,045 nomod and 1,051 rate-mod replays of the same 40 beatmaps,
-188-204 BPM nomod and so 282-306 under the mod. rho centred within replay, with the
-within-section and pooled columns run as controls.
+39 of them at 188-204 BPM nomod and so 282-306 under the mod, plus one at 164 (246 under
+the mod) that leaked in from an earlier, broader pull into the same directory before it was
+stopped, and which carries 38 of the 1,051 rate replays. rho centred within replay, with
+the within-section and pooled columns run as controls.
 
 **Tempo does not uncouple the hands.** Accuracy >= 0.98 on both sides, 1,042 against 310
 replays:

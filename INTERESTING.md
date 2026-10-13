@@ -1086,3 +1086,19 @@ circle, +0.10, and **88% of them individually** higher when failing. It concentr
 So independence in streams is a thing that is held and then lost, within one person, at one
 tempo. Stacks with trait coupling rather than replacing it: zaksynack's 0.33-0.38 on jumps
 is higher than a failing reference play's 0.26 while his accuracy is not failing at all.
+
+## 2026-10-13 — a stopped fetch leaves its maps behind, and the band label was wrong
+
+`comm` of `build/reference-dt/manifest.json` against the 40 checksums in the relaunch command
+
+The rate-mod corpus is 40 maps but not the 40 that were asked for. One requested map
+(cosMo@BousouP - Oceanus [Asagi's Insane], `3fdd156d`) returned **0 lazer scores** — its
+whole board is Classic/stable — so it contributed nothing. And one map nobody asked for,
+Take a Hint (Nightcore & Cut Ver.) [Insane] `023747600f` at 164 BPM, is left over from the
+first over-broad pull that wrote into `build/reference-dt` before it was stopped. It carries
+38 of 1,051 replays, so the corpus band is 164-204 nomod, not the 188-204 that was claimed.
+
+Two lessons, neither about this corpus. An aborted pull is not a no-op: it leaves a manifest
+and replays that the next pull into the same directory silently adopts. And a map's presence
+in a selection does not mean it yielded anything, because the lazer-score share of a board
+varies from 0 to 50 — worth reconciling requested against delivered after any fetch.
