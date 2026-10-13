@@ -6,6 +6,9 @@
 # The player's audio setup: pin the graph to 48 kHz and clear any forced quantum, so the
 # graph's own latency cap applies. Absent on any other machine, so it is optional.
 [ -x ~/.local/bin/pw-force ] && RATE=48000 QUANTUM=0 ~/.local/bin/pw-force
+# Change the monitor resolution and then restart OTD to apply the change to the tablet
+[ -x ~/.local/bin/osu-mode ] && ~/.local/bin/osu-mode 1080
+systemctl --user restart opentabletdriver.service
 
 log=$(dirname "$(readlink -f "$0")")/session-log
 started=$("$log" start)
@@ -43,6 +46,7 @@ status=$?
 # SIGINT is the tracer's clean stop: it flushes and exits, and zstd finishes on EOF.
 kill -INT $trace $cursor 2>/dev/null; wait $trace $cursor 2>/dev/null
 systemctl --user start --no-block corpus-sync.service
+hyprctl reload
 # Detached, so a question nobody answers never holds the launcher open.
 setsid -f "$log" end "$started" >/dev/null 2>&1
 exit $status
