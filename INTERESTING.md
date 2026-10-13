@@ -1114,3 +1114,14 @@ position 21.9%. On first misses only (no miss in the eight before) the lift is s
 *higher*, 23.0%, so the model predicts failures, not cascades. Within a play, predicted risk
 correlates 0.33 with ten-second sections' miss rates; across replays of maps only 0.21 —
 the same map gets one prediction and very different days.
+
+## 2026-10-13 — pooled calibration hid the player's improvement; a 2026-only model is sharper on everything
+
+`PYTHONPATH=tools python3 tools/analysis/riskmap.py --eras exclusive-2` against the run without it
+
+Fitted on all eras, observed/predicted misses by era of the held-out play run 2.15, 1.49,
+0.92, 0.82 oldest to newest — the player improved, and pooled calibration averaged two
+opposite errors into a clean-looking table. Fitted and tested on 2026 alone (a third of the
+data): top-tenth capture 21.9% -> 26.0%, AUC 0.641 -> 0.683, map r 0.23 -> 0.43, section
+rate r 0.33 -> 0.47, observed/predicted 1.00. Also: a 2x2 screen quadrant adds nothing to
+miss prediction (21.5% vs 21.9%).

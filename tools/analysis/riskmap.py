@@ -71,24 +71,57 @@ model keeps 20.4%. |angle| buys almost nothing, the third measurement here to sa
 23.0% in its top tenth, AUC 0.648 -- slightly *better* than on all misses. A cascade is not
 what it learned.
 
-**It is calibrated.** Predicted against observed, by band of predicted risk:
+**Calibrated pooled, but not over time -- and that changes the design.** Pooled over every
+era, predicted and observed agree within a few tenths of a point from 1.6% to 15% risk. By
+the era of the held-out play they do not:
 
-    predicted   1.60%  2.48%  3.45%  4.81%  7.02%  9.00%  14.78%
-    observed    1.92%  2.54%  3.32%  4.82%  6.71%  8.58%  14.32%
+    era (bins.schema.ERAS)        held-out plays   observed / predicted
+    undated, the oldest                1,065              2.15
+    exclusive-1  (2024-11..2025-01)    2,909              1.49
+    overlapping  (2025)                5,716              0.92
+    exclusive-2  (2026)                4,041              0.82
 
-Within a few tenths of a point from 1.6% to 15%; only the thin ends drift (0.5% predicted
-is 1.9% observed on 15k objects, 24% is 21% on 8k). A risk the strain graph shows is a
-risk the player actually runs.
+The split is random by map, so an old play is scored by a model that includes the player's
+2026, and the player improved: pooled, the model under-predicts the past and over-predicts
+the present by 18%, and the two cancel in the average. The use is forward -- fit on history,
+predict the next map -- so the pooled table was answering the wrong question.
+
+**Fit on recent play, and it is better at everything.** With `--eras exclusive-2`, fitted
+and tested on 2026 plays only -- 4,041 replays, 1,125 beatmaps, a third of the data:
+
+                                  all eras   2026 only
+    misses in the riskiest 10%     21.9%      26.0%
+    AUC                            0.641      0.683
+    first misses, riskiest 10%     23.0%      25.6%
+    map r                          0.23       0.43
+    section r, rates               0.33       0.47
+    observed / predicted (2026)    0.82       1.00
+
+and calibrated band by band (1.51% predicted is 1.50% observed, 6.97% is 6.96%). The older
+play was not just mis-scaled; it was diluting the model with a player who no longer exists.
+The strain graph fits on a recent window.
+
+**Screen position adds nothing to miss prediction.** kind x snap x spacing x run x quadrant
+scores 21.5% against 21.9% without it, and 26.1% against 26.0% on 2026 alone. That settles
+the test unitsize.py left owed -- quadrant had been dropped on spread, while the charter's
+evidence for screen position is about misses. At a 2x2 grid it does not predict them beyond
+what the geometry already does; whatever Dear You's flipped jump was, it is not a quadrant.
 
 **It finds the bad sections better than the bad maps.** Within a replay, across ten-second
 sections, the best scheme's mean predicted risk correlates 0.33 with the section's actual
-miss rate (the constant baseline: 0). On counts it is 0.47 against density's 0.37. Across
-replays the map-level correlation is only 0.21, and that is expected: the same map played
-on different days gets the same prediction and very different results, so form, fatigue
-and attempt number sit entirely outside it. The strain graph's claim -- *where* on this
-map -- is the stronger of the two.
+miss rate (the constant baseline: 0), 0.47 fitted on 2026. On counts it is 0.47 against
+density's 0.37. Across replays the correlation is 0.21, and per map -- each map's replays
+pooled, so one played thirty times counts once -- 0.23; 0.40 and 0.43 on 2026. That is
+expected to trail: the same map on different days gets one prediction and very different
+results, so form, fatigue and attempt number sit outside it. The strain graph's claim --
+*where* on this map -- is the stronger of the two.
 
-What it is not: an AUC of 0.64 leaves most misses outside the riskiest tenth. Shown per
+**Miss attribution**, which moved answers before: cascades are handled by the first-miss
+column, and a press handed to a neighbour in a stream rarely changes an object's cell,
+because run position is banded (0-2, 2-5, 5-9, 9-14, 14+), so a one-object shift crosses a
+band edge only at an edge.
+
+What it is not: an AUC of 0.64-0.68 leaves most misses outside the riskiest tenth. Shown per
 object it would mostly be wrong; shown as a curve over the map, aggregated, it is
 calibrated and finds the sections. That is the form the strain graph should take.
 """
@@ -127,6 +160,9 @@ SCHEMES = {
     "kind x snap x run position":            ("kind", "snap", "run"),
     "kind x snap x spacing x run position":  ("kind", "snap", "spacing", "run"),
     "kind x snap x spacing x run x |angle|": ("kind", "snap", "spacing", "run", "angle"),
+    # Owed since unitsize.py dropped quadrant on a test of *spread*: the charter's evidence
+    # for screen position (Dear You, 8 of 9 flipped runs missed one jump) is about misses.
+    "kind x snap x spacing x run x quadrant": ("kind", "snap", "spacing", "run", "quadrant"),
 }
 
 
@@ -144,10 +180,13 @@ def axes(o) -> dict[str, str]:
         "spacing": s(SPACING.bin(o.spacing) if o.spacing is not None else None),
         "run": s(RUN_POSITION.bin(o.run_index) if o.run_index is not None else None),
         "angle": s(ANGLE.bin(abs(o.angle)) if o.angle is not None else None),
+        # Where on the screen, after mods and stacking: the hand's axis, not the shape's.
+        "quadrant": "-" if o.target_x is None or o.target_y is None else
+                    ("L" if o.target_x < 256 else "R") + ("T" if o.target_y < 192 else "B"),
     }
 
 
-def load_objects(limit: int | None):
+def load_objects(limit: int | None, keep_eras: set[str] | None = None):
     """One pass over the player's geometry: per object its replay, time, fold, miss, and a
     key id per scheme. Keys are interned to ids so four million objects fit in arrays."""
     mods = where.mods_by_replay()
@@ -156,6 +195,7 @@ def load_objects(limit: int | None):
     replays: list[str] = []
     replay_id: dict[str, int] = {}
     maps: list[str] = []
+    eras: list[str] = []
     rid = array.array("i")
     when = array.array("d")
     halves = array.array("b")
@@ -174,12 +214,16 @@ def load_objects(limit: int | None):
         if not m <= ALLOWED:
             dropped["mods not kept"] += 1
             continue
+        if keep_eras is not None and (o.era or "?") not in keep_eras:
+            dropped["outside the eras asked for"] += 1
+            continue
         if o.replay not in replay_id:
             if limit and len(replays) >= limit:
                 continue
             replay_id[o.replay] = len(replays)
             replays.append(o.replay)
             maps.append(o.beatmap_md5)
+            eras.append(o.era or "?")
             keep_mods[" ".join(sorted(m)) or "nomod"] += 1
         rid.append(replay_id[o.replay])
         when.append(o.start_time)
@@ -192,7 +236,7 @@ def load_objects(limit: int | None):
             if k not in table:
                 table[k] = len(table)
             key_ids[name].append(table[k])
-    return {"replays": replays, "maps": maps, "rid": rid, "t": when, "fold": halves,
+    return {"replays": replays, "maps": maps, "eras": eras, "rid": rid, "t": when, "fold": halves,
             "miss": missed, "key_ids": key_ids, "keys": keys,
             "dropped": dropped, "mods": keep_mods}
 
@@ -391,12 +435,25 @@ def aggregates(d, name, preds):
     for n, p, m, h in per_replay.values():
         if n >= 50:
             across[h].append((round(p / n, 9), m / n))
+    # Per map as well: a map played thirty times counts thirty times above, and the claim
+    # "this map will go badly" is about the map. Its replays pooled into one rate.
+    per_map = collections.defaultdict(lambda: [0, 0.0, 0, 0])
+    for r, (n, p, m, h) in per_replay.items():
+        c = per_map[d["maps"][r]]
+        c[0] += n
+        c[1] += p
+        c[2] += m
+        c[3] = h
+    by_map = collections.defaultdict(list)
+    for n, p, m, h in per_map.values():
+        if n >= 50:
+            by_map[h].append((round(p / n, 9), m / n))
     counts, rates = collections.defaultdict(list), collections.defaultdict(list)
     for (r, _), (n, p, m) in sections.items():
         counts[r].append((round(p, 9), m))
         if n >= 5:
             rates[r].append((round(p / n, 9), m / n))
-    return correlation(across), correlation(counts), correlation(rates)
+    return correlation(across), correlation(by_map), correlation(counts), correlation(rates)
 
 
 def main() -> int:
@@ -405,9 +462,13 @@ def main() -> int:
     parser.add_argument("--min-train", type=int, nargs="+", default=[50, 200, 500],
                         help="training floors to sweep (default 50 200 500)")
     parser.add_argument("--limit", type=int, help="only the first N replays, for a quick run")
+    parser.add_argument("--eras", nargs="+",
+                        help="fit and test on plays from these eras only (see bins.schema."
+                             "ERAS; '?' is undated). The forward-looking question: does a "
+                             "model of recent play predict recent play?")
     args = parser.parse_args()
 
-    d = load_objects(args.limit)
+    d = load_objects(args.limit, set(args.eras) if args.eras else None)
     n = len(d["miss"])
     misses = sum(d["miss"])
     print(f"{len(d['replays']):,} replays, {len(set(d['maps'])):,} beatmaps, {n:,} objects, "
@@ -436,12 +497,14 @@ def main() -> int:
     # over every object each.
     floor = args.min_train[0]
     print(f"== aggregates, floor {floor}: does it find the bad maps, and the bad sections?\n")
-    print(f"  {'scheme':<40}{'map r':>8}{'section r, counts':>19}{'section r, rates':>18}")
+    print(f"  {'scheme':<40}{'replay r':>9}{'map r':>8}{'section r, counts':>19}"
+          f"{'section r, rates':>18}")
     for name in SCHEMES:
-        across, within, rates = aggregates(d, name, predictions(d, name, counted[name], floor))
+        across, by_map, within, rates = aggregates(d, name,
+                                                   predictions(d, name, counted[name], floor))
         def f(v, w):
             return f"{'-':>{w}}" if math.isnan(v) else f"{v:>{w}.3f}"
-        print(f"  {name:<40}{f(across, 8)}{f(within, 19)}{f(rates, 18)}")
+        print(f"  {name:<40}{f(across, 9)}{f(by_map, 8)}{f(within, 19)}{f(rates, 18)}")
     print()
 
     # Calibration for the scheme the earlier work found best on misses, at the lowest floor.
@@ -457,6 +520,26 @@ def main() -> int:
             merged[p][1] += m
     for p, m, count in calibration(merged):
         print(f"  {p:>10.2%}{m:>10.2%}{count:>11,}")
+
+    # The split is random by map, so a 2024 play is scored by a model that includes 2026.
+    # The use is forward -- fit on history, predict the next map -- and the player's skill
+    # moved across the corpus, so calibration pooled over time can hide two drifts in
+    # opposite directions. Observed over predicted misses, by the era of the held-out play.
+    print(f"\n== calibration by era of the held-out play, {best}\n")
+    print(f"  {'era':<10}{'replays':>9}{'objects':>11}{'predicted':>11}{'observed':>10}"
+          f"{'obs / pred':>12}")
+    ids = d["key_ids"][best]
+    per_era = collections.defaultdict(lambda: [set(), 0, 0.0, 0])
+    for i in range(len(ids)):
+        r = d["rid"][i]
+        e = per_era[d["eras"][r]]
+        e[0].add(r)
+        e[1] += 1
+        e[2] += preds[1 - d["fold"][i]][ids[i]]
+        e[3] += d["miss"][i]
+    for era in sorted(per_era):
+        rs, n, p, m = per_era[era]
+        print(f"  {era:<10}{len(rs):>9,}{n:>11,}{p / n:>11.2%}{m / n:>10.2%}{m / p:>12.2f}")
     return 0
 
 
