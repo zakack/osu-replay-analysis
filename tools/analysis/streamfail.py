@@ -135,6 +135,36 @@ Five readings, two of which are corrections to the population reading.
   ordering of effects. Map mix and skill both plausibly explain that and it is not separated
   here.
 
+**Which way, not just how far** (the signed tables). Magnitudes answer "how far off" and
+discard the thing a diagnosis needs most. Positive rate is tapping progressively later; `+%`
+is the share of runs above zero.
+
+    1/4 streams            holds   breaks  holds +%  breaks +%      t
+    population             0.416    1.260     56.5%      67.1%    5.6
+    player, all-time      -0.005    0.447     49.7%      56.4%    6.3
+    player, one era        0.233    0.431     53.2%      56.4%    2.5
+
+    1/2 along-track        holds   breaks  holds +%  breaks +%      t
+    population            -0.027   -0.018     46.5%      46.5%    1.4
+    player, all-time      -0.082   -0.118     30.4%      23.2%   -8.5
+    player, one era       -0.099   -0.117     27.1%      24.7%   -2.8
+
+* **A run that breaks on tempo breaks late, in both corpora.** Not symmetric at all: 67.1% of
+  the population's breaking stream runs were drifting later against 56.5% of the holding ones,
+  and for the player 56.4% against 49.7%. Falling behind the beat is what precedes a break;
+  running ahead of it does not, which is a different claim from "tempo error precedes a break"
+  and a more useful one. The player's holding runs sit at 49.7% -- a coin flip, so centred --
+  where the population's already lean late at 56.5%, so the player is better centred than the
+  field and still fails the same way when it goes.
+
+* **On jump chains this player's cursor sits *behind* the note, and breaking runs sit further
+  behind.** The signed along-track is the largest single effect in any table here: only 23.2%
+  of breaking 1/2 runs have the cursor ahead, against 30.4% of holding ones, t=-8.5, and it
+  replicates inside one era at 24.7% against 27.1%. The population is near-centred on the same
+  measure (46.5%), so this is the player's and not the game's. The magnitude table said only
+  "further off"; signed, it says short of the target along the direction of travel -- which is
+  the charter's own example of a target finding, arrived at from the other end.
+
 Caveats that bound all of the above. Every ratio is between 0.98 and 1.16 on the player side,
 so all three mechanisms are present in both rhythms and this is which one moves first rather
 than which is to blame. Only circles are visible, so a miss on a slider head inside positions
@@ -241,6 +271,23 @@ def compare(a: list[float], b: list[float]) -> tuple:
     vb = sum((v - mb) ** 2 for v in b) / (len(b) - 1)
     se = math.sqrt(va / len(a) + vb / len(b))
     return ma, mb, (mb / ma if ma else 0.0), ((mb - ma) / se if se else 0.0)
+
+
+def signed(a: list[float], b: list[float]) -> tuple:
+    """Means with the sign kept, which way each group leans, and Welch's t on the difference.
+
+    The magnitude comparison answers "how far off", and deliberately discards the thing a
+    diagnosis needs most: *which* way. Tapping progressively late and progressively early are
+    equally off tempo and are opposite problems with opposite fixes.
+    """
+    if len(a) < 2 or len(b) < 2:
+        return 0.0, 0.0, 0.0, 0.0, 0.0
+    ma, mb = sum(a) / len(a), sum(b) / len(b)
+    va = sum((v - ma) ** 2 for v in a) / (len(a) - 1)
+    vb = sum((v - mb) ** 2 for v in b) / (len(b) - 1)
+    se = math.sqrt(va / len(a) + vb / len(b))
+    return (ma, mb, sum(1 for v in a if v > 0) / len(a),
+            sum(1 for v in b if v > 0) / len(b), ((mb - ma) / se if se else 0.0))
 
 
 def runs_of(rows: list[dict]) -> list[list[dict]]:
@@ -479,6 +526,18 @@ def main() -> int:
             b = acc[snap]["breaks at 10+"].get(metric, [])
             ma, mb, ratio, t = compare(a, b)
             print(f"  {metric:<16}{ma:>9.3f}{mb:>9.3f}{ratio:>8.2f}{t:>7.1f}   {description}")
+
+        print(f"\n  signed, so which way each group leans. '+%' is the share of runs above "
+              f"zero;\n  for rate, positive is tapping progressively later.\n")
+        print(f"  {'metric':<16}{'holds':>9}{'breaks':>9}{'holds +%':>10}"
+              f"{'breaks +%':>11}{'t':>7}")
+        for metric, _ in metrics:
+            a = acc[snap]["holds"].get(metric, [])
+            b = acc[snap]["breaks at 10+"].get(metric, [])
+            if metric == "interval ms":
+                continue
+            ma, mb, pa, pb, t = signed(a, b)
+            print(f"  {metric:<16}{ma:>9.3f}{mb:>9.3f}{pa:>9.1%}{pb:>10.1%}{t:>7.1f}")
         print()
     return 0
 

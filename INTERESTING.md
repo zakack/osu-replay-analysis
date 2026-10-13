@@ -731,3 +731,22 @@ What does replicate, across the population, the player's whole history and one b
 chain of 1/2 jumps breaks on along-track cursor offset (t=3.3 / 7.9 / 3.9) and never on
 tapping tempo (t=0.4 / -0.7 / 0.8), while a 1/4 stream breaks on both (tempo t=5.3 / 4.5 / 4.5,
 along-track t=2.5 / 4.5 / 3.7). Cross-track is weakest everywhere and null within one era.
+
+## 2026-10-13 — stream runs break *late*, and this player's cursor sits behind the note on jump chains
+
+`tools/analysis/streamfail.py` signed tables, all three views
+
+Tempo error before a break is not symmetric. 67.1% of the population's breaking 1/4 runs were
+drifting later against 56.5% of the holding ones (t=5.6); for zaksynack 56.4% against 49.7%
+(t=6.3), and 56.4% against 53.2% inside one button era. Falling behind precedes a break;
+running ahead does not. The player's holding runs sit at 49.7% positive -- a coin flip, better
+centred than the field's 56.5% -- and still fail the same way when they go.
+
+The bigger one: signed along-track on 1/2 chains. Only 23.2% of the player's breaking jump runs
+have the cursor *ahead* of the note along the path, against 30.4% of holding runs, t=-8.5 --
+the largest single effect in any of these tables, replicating inside one era (24.7% vs 27.1%).
+The population is near-centred on the same measure (46.5%), so the undershoot is this player's
+and not the game's. The magnitude table had said only "further off", which is why the signed
+pass was worth running. This is CLAUDE.md's own example of a target finding ("your cursor
+undershoots wide-angle jumps") reached from the other direction, and it wants the velocity
+and angle facets added before it is phrased for a player.
