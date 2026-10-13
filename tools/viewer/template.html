@@ -332,6 +332,80 @@
     color: var(--faint);
   }
 
+  /* ---- notes ------------------------------------------------------------- */
+
+  /* Callouts sit over the well, so they take the well's colours in both themes, and they
+     never catch the pointer: clicking through one still picks the object under it. */
+  .notes-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+
+  .callout {
+    position: absolute;
+    left: 0;
+    top: 0;
+    max-width: 264px;
+    padding: 7px 10px 8px;
+    background: rgba(9, 13, 17, .93);
+    border: 1px solid rgba(155, 141, 240, .55);
+    border-radius: 3px;
+    color: #D8DFE4;
+    font-size: 12.5px;
+    line-height: 1.42;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, .45);
+    display: none;
+  }
+
+  .callout.held { border-color: rgba(155, 141, 240, 1); }
+
+  /* A note about a stretch of time with nothing to point at: a caption along the bottom. */
+  .callout.caption { max-width: 70%; text-align: center; border-color: rgba(147, 166, 176, .35); }
+
+  .cite {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #FFFFFF;
+    white-space: nowrap;
+  }
+
+  .notes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 232px;
+    overflow-y: auto;
+    margin: 0 -4px;
+  }
+
+  .note-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px;
+    padding: 5px 4px;
+    border: 0;
+    border-radius: 2px;
+    background: none;
+    text-align: left;
+    font-family: Archivo, sans-serif;
+    font-size: 12px;
+    letter-spacing: 0;
+    line-height: 1.4;
+    color: var(--dim);
+  }
+
+  .note-item:hover { background: var(--panel-2); }
+  .note-item.active { color: var(--text); background: var(--panel-2); }
+  .note-item .cite { color: inherit; font-size: 11px; }
+
+  .note-time {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 10.5px;
+    color: var(--faint);
+    padding-top: 1px;
+  }
+
+  .note-item.active .note-time { color: var(--accent); }
+
   /* ---- object inspector -------------------------------------------------- */
 
   .inspect[hidden] { display: none; }
@@ -442,6 +516,7 @@
       <div class="scope-wrap">
         <canvas id="scope"></canvas>
         <div class="scope-tag" id="scope-tag"></div>
+        <div class="notes-layer" id="notes-layer"></div>
       </div>
 
       <div class="transport">
@@ -454,6 +529,7 @@
           <button data-rate=".5" aria-pressed="false">0.5&times;</button>
           <button data-rate="1" aria-pressed="true">1&times;</button>
           <button id="brake" aria-pressed="true" title="Ease to a halt on every miss (M)">Stop on miss</button>
+          <button id="notes-stop" aria-pressed="false" hidden title="Ease to a halt on every note, and hold until you press play">Stop on notes</button>
           <button id="markers" aria-pressed="true" title="Leave a marker where each press landed (K)">Hit markers</button>
           <span class="k" title="How long presses and error ticks stay on screen (F)">Fade</span>
           <button data-persist="0" aria-pressed="false" title="Presses and ticks last one second (F)">1 s</button>
@@ -478,6 +554,11 @@
         </div>
         <div class="readout"><span>combo</span><span id="j-combo">0</span></div>
         <div class="readout"><span>objects judged</span><span id="j-count">0 / 0</span></div>
+      </div>
+
+      <div class="card" id="notes-card" hidden>
+        <span class="k">Notes</span>
+        <div class="notes-list" id="notes-list"></div>
       </div>
 
       <div class="card">
@@ -556,7 +637,10 @@
     cursor drops one below where it was deepest in the circle. When the two hands move
     together an object&rsquo;s two ticks stand one over the other. Every number in the
     inspector comes from the extraction shim&rsquo;s own <code>geometry</code> and
-    <code>clicks</code> passes over this replay; none is computed here.
+    <code>clicks</code> passes over this replay; none is computed here. Notes, when the page
+    has them, are checked against the same numbers before it is built: every figure in a note
+    is filled in here from the replay rather than typed by whoever wrote it, and playback
+    comes to rest on each one just after the last thing it mentions.
     <br><br>
     <kbd>Space</kbd> play &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> step one frame &middot;
     <kbd>Shift</kbd> + arrows jump a second &middot; <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> speed
@@ -937,6 +1021,7 @@
     }
 
     if (sel) drawSelection(t, r);
+    drawNotes(t, r);
 
     for (var g = 0; g < ghosts.length; g++) {
       if (ghosts[g].on) drawCursor(ghosts[g], t, false);
@@ -1229,6 +1314,96 @@
     sx.restore();
   }
 
+  // ---- notes on the field ---------------------------------------------------
+  // A note is on screen across its own span of map time, like everything else here, so
+  // scrubbing back brings it back. Object notes are callouts with a leader to their anchor;
+  // a time note with nothing to point at is a caption along the bottom of the well.
+  var noteLayer = document.getElementById("notes-layer");
+  var noteEls = [];
+
+  function noteAlpha(n, t) {
+    if (t < n.from || t > n.to) return 0;
+    if (n.stop && !playing && Math.abs(t - n.stopAt) < 1) return 1;
+    return Math.min(1, (t - n.from) / 250, (n.to - t) / 500);
+  }
+
+  // Where a note points: its anchor object's centre, or its press or deepest point once
+  // those have happened -- before then the centre, so the pointer never runs ahead of play.
+  function noteAnchor(n, t) {
+    if (n.kind === "time") return n.at ? { x: n.at[0], y: n.at[1] } : null;
+    var o = OBJ[n.anchor];
+    if (n.point === "press") {
+      var p = presses.filter(function (q) { return q.o === o && q.t <= t; })[0];
+      if (p) return { x: p.x, y: p.y };
+    } else if (n.point === "deep" && o.cl != null && o.t + o.cl <= t) {
+      var d = you.at(o.t + o.cl);
+      if (d) return { x: d.x, y: d.y };
+    }
+    return { x: o.x, y: o.y };
+  }
+
+  function drawNotes(t, r) {
+    var placed = [];
+    for (var k = 0; k < NOTES.length; k++) {
+      var n = NOTES[k];
+      var a = noteAlpha(n, t);
+      var el = noteEls[k];
+      if (a <= 0) {
+        if (el) el.style.display = "none";
+        continue;
+      }
+      if (!el) {
+        el = noteEls[k] = document.createElement("div");
+        renderNote(el, n.text);
+        noteLayer.appendChild(el);
+      }
+      var anchor = noteAnchor(n, t);
+      el.className = "callout" + (anchor ? "" : " caption") +
+                     (!playing && n.stop && Math.abs(t - n.stopAt) < 1 ? " held" : "");
+      el.style.display = "block";
+      el.style.opacity = a;
+      var w = el.offsetWidth, h = el.offsetHeight, x, y;
+
+      if (!anchor) {
+        x = (view.w - w) / 2;
+        y = view.h - h - 14;
+      } else {
+        var ax = px(anchor.x), ay = py(anchor.y);
+        // Toward the open side of the well, and clear of the circle it points at.
+        var right = ax < view.w / 2, gap = r * 1.5 + 18;
+        x = right ? ax + gap : ax - gap - w;
+        y = ay - h / 2 - 20;
+        x = Math.max(8, Math.min(view.w - w - 8, x));
+        y = Math.max(8, Math.min(view.h - h - 8, y));
+      }
+      // Keep two notes on screen at once from sitting on each other.
+      placed.forEach(function (b) {
+        if (x < b.x + b.w && x + w > b.x && y < b.y + b.h && y + h > b.y) {
+          y = Math.min(view.h - h - 8, b.y + b.h + 6);
+        }
+      });
+      placed.push({ x: x, y: y, w: w, h: h });
+      el.style.transform = "translate(" + Math.round(x) + "px," + Math.round(y) + "px)";
+
+      if (anchor) {
+        var ex = right ? x : x + w;
+        var ey = Math.max(y + 8, Math.min(y + h - 8, ay));
+        sx.save();
+        sx.beginPath();
+        sx.moveTo(ax, ay);
+        sx.lineTo(ex, ey);
+        sx.strokeStyle = rgba(ACCENT, .75 * a);
+        sx.lineWidth = 1.2;
+        sx.stroke();
+        sx.beginPath();
+        sx.arc(ax, ay, 3, 0, 6.2832);
+        sx.fillStyle = rgba(ACCENT, .95 * a);
+        sx.fill();
+        sx.restore();
+      }
+    }
+  }
+
   // A turn in words, on the project's convention: magnitude 180 is straight through, 0 is
   // doubling back, and the sign is the direction on screen, positive counter-clockwise.
   function turnWords(rad) {
@@ -1351,7 +1526,25 @@
     if (sweep) band(Math.min(sweep.a, sweep.b), Math.max(sweep.a, sweep.b), .25);
 
     var hx = ((t - START) / (END - START)) * w;
-    tx.strokeStyle = braking ? rgba(MISS, 1) : rgba(hex(tok("--accent", "#9B8DF0")), 1);
+    // Note marks along the top: where each stop is, and a time note's whole stretch.
+    NOTES.forEach(function (n) {
+      var at = ((n.stop ? n.stopAt : n.from) - START) / (END - START) * w;
+      if (n.kind === "time") {
+        var a = (n.from - START) / (END - START) * w, b = (n.to - START) / (END - START) * w;
+        tx.fillStyle = rgba(ACCENT, .35);
+        tx.fillRect(a, 0, Math.max(2, b - a), 2);
+      }
+      tx.beginPath();
+      tx.moveTo(at - 4, 0);
+      tx.lineTo(at + 4, 0);
+      tx.lineTo(at, 6);
+      tx.closePath();
+      tx.fillStyle = rgba(ACCENT, n.stop ? .95 : .55);
+      tx.fill();
+    });
+
+    tx.strokeStyle = braking ? rgba(braking.kind === "miss" ? MISS : ACCENT, 1)
+                             : rgba(hex(tok("--accent", "#9B8DF0")), 1);
     tx.lineWidth = braking ? 2 : 1.5;
     tx.beginPath();
     tx.moveTo(hx, 0);
@@ -1620,7 +1813,7 @@
   // half second of approach so the moment arrives instead of being announced, and the
   // playhead turns the miss colour while it is easing off.
   var BRAKE_MS = 520;
-  var braking = false;
+  var braking = null;   // the stop being eased into: {t, kind}, or null
 
   // On by default only where it stays a pleasure. Easing to a halt on a clean run marks
   // the one thing that went wrong; doing it twenty times is being stopped on the way to
@@ -1631,10 +1824,47 @@
   var missAt = judged.filter(function (j) { return j.k === "miss"; })
                      .map(function (j) { return j.t; });
 
-  // Strictly ahead, so resuming from a stop does not immediately catch the same miss.
-  function nextMiss(from) {
-    for (var i = 0; i < missAt.length; i++) if (missAt[i] > from + 3) return missAt[i];
-    return null;
+  // Notes stop the same way a miss does: eased into, then held until play is pressed. Each
+  // stops just after the last thing it cites (build.py works that out), so the field shows
+  // what the sentence says by the time it comes to rest.
+  var NOTES = DATA.notes || [];
+  var noteStops = NOTES.filter(function (n) { return n.stop; })
+                       .map(function (n) { return n.stopAt; })
+                       .sort(function (a, b) { return a - b; });
+  var NOTES_BY_DEFAULT = 12;
+  var notesOn = false;
+
+  // A miss and a note at the same moment stop once, with the note shown -- the note is
+  // almost always about the miss. Same moment means the note's stop lands inside the miss's
+  // own window: its time out to the meh edge, plus the 100 ms a stray press can trail by.
+  // A miss elsewhere inside a long pattern note keeps its own stop.
+  function mergedIntoNote(m) {
+    for (var i = 0; i < noteStops.length; i++) {
+      if (noteStops[i] >= m && noteStops[i] <= m + SPAN + 100) return true;
+    }
+    return false;
+  }
+
+  // The next stop strictly ahead, so resuming from one does not catch it again. Two notes
+  // on the same moment are one stop for the same reason.
+  function nextStop(from) {
+    var best = null, i;
+    if (brakeOn) {
+      for (i = 0; i < missAt.length; i++) {
+        if (missAt[i] <= from + 3) continue;
+        if (notesOn && mergedIntoNote(missAt[i])) continue;
+        best = { t: missAt[i], kind: "miss" };
+        break;
+      }
+    }
+    if (notesOn) {
+      for (i = 0; i < noteStops.length; i++) {
+        if (noteStops[i] <= from + 3) continue;
+        if (!best || noteStops[i] < best.t) best = { t: noteStops[i], kind: "note" };
+        break;
+      }
+    }
+    return best;
   }
 
   function render() {
@@ -1642,6 +1872,7 @@
     drawStrip(t);
     drawBar(t);
     readout(t);
+    markNotes(t);
   }
 
   function tick(now) {
@@ -1652,12 +1883,13 @@
 
         var advance = dt * rate;
         var stopped = false;
-        braking = false;
+        braking = null;
 
-        if (brakeOn && !looping) {
-          var m = nextMiss(t);
+        if (!looping) {
+          var stop = nextStop(t);
+          var m = stop ? stop.t : null;
           if (m !== null && m - t < BRAKE_MS) {
-            braking = true;
+            braking = stop;
             var u = Math.max(0, (m - t) / BRAKE_MS);
             // Quadratic, with a floor so the approach converges rather than crawling.
             advance *= Math.max(.05, u * u);
@@ -1682,7 +1914,7 @@
         }
         if (t >= END) { t = END; stopped = true; }
 
-        if (stopped) { braking = false; setPlaying(false); }
+        if (stopped) { braking = null; setPlaying(false); }
         else render();
       }
     } catch (err) {
@@ -1862,7 +2094,7 @@
       var span = (last.endTime != null ? last.endTime : last.t) - OBJ[sel.lo].t;
       title.appendChild(document.createTextNode("objects " + sel.lo + "–" + sel.hi + " "));
       dim.textContent = members.length + " objects · " + (span / 1000).toFixed(2) + " s";
-      fillMany(members);
+      fillMany();
     }
     title.appendChild(dim);
 
@@ -1888,9 +2120,7 @@
     // The bar's connector, in words: how far apart in time the two hands were on this one
     // object. Near zero is the press landing at the bottom of the cursor's dip.
     var gap = o.cl == null ? null : o.error != null ? o.error - o.cl : o.sy != null ? o.sy - o.cl : null;
-    setText("x-gap", gap == null ? "—"
-      : Math.abs(gap) < 2 ? "together"
-      : Math.abs(gap).toFixed(0) + " ms " + (gap > 0 ? "after" : "before"));
+    setText("x-gap", gap == null ? "—" : gapWords(gap));
 
     if (o.en != null) {
       var open = o.en <= -SPAN + .05, close = o.ex != null && o.ex >= SPAN - .05;
@@ -1927,47 +2157,119 @@
     setText("x-turn", o.tn != null ? turnWords(o.tn) : "—");
   }
 
-  // The same quantities over a pattern: means and spreads, and how strongly the two hands'
-  // timing moved together across its objects -- the corpus-wide coupling statistic, on a
-  // sample of one pattern, so it is printed with its count and withheld below eight.
-  function fillMany(members) {
-    var press = stats(members.filter(function (m) { return m.error != null; })
-                             .map(function (m) { return m.error; }));
-    setText("p-press", press ? ms(press.mean) + " ± " + press.sd.toFixed(0) : "—",
-            press ? errorColour(press.mean) : null);
+  // ---- pattern statistics and citations -----------------------------------
+  // One set of formatters for the pattern card and for notes alike. A note's {A-B.rho} and
+  // the card's "moving together" come from the same function, so the two can never show
+  // one number two ways -- which is the point of letting the page, not the note's author,
+  // write the numbers.
+  function gapWords(g) {
+    return Math.abs(g) < 2 ? "together" : Math.abs(g).toFixed(0) + " ms " + (g > 0 ? "after" : "before");
+  }
 
-    var missed = members.filter(function (m) { return m.result === "Miss"; }).length;
-    setText("p-miss", missed + " of " + members.length, missed ? MISS : null);
-
-    var deep = stats(members.filter(function (m) { return m.cl != null; })
-                            .map(function (m) { return m.cl; }));
-    setText("p-deep", deep ? ms(deep.mean) + " ± " + deep.sd.toFixed(0) : "—",
-            deep ? errorColour(deep.mean) : null);
-
-    var reach = stats(members.filter(function (m) { return m.rr != null; })
-                             .map(function (m) { return m.rr; }));
-    var side = stats(members.filter(function (m) { return m.ri != null; })
-                            .map(function (m) { return m.ri; }));
-    setText("p-reach", reach ? radii(reach.mean) + " ± " + reach.sd.toFixed(2) : "—");
-    setText("p-side", side ? radii(side.mean) + " ± " + side.sd.toFixed(2) : "—");
-
+  function patternStats(lo, hi) {
+    var members = OBJ.slice(lo, hi + 1).filter(function (m) { return m.type !== "spinner"; });
+    function of(pick) {
+      return stats(members.map(pick).filter(function (v) { return v != null; }));
+    }
     var both = members.filter(function (m) { return m.error != null && m.cl != null; });
-    var gap = stats(both.map(function (m) { return m.error - m.cl; }));
-    setText("p-gap", gap
-      ? (Math.abs(gap.mean) < 2 ? "together"
-         : Math.abs(gap.mean).toFixed(0) + " ms " + (gap.mean > 0 ? "after" : "before"))
-        + " ± " + gap.sd.toFixed(0)
-      : "—");
-
-    if (both.length < 8) {
-      setText("p-rho", "too few (" + both.length + ")");
-    } else {
+    var rho = null;
+    if (both.length >= 8) {
       var b = stats(both.map(function (m) { return m.error; }));
       var c = stats(both.map(function (m) { return m.cl; }));
       var cov = both.reduce(function (a, m) { return a + (m.error - b.mean) * (m.cl - c.mean); }, 0) / both.length;
-      var rho = b.sd > 0 && c.sd > 0 ? cov / (b.sd * c.sd) : 0;
-      setText("p-rho", "ρ " + rho.toFixed(2) + " · n " + both.length);
+      rho = b.sd > 0 && c.sd > 0 ? cov / (b.sd * c.sd) : 0;
     }
+    var last = OBJ[hi];
+    return {
+      members: members,
+      press: of(function (m) { return m.error; }),
+      deep: of(function (m) { return m.cl; }),
+      reach: of(function (m) { return m.rr; }),
+      side: of(function (m) { return m.ri; }),
+      gap: stats(both.map(function (m) { return m.error - m.cl; })),
+      both: both.length,
+      rho: rho,
+      missed: members.filter(function (m) { return m.result === "Miss"; }).length,
+      span: (last.endTime != null ? last.endTime : last.t) - OBJ[lo].t
+    };
+  }
+
+  function citePattern(lo, hi, name) {
+    var p = patternStats(lo, hi);
+    switch (name) {
+      case "press": return p.press ? ms(p.press.mean) + " ± " + p.press.sd.toFixed(0) : null;
+      case "deepest": return p.deep ? ms(p.deep.mean) + " ± " + p.deep.sd.toFixed(0) : null;
+      case "reach": return p.reach ? radii(p.reach.mean) + " ± " + p.reach.sd.toFixed(2) : null;
+      case "inside": return p.side ? radii(p.side.mean) + " ± " + p.side.sd.toFixed(2) : null;
+      case "gap": return p.gap ? gapWords(p.gap.mean) + " ± " + p.gap.sd.toFixed(0) : null;
+      case "rho": return p.rho != null ? "ρ " + p.rho.toFixed(2) + " · n " + p.both : null;
+      case "misses": return p.missed + " of " + p.members.length;
+      case "count": return String(p.members.length);
+      case "span": return (p.span / 1000).toFixed(2) + " s";
+    }
+    return null;
+  }
+
+  function citeObject(o, name) {
+    var press = o.error != null ? o.error : o.sy;
+    switch (name) {
+      case "time": return clock(o.t);
+      case "result": return o.result.toLowerCase();
+      case "press": return press != null ? ms(press) : null;
+      case "deepest": return o.cl != null ? ms(o.cl) : null;
+      case "depth": return o.cd != null ? o.cd.toFixed(2) + " r" : null;
+      case "gap": return press != null && o.cl != null ? gapWords(press - o.cl) : null;
+      case "entered": return o.en == null ? null : o.en <= -SPAN + .05 ? "already inside" : ms(o.en);
+      case "left": return o.ex == null ? null : o.ex >= SPAN - .05 ? "still inside" : ms(o.ex);
+      case "aim": return o.ae != null ? o.ae.toFixed(2) + " r" : null;
+      case "reach": return o.rr != null ? radii(o.rr) : null;
+      case "inside": return o.ri != null ? radii(o.ri) : null;
+      case "spacing": return o.sp != null ? o.sp.toFixed(2) + " r" : null;
+      case "heading": return o.hd != null ? deg(o.hd).toFixed(0) + "°" : null;
+      case "turn": return o.tn != null ? turnWords(o.tn) : null;
+    }
+    return null;
+  }
+
+  // A note's text into an element: prose as text, every placeholder as its value. build.py
+  // has already refused any placeholder that would come out empty, so the fallback -- the
+  // placeholder itself, verbatim -- is there to make a mismatch visible, not to hide one.
+  var CITE = /\{(\d+)(?:-(\d+))?\.([a-z]+)\}/g;
+  function renderNote(el, text) {
+    el.textContent = "";
+    var at = 0, m;
+    CITE.lastIndex = 0;
+    while ((m = CITE.exec(text)) !== null) {
+      if (m.index > at) el.appendChild(document.createTextNode(text.slice(at, m.index)));
+      var a = parseInt(m[1], 10);
+      var value = m[2] != null ? citePattern(a, parseInt(m[2], 10), m[3])
+                               : (OBJ[a] ? citeObject(OBJ[a], m[3]) : null);
+      var b = document.createElement("b");
+      b.className = "cite";
+      b.textContent = value != null ? value : m[0];
+      el.appendChild(b);
+      at = m.index + m[0].length;
+    }
+    if (at < text.length) el.appendChild(document.createTextNode(text.slice(at)));
+  }
+
+  // The same quantities over a pattern, in the card: means and spreads, and how strongly
+  // the two hands' timing moved together -- the corpus-wide coupling statistic, on a sample
+  // of one pattern, so it is printed with its count and withheld below eight.
+  function fillMany() {
+    var p = patternStats(sel.lo, sel.hi);
+    function cite(id, name, colour) {
+      var v = citePattern(sel.lo, sel.hi, name);
+      setText(id, v != null ? v : "—", v != null ? colour : null);
+    }
+    cite("p-press", "press", p.press ? errorColour(p.press.mean) : null);
+    cite("p-miss", "misses", p.missed ? MISS : null);
+    cite("p-deep", "deepest", p.deep ? errorColour(p.deep.mean) : null);
+    cite("p-reach", "reach");
+    cite("p-side", "inside");
+    cite("p-gap", "gap");
+    if (p.rho == null) setText("p-rho", "too few (" + p.both + ")");
+    else cite("p-rho", "rho");
   }
 
   document.getElementById("x-clear").addEventListener("click", function () { choose(null); });
@@ -2058,6 +2360,61 @@
   brakeBtn.addEventListener("click", function () { setBrake(!brakeOn); });
   setBrake(missAt.length > 0 && missAt.length <= BRAKE_BY_DEFAULT);
   if (!missAt.length) { brakeBtn.disabled = true; brakeBtn.textContent = "No misses"; }
+
+  // The skip switch for notes, beside the one for misses and on the same rule: on when the
+  // stops are few enough to read, offered rather than imposed when they are not.
+  var notesBtn = document.getElementById("notes-stop");
+  function setNotesStop(on) {
+    notesOn = on;
+    notesBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    notesBtn.textContent = "Stop on notes (" + noteStops.length + ")";
+  }
+  if (noteStops.length) {
+    notesBtn.hidden = false;
+    notesBtn.addEventListener("click", function () { setNotesStop(!notesOn); });
+    setNotesStop(noteStops.length <= NOTES_BY_DEFAULT);
+  }
+
+  // ---- the notes list -------------------------------------------------------
+  // Every note in time order. Clicking one goes to the moment it stops at -- or a time
+  // note's start -- and selects its objects, so a pattern note is one click from looping.
+  var notesList = document.getElementById("notes-list");
+  var noteItems = [];
+  if (NOTES.length) {
+    document.getElementById("notes-card").hidden = false;
+    NOTES.map(function (n, k) { return { n: n, k: k }; })
+         .sort(function (a, b) { return a.n.stopAt - b.n.stopAt; })
+         .forEach(function (entry) {
+      var n = entry.n;
+      var item = document.createElement("button");
+      item.className = "note-item";
+      var when = document.createElement("span");
+      when.className = "note-time";
+      when.textContent = clock(n.kind === "time" ? n.from : n.stopAt).slice(0, -2);
+      var body = document.createElement("span");
+      renderNote(body, n.text);
+      item.appendChild(when);
+      item.appendChild(body);
+      item.addEventListener("click", function () {
+        setPlaying(false);
+        t = n.kind === "time" ? n.from + 1 : n.stopAt;
+        if (n.kind === "objects") {
+          anchor = n.lo;
+          choose(n.lo, n.hi);
+        } else {
+          render();
+        }
+      });
+      notesList.appendChild(item);
+      noteItems.push({ el: item, n: n });
+    });
+  }
+
+  function markNotes(t) {
+    noteItems.forEach(function (it) {
+      it.el.classList.toggle("active", t >= it.n.from && t <= it.n.to);
+    });
+  }
 
   document.querySelectorAll("[data-rate]").forEach(function (b) {
     b.addEventListener("click", function () {

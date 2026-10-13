@@ -42,6 +42,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(ROOT, "tools", "analysis"))
 from streamfail import corner  # noqa: E402
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import notes as annotations  # noqa: E402
+
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "template.html")
 ORA = os.path.join(ROOT, "src", "Cli", "bin", "Release", "net10.0", "ora.dll")
 
@@ -264,13 +267,25 @@ def username(path: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--replay", required=True, help="the play the viewer is about")
-    parser.add_argument("--out", required=True, help="destination HTML file")
+    parser.add_argument("--out", help="destination HTML file")
     parser.add_argument("--reference", nargs="*", default=[], help="other players' replays")
     parser.add_argument("--auto", type=int, default=0,
                         help="instead, take the N best no-mod lazer scores from the corpus")
     parser.add_argument("--mine", type=int, default=0,
                         help="instead, take N of your own other runs on the same beatmap")
+    parser.add_argument("--notes", help="annotations to show, as JSON (see notes.py)")
+    parser.add_argument("--check", action="store_true",
+                        help="validate --notes against the replay and stop, without building")
+    parser.add_argument("--describe", nargs="?", const="all", metavar="A-B",
+                        help="print every value a note can cite, per object, and stop; "
+                             "optionally only objects A-B")
     args = parser.parse_args()
+
+    if args.check and not args.notes:
+        raise SystemExit("--check validates --notes; give it a notes file")
+    # The out path only matters when something is built.
+    if not (args.check or args.describe) and not args.out:
+        raise SystemExit("--out is required to build")
 
     if args.auto and args.mine:
         raise SystemExit("--auto and --mine are different fields; pick one")
@@ -286,6 +301,38 @@ def main() -> int:
         matched = attach(subject, inspect(args.replay, work))
         clickable = sum(1 for o in subject["objects"] if o["type"] != "spinner")
         print(f"inspector: {matched} of {clickable} objects carry geometry and cursor visits")
+
+        if args.describe:
+            lo = hi = None
+            if args.describe != "all":
+                found = re.fullmatch(r"(\d+)(?:-(\d+))?", args.describe)
+                if not found:
+                    raise SystemExit("--describe takes a range A-B or a single index")
+                lo = int(found.group(1))
+                hi = int(found.group(2)) if found.group(2) else lo
+            print(annotations.describe(subject, lo, hi))
+            return 0
+
+        # Notes are validated before anything slow, and every problem is reported at once.
+        notes = []
+        if args.notes:
+            notes, problems = annotations.resolve(annotations.load(args.notes), subject)
+            if problems:
+                print(f"\n{len(problems)} problem(s) in {args.notes}:", file=sys.stderr)
+                for p in problems:
+                    print("  " + p, file=sys.stderr)
+                return 1
+            stops = sum(1 for n in notes if n["stop"])
+            print(f"notes: {len(notes)} valid, {stops} stop playback")
+            if args.check:
+                for n in notes:
+                    where = (f"objects {n['lo']}-{n['hi']}" if n["kind"] == "objects"
+                             else f"{n['from']:.0f}-{n['to']:.0f} ms")
+                    stop = f"stops at {n['stopAt']:.0f} ms" if n["stop"] else "no stop"
+                    print(f"  {where:<22} {stop:<20} {n['text'][:70]}")
+                    for line in annotations.values(n["text"], subject):
+                        print(f"  {'':<22} {'':<20}   {line}")
+                return 0
 
         paths, field = args.reference, "reference"
         if args.auto:
@@ -334,7 +381,7 @@ def main() -> int:
             print(f"  {ghosts[-1]['name']:<18} spread {ghosts[-1]['sd']}ms")
 
     payload = json.dumps(
-        {"scene": subject, "ghosts": ghosts, "field": field,
+        {"scene": subject, "ghosts": ghosts, "field": field, "notes": notes,
          "you": {"name": "you", "sd": spread(subject)}},
         separators=(",", ":"))
 
