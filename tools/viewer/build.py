@@ -17,6 +17,10 @@ better player's line" and becomes your own spread: the same objects, the same ha
 different days. Each ghost is labelled by date and carries its own timing spread, so the
 roster reads as a history rather than a leaderboard.
 
+Every object also carries what the object inspector shows -- heading, spacing, turn, aim
+error, and the cursor's visit to it -- folded in from `ora geometry` and `ora clicks` over
+the same replay, so the browser draws those numbers and never derives them.
+
 Reference players contribute frames and per-object errors only, never geometry. They are
 on the same beatmap, so the objects are already in the document once, and object index is
 the join key — the scene pass emits objects in start-time order for every replay of a
@@ -25,6 +29,7 @@ beatmap, so index *i* is the same object for everybody.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import re
@@ -55,6 +60,101 @@ def scene(replay: str, destination: str) -> dict:
 
     with open(destination) as handle:
         return json.load(handle)
+
+
+def inspect(replay: str, work: str) -> dict[int, dict]:
+    """Per-object numbers the analysis already has, for the viewer's object inspector.
+
+    The viewer draws nothing it computed itself, and that holds for the inspector too:
+    heading, spacing, turn and aim error come from `ora geometry`, and the cursor's visit to
+    each circle -- when it was deepest, how deep, when it entered and left, any press that
+    judged nothing -- from `ora clicks`. Both take a corpus, so the replay is surveyed on its
+    own through a one-file folder first. Keyed by start time rounded to the millisecond,
+    which is how the two CSVs and the scene document agree on an object.
+
+    Returns an empty dict on any failure. The inspector is an addition to the viewer, not
+    a precondition of it, and a lap that cannot be inspected is still worth watching.
+    """
+    folder = os.path.join(work, "inspect")
+    os.makedirs(folder, exist_ok=True)
+    os.symlink(os.path.abspath(replay), os.path.join(folder, "replay.osr"))
+    corpus = os.path.join(work, "inspect.json")
+    geometry = os.path.join(work, "inspect-geometry.csv")
+    clicks = os.path.join(work, "inspect-clicks.csv")
+
+    for command in (["survey", "--out", corpus, folder],
+                    ["geometry", "--corpus", corpus, "--out", geometry],
+                    ["clicks", "--corpus", corpus, "--out", clicks]):
+        result = subprocess.run(["dotnet", ORA, *command], capture_output=True, text=True,
+                                cwd=ROOT)
+        if result.returncode != 0 or (command[0] != "survey"
+                                      and not os.path.exists(command[-1])):
+            print(f"  inspector: `ora {command[0]}` failed, building without it")
+            return {}
+
+    def num(text):
+        try:
+            return float(text)
+        except (TypeError, ValueError):
+            return None
+
+    out: dict[int, dict] = {}
+    with open(geometry, newline="") as handle:
+        for r in csv.DictReader(handle):
+            out.setdefault(round(float(r["startTime"])), {}).update({
+                "sp": num(r["spacingRadii"]),
+                "hd": num(r["heading"]),
+                "an": num(r["signedAngle"]),
+                "ae": num(r["aimErrorRadii"]),
+            })
+    with open(clicks, newline="") as handle:
+        for r in csv.DictReader(handle):
+            start = float(r["startTime"])
+
+            def offset(column):
+                value = num(r[column])
+                return None if value is None else value - start
+
+            out.setdefault(round(start), {}).update({
+                "cl": offset("closestTime"),
+                "cd": num(r["closestDist"]),
+                "en": offset("enterTime"),
+                "ex": offset("exitTime"),
+                "sy": offset("strayPressTime"),
+                "zx": num(r["strayX"]),
+                "zy": num(r["strayY"]),
+            })
+    return out
+
+
+def attach(document: dict, numbers: dict[int, dict]) -> int:
+    """Fold the inspector's numbers onto the scene's objects, and return how many matched.
+
+    One shift happens here and nowhere else. Geometry's row for object n measures the turn
+    whose apex is object n-1 (see `atlas.py`), so the turn *at* an object is the angle on the
+    next object's row. Anything else is the object's own row. The next object has to be the
+    next one in the scene, not the next row, because spinners have no geometry row and the
+    turn across one is not a turn.
+    """
+    objects = document["objects"]
+    matched = 0
+    for k, o in enumerate(objects):
+        row = numbers.get(round(o["t"]))
+        if row is None:
+            continue
+        matched += 1
+        following = numbers.get(round(objects[k + 1]["t"])) if k + 1 < len(objects) else None
+        fields = {
+            "sp": (row.get("sp"), 3), "hd": (row.get("hd"), 4), "ae": (row.get("ae"), 3),
+            "tn": (following.get("an") if following else None, 4),
+            "cl": (row.get("cl"), 1), "cd": (row.get("cd"), 3),
+            "en": (row.get("en"), 1), "ex": (row.get("ex"), 1), "sy": (row.get("sy"), 1),
+            "zx": (row.get("zx"), 2), "zy": (row.get("zy"), 2),
+        }
+        for key, (value, places) in fields.items():
+            if value is not None:
+                o[key] = round(value, places)
+    return matched
 
 
 def spread(document: dict) -> float:
@@ -154,6 +254,10 @@ def main() -> int:
         subject = scene(args.replay, os.path.join(work, "subject.json"))
         print(f"{len(subject['objects'])} objects, {subject['frameCount']} frames, "
               f"spread {spread(subject)}ms")
+
+        matched = attach(subject, inspect(args.replay, work))
+        clickable = sum(1 for o in subject["objects"] if o["type"] != "spinner")
+        print(f"inspector: {matched} of {clickable} objects carry geometry and cursor visits")
 
         paths, field = args.reference, "reference"
         if args.auto:
