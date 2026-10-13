@@ -187,13 +187,37 @@ judged cleanly:
   streams his rho climbs 0.19, 0.28, 0.32, 0.31, 0.35 across the tempo bands while theirs sits
   flat at 0.09-0.13. His highest coupling anywhere is 220+ jumps at 0.59.
 
-* **One confound not controlled, and it could carry some of the gap.** rho is pooled across
-  objects within a band, so any common timing offset shared by both hands -- a mistimed
-  section, a map's own offset, the audio path -- inflates it for both hands at once without
-  any bilateral coordination. The player's map pool is not the top 50's, and the charter's
-  own oracle note is that a whole board showing the same error sign in a section means the
-  map. Centering within map and section before correlating is the control and has not been
-  run.
+* **The common-offset confound is real, costs about a fifth of the player's figure, and does
+  not change the answer.** rho pooled across a band absorbs anything that displaces *both*
+  hands together -- a mistimed section, a map's own offset, the audio path -- which is a
+  common cause rather than bilateral coordination. Removing what each replay and then each
+  10-second section shares:
+
+      jumps, 3.5+ radii      pooled   within replay   within section
+      player  under 140        0.43            0.37             0.33
+      player  160-180          0.43            0.38             0.34
+      player  200-220          0.44            0.41             0.38
+      player  220+             0.59            0.55             0.54
+      top 50  under 140        0.24            0.23             0.22
+      top 50  160-180          0.23            0.21             0.19
+      top 50  200-220          0.24            0.23             0.21
+
+      streams, 0-2 radii     pooled   within replay   within section
+      player  160-180          0.32            0.31             0.28
+      player  200-220          0.35            0.33             0.33
+      top 50  160-180          0.10            0.09             0.07
+      top 50  200-220          0.12            0.09             0.08
+
+  Centering takes about 0.08 off the player's jump figures and about 0.03 off the top 50's,
+  so the shared-offset component is roughly a fifth of his and an eighth of theirs -- itself
+  consistent with his map pool carrying more of it. What remains is the comparison unchanged:
+  0.33-0.38 against 0.19-0.22 on jumps, and 0.28-0.33 against 0.07-0.09 on streams, which is
+  still about 1.7-fold and 3-fold. The stream figures barely move at all, so nothing there
+  was a map artifact.
+
+  What this does *not* establish is direction. Both corpora are still different people playing
+  different maps, and nobody has shown that uncoupling causes the skill rather than
+  accompanying it.
 
 * **The `vs tip` column does not test the claim and is left out of the table above.** It
   measures the spread against `turnTime`, the cursor's reversal, and runs 67-118 ms, far
@@ -323,6 +347,9 @@ def main() -> int:
                              "then the variance of (button - cursor) is the sum of the two "
                              "variances against the beat; if they are coupled it collapses "
                              "below that. Measured on the objects that judged cleanly")
+    parser.add_argument("--window", type=float, default=10000.0,
+                        help="with --coupling, the section length in ms used for the "
+                             "finest centering level")
     parser.add_argument("--over-time", action="store_true",
                         help="with --by-bpm, split the tempo bands by half-year as well, to "
                              "test whether the tempo a player comes apart at moves upward. "
@@ -462,10 +489,18 @@ def main() -> int:
           "  visit    where in the cursor's stay inside the circle the button fell, 0 at the\n"
           "           moment it crossed in and 1 at the moment it crossed out.\n")
     if args.by_bpm and args.coupling:
-        # Per band: n, then (sum, sum of squares) for the button against the beat, the cursor
-        # against the beat, the button against the cursor's deepest point, and the button
-        # against the cursor's reversal -- the "tip of the path" the player describes.
-        pair: dict = collections.defaultdict(lambda: [0] + [[0.0, 0.0, 0] for _ in range(4)])
+        # Six sufficient statistics per group, at three grouping levels. The correlation
+        # between the two hands' errors against the beat is the scale-free statistic, but
+        # pooled across a whole corpus it also absorbs anything that displaces *both* hands
+        # together: a mistimed section, a map's own offset, the audio path, a rate mod. Those
+        # are common causes, not bilateral coordination, and they inflate rho with no
+        # coordination involved. Centering within a group removes whatever that group shares,
+        # so the within-replay and within-section columns are the controlled estimates.
+        def stats():
+            return [0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+        levels = ("pooled", "within replay", "within section")
+        acc3 = {level: collections.defaultdict(stats) for level in levels}
         with open(clicks) as f:
             for r in csv.DictReader(f):
                 got = wanted.get((r["replay"], round(float(r["startTime"]), 1)))
@@ -473,51 +508,55 @@ def main() -> int:
                     continue
                 start = float(r["startTime"])
                 press, deep = _num(r["pressTime"]), _num(r["closestTime"])
-                tip = _num(r["turnTime"])
-                if press is None:
+                if press is None or deep is None:
                     continue
-                cell = pair[got[0]]
-                cell[0] += 1
-                for slot, value in ((1, press - start),
-                                    (2, None if deep is None else deep - start),
-                                    (3, None if deep is None else press - deep),
-                                    (4, None if tip is None else press - tip)):
-                    if value is not None:
-                        cell[slot][0] += value
-                        cell[slot][1] += value * value
-                        cell[slot][2] += 1
+                x, y = press - start, deep - start
+                band = got[0]
+                section = int(start // args.window)
+                for level, key in ((levels[0], band),
+                                   (levels[1], (band, r["replay"])),
+                                   (levels[2], (band, r["replay"], section))):
+                    c = acc3[level][key]
+                    c[0] += 1
+                    c[1] += x
+                    c[2] += y
+                    c[3] += x * x
+                    c[4] += y * y
+                    c[5] += x * y
 
-        print("Are the two hands each locked to the music, or locked to each other? If each "
-              "tracks the\nbeat on its own then the spread of (button - cursor) is the two "
-              "spreads against the beat\nadded in quadrature. If they move together it "
-              "collapses below that. All in ms, on the\nacute wide jumps that judged "
-              "cleanly.\n")
-        print(f"  {'bpm':<12}{'n':>9}{'button':>9}{'cursor':>9}{'if indep':>10}"
-              f"{'measured':>10}{'ratio':>8}{'rho':>7}")
+        def correlate(groups, band, least=5):
+            """Pooled within-group correlation, from each group's own centred moments."""
+            sxx = syy = sxy = 0.0
+            n = 0
+            for key, c in groups.items():
+                if (key if isinstance(key, str) else key[0]) != band or c[0] < least:
+                    continue
+                sxx += c[3] - c[1] * c[1] / c[0]
+                syy += c[4] - c[2] * c[2] / c[0]
+                sxy += c[5] - c[1] * c[2] / c[0]
+                n += c[0]
+            if n < least or sxx <= 0 or syy <= 0:
+                return None, 0, 0.0, 0.0
+            return sxy / (sxx * syy) ** 0.5, n, (sxx / n) ** 0.5, (syy / n) ** 0.5
+
+        print("Correlation between the two hands' errors against the beat, and what survives "
+              "removing\nwhat each map and each section shares. A timing offset common to "
+              "both hands -- a\nmistimed section, a map's own offset, the audio path -- "
+              "inflates the pooled figure with\nno bilateral coordination involved. 0 is two "
+              "hands each locked to the music.\n")
+        print(f"  {'bpm':<12}{'n':>9}{'button':>8}{'cursor':>8}"
+              + "".join(f"{level:>16}" for level in levels))
         for band in LABELS:
-            cell = pair.get(band)
-            if not cell or cell[0] < 500:
+            row = correlate(acc3[levels[0]], band, least=500)
+            if row[0] is None:
                 continue
-            _, sd_button = moments(cell[1][2], cell[1][0], cell[1][1])
-            _, sd_cursor = moments(cell[2][2], cell[2][0], cell[2][1])
-            _, sd_deep = moments(cell[3][2], cell[3][0], cell[3][1])
-            _, sd_tip = moments(cell[4][2], cell[4][0], cell[4][1])
-            squares = sd_button ** 2 + sd_cursor ** 2
-            independent = squares ** 0.5
-            ratio = sd_deep / independent if independent else 0.0
-            # ratio^2 = 1 - rho * 2*sb*sc/(sb^2+sc^2), so the ratio is pushed toward 1.00 by
-            # an imbalance between the two spreads even at a fixed correlation. rho is the
-            # scale-free statistic and is what the comparison has to be made on.
-            lever = 2 * sd_button * sd_cursor / squares if squares else 0.0
-            rho = (1 - ratio * ratio) / lever if lever else 0.0
-            print(f"  {band:<12}{cell[0]:>9,}{sd_button:>9.1f}{sd_cursor:>9.1f}"
-                  f"{independent:>10.1f}{sd_deep:>10.1f}{ratio:>8.2f}{rho:>7.2f}")
-        print("\n  ratio is measured over independent, and is NOT comparable between players:"
-              "\n  ratio^2 = 1 - rho * 2*sb*sc/(sb^2+sc^2), so shrinking the button spread "
-              "pushes it\n  toward 1.00 at a fixed correlation. rho is the correlation "
-              "between the two hands'\n  errors against the beat, is scale-free, and is the "
-              "column to compare on. 0 is two\n  hands each locked to the music; higher is "
-              "two hands moving with each other.")
+            line = f"  {band:<12}{row[1]:>9,}{row[2]:>8.1f}{row[3]:>8.1f}"
+            for level in levels:
+                rho, _, _, _ = correlate(acc3[level], band)
+                line += f"{rho:>16.2f}" if rho is not None else f"{'-':>16}"
+            print(line)
+        print(f"\n  sections are {args.window / 1000:g} s long; groups with under 5 objects "
+              f"are dropped at every level.")
         return 0
 
     if args.by_bpm and args.over_time:

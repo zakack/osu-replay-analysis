@@ -1020,3 +1020,25 @@ And the 280 bpm question cannot be answered with this corpus at all: the referen
 top-50 boards on *this player's* maps, 5.0-6.5 stars, so it has under 500 objects above 220 bpm
 and no rows there. Settling it means pulling boards for high-tempo maps specifically, which is
 a new fetch rather than a new analysis.
+
+## 2026-10-13 — the coupling gap survives within-map and within-section centering
+
+`arrival.py --by-bpm --coupling` (pooled / within replay / within section columns)
+
+The control for the confound flagged above: a timing offset common to both hands inflates rho
+with no coordination involved. Removing what each replay and then each 10-second section
+shares takes about 0.08 off zaksynack's jump figures and about 0.03 off the boards' -- so the
+shared-offset component is roughly a fifth of his and an eighth of theirs, itself consistent
+with his map pool carrying more of it. Within section: jumps 0.33-0.38 against 0.19-0.22,
+streams 0.28-0.33 against 0.07-0.09. Still 1.7-fold and 3-fold, and the stream figures barely
+move at all, so nothing there was a map artifact.
+
+Still unestablished: direction. Different people playing different maps, and no one has shown
+uncoupling causes the skill rather than accompanying it.
+
+Player's idea for the high-tempo gap, which is better than fetching new maps: take DT boards on
+the maps he already plays. The geometry is identical and only the rate changes, so the same map
+yields a 180 bpm and a 270 bpm sample of the same patterns -- a controlled comparison rather
+than a different population. corpus-nm.json is no-mod by construction, so this is a new fetch;
+note the charter's etiquette line about emailing ppy before pulling at volume, and that lazer
+allows arbitrary rate multipliers so the rate must be read off the mod rather than assumed 1.5.
