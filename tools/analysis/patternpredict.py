@@ -107,8 +107,9 @@ Four readings.
   times weaker, while being the better of the two on aim error. Both numbers are real and
   both are small; the point is the ratio, not the absolute.
 
-* **The miss gradient is not an artifact of how runs are counted** (`--gradient`). Three
-  ways it could have been, each with a control:
+* **The miss gradient survives four specific controls** (`--gradient`). Four ways it could
+  have been an artifact of how runs are counted, each with a control. They are the ways
+  that were thought of, not all the ways there are:
 
       run position             n   miss %   within-map excess
       0:2                506,007   5.04%             -1.02%
@@ -134,12 +135,30 @@ Four readings.
   with depth too, which "position 14 means you are in a stream" cannot explain. 1/1 is flat
   (-0.02%), which is the negative control: there is no gradient where there is no chain.
 
+  *Not depth standing in for run length.* Position 14+ exists only inside a long run, so
+  the table above cannot tell "deep is hard" from "long runs are hard". Restricted to runs
+  long enough to hold every band, and scored against those runs' own rate, the gradient
+  survives and widens:
+
+       runs >=    snap          n        0:2        2:5        5:9       9:14     14:inf
+            14    0.25    167,155     -2.75%     -3.27%     -1.60%     +0.10%     +1.06%
+            14     0.5    194,376     -1.43%     -1.49%     -0.52%     -0.05%     +1.07%
+            14       1     25,609     +1.59%     +0.51%     -0.75%     -0.19%     -0.01%
+            20    0.25    120,669     -2.65%     -3.39%     -2.47%     -1.17%     +0.92%
+            20     0.5    105,741     -1.45%     -2.20%     -1.53%     -0.70%     +0.86%
+            20       1     21,588     +0.00%     -2.21%     +0.87%     +2.45%     -0.00%
+
+  So inside one long stream the opening is three points *safer* than the run's own average
+  and the tail is one point worse, which is depth and not length. 1/1 stays flat.
+
   *Not one slip counted many times.* The worry that a dropped tap cascades, turning one
   event into twenty rows at high run position, does not hold: the mean consecutive-miss
-  streak inside a run is 1.41 objects, 51,697 of 65,400 streaks are a single miss, and at
-  position 14+ it is 1.50 missed objects per streak start. The effective sample is about
-  two-thirds of the row count, not a twentieth, so no clustering weight would change the
-  ordering. Stream misses are isolated drops, not pile-ups.
+  streak inside a run is 1.41 objects and 1.50 at position 14+, so the effective sample is
+  about two-thirds of the row count rather than a twentieth and no clustering weight would
+  reorder the table. Split by rhythm it runs the opposite way to the obvious guess --
+  1/6 1.30, 1/4 1.34, 1/3 1.39, 1/2 1.49, with 18.0% of stream streaks longer than one
+  against 24.3% of jump streaks. Chains of jumps clump more than streams do, monotonically
+  as the rhythm slows. Mechanism not investigated.
 
 * **``whole`` is not the control it looks like.** Dropping the position inside the figure
   pools objects that sit in different cells, so it cuts across the cell rather than
@@ -187,6 +206,9 @@ TOLERANCE = "0.02"
 DEG = 180.0 / math.pi
 MIN_TRAIN = 50
 MISSED = ("Miss", "LargeTickMiss")
+# Run lengths at which every run-position band is reachable, so depth can be compared
+# without run length varying alongside it.
+LONG = (14, 20)
 
 # Mods that make a replay incomparable, for two separate reasons.
 #
@@ -275,8 +297,9 @@ def read_shapes(rhythm, by_replay) -> dict[str, list[dict]]:
             got = rhythm[md5].get(t)
             if got is None:
                 continue
-            snap, group, run_index, _ = got
+            snap, group, run_index, run_size = got
             out[md5].append({"t": t, "snap": snap, "group": group, "run": run_index,
+                             "size": run_size,
                              "angle": _num(r["signedAngle"]),
                              "spacing": _num(r["spacingRadii"])})
     for rows in out.values():
@@ -414,7 +437,12 @@ def gradient(shapes, position, args) -> int:
     shift = collections.defaultdict(lambda: [0, 0, 0.0])        # bin -> n, shifted, sum aim
     cell = collections.defaultdict(lambda: [0, 0])              # (snap, md5, bin) -> miss, n
     per_map = collections.defaultdict(lambda: [0, 0])           # (snap, md5) -> miss, n
-    streaks: collections.Counter = collections.Counter()
+    # Keyed on run length as well, so positions can be compared inside runs long enough to
+    # contain every position band. Without it the deep bands exist only in long runs, and
+    # "deep misses more" cannot be told from "long runs are harder".
+    long_cell = collections.defaultdict(lambda: [0, 0])
+    long_map = collections.defaultdict(lambda: [0, 0])
+    streaks: collections.Counter = collections.Counter()      # (snap, length) -> runs
     sequence = collections.defaultdict(list)
 
     with open(GEOMETRY) as f:
@@ -446,7 +474,13 @@ def gradient(shapes, position, args) -> int:
             cell[(row["snap"], md5, band)][1] += 1
             per_map[(row["snap"], md5)][0] += miss
             per_map[(row["snap"], md5)][1] += 1
-            sequence[r["replay"]].append((row["t"], row["run"], miss))
+            sequence[r["replay"]].append((row["t"], row["run"], miss, row["snap"]))
+            for floor in LONG:
+                if (row["size"] or 0) >= floor:
+                    long_cell[(floor, row["snap"], md5, band)][0] += miss
+                    long_cell[(floor, row["snap"], md5, band)][1] += 1
+                    long_map[(floor, row["snap"], md5)][0] += miss
+                    long_map[(floor, row["snap"], md5)][1] += 1
 
     order = [b for b in RUN_POSITION.labels if b in {k[2] for k in cell}]
 
@@ -497,16 +531,38 @@ def gradient(shapes, position, args) -> int:
         print(f"{snap:>7}{n:>12,}"
               + "".join(f"{c:>+11.2%}" if c is not None else f"{'-':>11}" for c in cells))
 
+    print("\nand the same excess inside runs long enough to hold every position band, so "
+          "depth is no longer\nentangled with run length. If the gradient lives here it is "
+          "depth; if it vanishes, it was length.\n")
+    print(f"{'runs >=':>8}{'snap':>8}{'n':>11}" + "".join(f"{b:>11}" for b in order))
+    for floor in LONG:
+        for snap in sorted({k[1] for k in long_cell if k[0] == floor}, key=float):
+            n = sum(v[1] for k, v in long_cell.items() if k[0] == floor and k[1] == snap)
+            if n < 20_000:
+                continue
+            cells = []
+            for band in order:
+                num = den = 0.0
+                for (fl, s_, md5, b), (missed, count) in long_cell.items():
+                    if fl != floor or s_ != snap or b != band or count == 0:
+                        continue
+                    base_missed, base_n = long_map[(fl, s_, md5)]
+                    num += count * (missed / count - base_missed / base_n)
+                    den += count
+                cells.append(num / den if den else None)
+            print(f"{floor:>8}{snap:>8}{n:>11,}"
+                  + "".join(f"{c:>+11.2%}" if c is not None else f"{'-':>11}" for c in cells))
+
     # A streak is consecutive missed objects inside one run: a new run starts wherever the
     # index does not increment, which is how `Rhythm.cs` numbers them.
     deep_misses = deep_events = 0
     for events in sequence.values():
         events.sort()
-        previous, length = None, 0
-        for _, index, miss in events:
+        previous, length, where = None, 0, None
+        for _, index, miss, snap in events:
             if previous is None or index != previous + 1:
                 if length:
-                    streaks[length] += 1
+                    streaks[(where, length)] += 1
                 length = 0
             if miss:
                 if index >= 14:
@@ -514,21 +570,33 @@ def gradient(shapes, position, args) -> int:
                     if length == 0:
                         deep_events += 1
                 length += 1
+                where = snap
             elif length:
-                streaks[length] += 1
+                streaks[(where, length)] += 1
                 length = 0
             previous = index
         if length:
-            streaks[length] += 1
+            streaks[(where, length)] += 1
 
-    total = sum(n * L for L, n in streaks.items())
+    total = sum(n * L for (_, L), n in streaks.items())
     events = sum(streaks.values())
     print(f"\nmisses inside runs: {total:,} objects in {events:,} consecutive streaks, mean "
           f"{total / max(events, 1):.2f}.\nIf a dropped tap cascaded, one slip would become "
           f"many rows at high run position and the\nrow count would overstate the "
-          f"independent observations.\n")
-    print("  " + ", ".join(f"{L} long x{n:,}" for L, n in sorted(streaks.items())[:8]))
-    print(f"  run position 14+: {deep_misses:,} missed objects from {deep_events:,} streak "
+          f"independent observations. Split by rhythm, because a pooled\nmean would hide a "
+          f"chain of jumps behaving differently from a stream.\n")
+    print(f"{'snap':>7}{'misses':>10}{'streaks':>10}{'mean':>7}{'share over 1':>14}")
+    for snap in sorted({s for s, _ in streaks}, key=lambda s: float(s) if s else 0.0):
+        rows = {L: n for (s_, L), n in streaks.items() if s_ == snap}
+        if not rows:
+            continue
+        objects = sum(L * n for L, n in rows.items())
+        runs = sum(rows.values())
+        if objects < 2_000:
+            continue
+        over = sum(n for L, n in rows.items() if L > 1) / runs
+        print(f"{snap:>7}{objects:>10,}{runs:>10,}{objects / runs:>7.2f}{over:>13.1%}")
+    print(f"\n  run position 14+: {deep_misses:,} missed objects from {deep_events:,} streak "
           f"starts, {deep_misses / max(deep_events, 1):.2f} per event")
     return 0
 

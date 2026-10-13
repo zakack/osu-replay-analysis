@@ -648,3 +648,17 @@ is untouched (.0004 vs .0046), because a miss has no press to misattribute. Any 
 finding conditioned on depth into a run needs this filter; a miss finding does not. Proper
 instrument would be `drift.py`'s self/next/prev classification, which needs a clicks pass
 over the collected corpus.
+
+## 2026-10-12 — chains of jumps clump misses more than streams do
+
+`tools/analysis/patternpredict.py --gradient`; 91,931 missed objects in runs, collected corpus
+
+Mean consecutive-miss streak inside a run, by snap: 1/6 1.30, 1/4 1.34, 1/3 1.39, 1/2 1.49 --
+monotone as the rhythm slows. 18.0% of stream streaks run longer than one miss against 24.3%
+of jump streaks. The opposite of the cascade intuition, which expects a dropped tap in a
+stream to pull the whole phrase along; the player reports it matches their play experience and
+suspects something psychological rather than mechanical in jump runs. Untested.
+
+Separately, in the same output: inside runs of 20+ the miss excess over the run's own rate is
+-2.65% at positions 0-2 and +0.92% at 14+ for 1/4, so the gradient is depth into the run and
+not a proxy for the run being long. 1/1 is flat, the negative control.
