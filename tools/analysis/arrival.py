@@ -153,29 +153,47 @@ judged cleanly:
     180-200         129,601      8.9     29.2      30.5      28.4      0.93
     200-220          25,875      8.9     27.9      29.3      27.2      0.93
 
-* **The hands are coupled, in both corpora, so the player's reading of the mechanism is
-  right.** Every ratio is below 1.00, which means the two timing errors are positively
-  correlated: when the cursor runs ahead of the beat the button does too. Two hands each
-  independently locked to the music would sit at 1.00.
+    streams, 0-2 radii, every turn     n   button   cursor  if indep  measured  ratio   rho
+    player  under 140              124,336     37.7     68.2      77.9      71.3   0.91  0.19
+    player  160-180                504,690     33.2     50.9      60.8      51.2   0.84  0.32
+    player  200-220                151,059     30.5     44.9      54.3      44.6   0.82  0.35
+    top 50  under 140               19,211     16.0     67.7      69.6      68.1   0.98  0.09
+    top 50  160-180                225,958     11.2     42.4      43.9      42.8   0.97  0.10
+    top 50  200-220                 48,165     10.2     37.2      38.6      37.4   0.97  0.12
 
-* **But coupling is not the elite trait -- it is the reverse.** The player sits at 0.78-0.82
-  and the top 50 at a flat 0.93. As a correlation between the two errors that is about 0.43
-  against 0.25. So the better players' hands are *more* independent, and the button hand
-  tracks the music more nearly regardless of where the cursor is. The felt experience of the
-  hands moving as a unit is real and it is the less expert pattern.
+* **The ratio is not comparable between players, and the first version of this measurement
+  reported it as though it were.** `ratio^2 = 1 - rho * 2*sb*sc/(sb^2+sc^2)`, and that
+  multiplier peaks at 1 when the two spreads are equal and collapses toward 0 as the button
+  spread shrinks against the cursor's. So at a *fixed* correlation, a steadier button hand
+  pushes the ratio toward 1.00 on its own. The player's spread pair is 0.55 and the top 50's
+  0.30, which is most of the apparent gap. `rho`, the correlation between the two hands'
+  errors against the beat, is scale-free and is the column to compare.
 
-* **What actually separates them is the button hand's precision against the beat.** 9 ms at
-  the top 50 against 16-26 ms for the player, better than twofold, while cursor spread is
-  close -- 28-34 against 32-42. A twice-as-steady button hand with a similar cursor is most
-  of the gap, and it is nothing this file's cursor measures would have found.
+* **The conclusion survives the fix: the hands are coupled in both corpora, and the better
+  players less so.** On acute wide jumps rho is 0.41-0.46 for the player against 0.23-0.25
+  for the top 50, so the felt experience of the hands moving as a unit is real and it is the
+  less expert pattern. Two hands each locked to the music would read 0.
 
-* **Coupling does not break down at the top of the player's range, which contradicts the
-  obvious story.** 220+ is his *most* coupled band at 0.66, not his least, so "past the
-  threshold the cursor detaches while the button keeps time" is not what the clean presses
-  say. The heavy caveat is that this table is `pressInside` only: at 220+ just 78% of jumps
-  judge cleanly against 93% lower down, so the high bands are a progressively more selected
-  subset and the failures -- which are the thing being explained -- are excluded by
-  construction. Whether the hands decouple cannot be read from the presses that worked.
+* **And they are markedly less coupled during streams than during jumps, in both corpora.**
+  Player 0.19-0.35 on 0-2 radii objects against 0.41-0.46 on wide jumps; top 50 0.09-0.13
+  against 0.23-0.25, less than half. So the coupling is a property of the big single
+  movement, not of the player's wiring: on a sustained stream both hands go back to tracking
+  the music. This agrees with a measurement taken a different way in `streamfail.py`, where
+  reach regressed on press timing -- the test of whether the cursor is on the ideal schedule
+  -- came out at 0.33-0.39 on 1/4 and 0.02 on 1/2. The cursor tracks the music during
+  streams and does not during jumps, which is the same fact from the other side.
+
+* **Under tempo pressure the player's hands couple further and the top 50's do not.** On
+  streams his rho climbs 0.19, 0.28, 0.32, 0.31, 0.35 across the tempo bands while theirs sits
+  flat at 0.09-0.13. His highest coupling anywhere is 220+ jumps at 0.59.
+
+* **One confound not controlled, and it could carry some of the gap.** rho is pooled across
+  objects within a band, so any common timing offset shared by both hands -- a mistimed
+  section, a map's own offset, the audio path -- inflates it for both hands at once without
+  any bilateral coordination. The player's map pool is not the top 50's, and the charter's
+  own oracle note is that a whole board showing the same error sign in a section means the
+  map. Centering within map and section before correlating is the control and has not been
+  run.
 
 * **The `vs tip` column does not test the claim and is left out of the table above.** It
   measures the spread against `turnTime`, the cursor's reversal, and runs 67-118 ms, far
@@ -287,7 +305,10 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--source", default="player", choices=sorted(SOURCES))
     parser.add_argument("--min-spacing", type=float, default=3.5,
-                        help="only jumps this wide, in radii; the regime the player watched")
+                        help="only objects this widely spaced, in radii")
+    parser.add_argument("--max-spacing", type=float, default=0.0,
+                        help="and no wider than this, so the stream regime can be selected "
+                             "as well as the jump one; 0 means no upper bound")
     parser.add_argument("--by-bpm", action="store_true",
                         help="band by the map's tempo instead of by turn, over acute jumps "
                              "only. Tests the claim that the cursor-leaves-first mechanism "
@@ -326,6 +347,8 @@ def main() -> int:
             spacing, angle = _num(r["spacingRadii"]), _num(r["signedAngle"])
             if spacing is None or angle is None or spacing < args.min_spacing:
                 continue
+            if args.max_spacing and spacing > args.max_spacing:
+                continue
             band = ANGLE.bin(abs(angle) * DEG)
             if band is None:
                 continue
@@ -333,7 +356,8 @@ def main() -> int:
             if args.by_bpm and abs(angle) * DEG >= args.turn_max:
                 continue
             wanted[(sys.intern(r["replay"]), round(float(r["startTime"]), 1))] = (band, tx, ty)
-    print(f"{args.source}: {len(wanted):,} jumps of {args.min_spacing}+ radii"
+    print(f"{args.source}: {len(wanted):,} objects at {args.min_spacing}"
+          + (f"-{args.max_spacing:g}" if args.max_spacing else "+") + " radii"
           + (f", turn under {args.turn_max:g} degrees" if args.by_bpm else ""), flush=True)
 
     if args.by_bpm:
@@ -469,7 +493,7 @@ def main() -> int:
               "collapses below that. All in ms, on the\nacute wide jumps that judged "
               "cleanly.\n")
         print(f"  {'bpm':<12}{'n':>9}{'button':>9}{'cursor':>9}{'if indep':>10}"
-              f"{'measured':>10}{'vs tip':>9}{'coupling':>10}")
+              f"{'measured':>10}{'ratio':>8}{'rho':>7}")
         for band in LABELS:
             cell = pair.get(band)
             if not cell or cell[0] < 500:
@@ -478,13 +502,22 @@ def main() -> int:
             _, sd_cursor = moments(cell[2][2], cell[2][0], cell[2][1])
             _, sd_deep = moments(cell[3][2], cell[3][0], cell[3][1])
             _, sd_tip = moments(cell[4][2], cell[4][0], cell[4][1])
-            independent = (sd_button ** 2 + sd_cursor ** 2) ** 0.5
+            squares = sd_button ** 2 + sd_cursor ** 2
+            independent = squares ** 0.5
+            ratio = sd_deep / independent if independent else 0.0
+            # ratio^2 = 1 - rho * 2*sb*sc/(sb^2+sc^2), so the ratio is pushed toward 1.00 by
+            # an imbalance between the two spreads even at a fixed correlation. rho is the
+            # scale-free statistic and is what the comparison has to be made on.
+            lever = 2 * sd_button * sd_cursor / squares if squares else 0.0
+            rho = (1 - ratio * ratio) / lever if lever else 0.0
             print(f"  {band:<12}{cell[0]:>9,}{sd_button:>9.1f}{sd_cursor:>9.1f}"
-                  f"{independent:>10.1f}{sd_deep:>10.1f}{sd_tip:>9.1f}"
-                  f"{sd_deep / independent:>10.2f}")
-        print("\n  'coupling' is measured over independent: 1.00 means the hands are "
-              "independent,\n  below 1.00 means they move together. 'vs tip' is the same "
-              "spread against the cursor's\n  reversal rather than its deepest point.")
+                  f"{independent:>10.1f}{sd_deep:>10.1f}{ratio:>8.2f}{rho:>7.2f}")
+        print("\n  ratio is measured over independent, and is NOT comparable between players:"
+              "\n  ratio^2 = 1 - rho * 2*sb*sc/(sb^2+sc^2), so shrinking the button spread "
+              "pushes it\n  toward 1.00 at a fixed correlation. rho is the correlation "
+              "between the two hands'\n  errors against the beat, is scale-free, and is the "
+              "column to compare on. 0 is two\n  hands each locked to the music; higher is "
+              "two hands moving with each other.")
         return 0
 
     if args.by_bpm and args.over_time:

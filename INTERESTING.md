@@ -972,3 +972,28 @@ and excludes the failures being explained -- whether the hands decouple under lo
 read from the presses that worked. And the "spread against the cursor's reversal" column runs
 67-118 ms because Clicks.cs searches for that reversal in a window reaching 150 ms back, too
 loose to test "fires at the tip"; that needs the reversal pinned to the object.
+
+## 2026-10-13 — hands couple on jumps and uncouple on streams; and the ratio metric was confounded
+
+`arrival.py --by-bpm --coupling [--min-spacing 0 --max-spacing 2 --turn-max 180]`
+
+Two player claims, both borne out. First, a flaw in the metric: ratio^2 = 1 - rho *
+2*sb*sc/(sb^2+sc^2), so at a fixed correlation a steadier button hand pushes the ratio toward
+1.00 by itself. The player's spread pair is 0.55 and the top 50's 0.30, which was most of the
+apparent gap in the entry above. rho is scale-free and is the right column. The conclusion
+survives it: on acute wide jumps rho is 0.41-0.46 for zaksynack against 0.23-0.25 for the
+boards.
+
+Second, his follow-up: during streams the hands are much less locked together. Confirmed in
+both corpora -- player 0.19-0.35 on 0-2 radii objects against 0.41-0.46 on wide jumps; top 50
+0.09-0.13 against 0.23-0.25. So coupling is a property of the big single movement, not of a
+player's wiring; on a sustained stream both hands go back to tracking the music. Agrees with
+streamfail.py's reach-on-press-timing coefficient from the other direction: 0.33-0.39 on 1/4
+(cursor on the music's schedule) against 0.02 on 1/2 (not).
+
+New: under tempo pressure his stream coupling climbs 0.19 -> 0.35 while the boards' stays flat
+at 0.09-0.13. Highest coupling anywhere is his 220+ jumps at 0.59.
+
+Uncontrolled: any timing offset common to both hands -- a mistimed section, a map offset, the
+audio path -- inflates rho for both at once with no bilateral coordination involved, and the
+map pools differ. Centering within map and section before correlating is the control.
