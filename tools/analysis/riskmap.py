@@ -101,6 +101,31 @@ and calibrated band by band (1.51% predicted is 1.50% observed, 6.97% is 6.96%).
 play was not just mis-scaled; it was diluting the model with a player who no longer exists.
 The strain graph fits on a recent window.
 
+**How much history: about six months, and the plateau is wide.** `--windows` tests it the
+way the feature would run: train on the N days before a test period, test on the player's
+next 56 days of plays, never training on a test map. Mean over three successive test periods
+ending 2026-10-13:
+
+    window    riskiest 10%    AUC    obs/pred   section r
+    14 d          22.2%      0.661     0.83       0.43
+    30 d          24.5%      0.675     0.89       0.47
+    60 d          25.0%      0.680     0.91       0.48
+    120 d         25.3%      0.684     0.94       0.48
+    180 d         25.7%      0.684     0.95       0.48
+    270 d         26.0%      0.686     0.94       0.48
+    365 d         25.6%      0.686     0.94       0.48
+    all           25.4%      0.680     0.78       0.45
+
+Two weeks starves the cells and they back off; everything goes stale, mostly in calibration.
+From 120 to 365 days the differences are a point or less, smaller than the swing between
+test periods, so the choice inside that band is not a finding. 180 days is the default: best
+calibration, middle of the plateau.
+
+Every window over-predicts, by 5-10% even at a month, so improvement is not the whole of it.
+The likely cause is selection: training is full of retries of maps the player grinds because
+they miss on them, while a test map is new. Untested. Maps the player did not choose -- the
+daily challenge -- would test it.
+
 **Screen position adds nothing to miss prediction.** kind x snap x spacing x run x quadrant
 scores 21.5% against 21.9% without it, and 26.1% against 26.0% on 2026 alone. That settles
 the test unitsize.py left owed -- quadrant had been dropped on spread, while the charter's
@@ -196,6 +221,7 @@ def load_objects(limit: int | None, keep_eras: set[str] | None = None):
     replay_id: dict[str, int] = {}
     maps: list[str] = []
     eras: list[str] = []
+    dates: list[str | None] = []
     rid = array.array("i")
     when = array.array("d")
     halves = array.array("b")
@@ -224,6 +250,8 @@ def load_objects(limit: int | None, keep_eras: set[str] | None = None):
             replays.append(o.replay)
             maps.append(o.beatmap_md5)
             eras.append(o.era or "?")
+            stamp = load.TIMESTAMP.search(o.replay)
+            dates.append(stamp.group(1) if stamp else None)
             keep_mods[" ".join(sorted(m)) or "nomod"] += 1
         rid.append(replay_id[o.replay])
         when.append(o.start_time)
@@ -236,7 +264,7 @@ def load_objects(limit: int | None, keep_eras: set[str] | None = None):
             if k not in table:
                 table[k] = len(table)
             key_ids[name].append(table[k])
-    return {"replays": replays, "maps": maps, "eras": eras, "rid": rid, "t": when, "fold": halves,
+    return {"replays": replays, "maps": maps, "eras": eras, "dates": dates, "rid": rid, "t": when, "fold": halves,
             "miss": missed, "key_ids": key_ids, "keys": keys,
             "dropped": dropped, "mods": keep_mods}
 
@@ -456,12 +484,154 @@ def aggregates(d, name, preds):
     return correlation(across), correlation(by_map), correlation(counts), correlation(rates)
 
 
+# ---- how much history: training windows, tested forward in time --------------------------
+#
+# The era table showed that pooling every era hurts. This asks how far back to reach. It is
+# tested the way the feature would be used: the test period is a stretch of the player's
+# most recent plays, the training data is the N days immediately before it, and no map in
+# the test period is trained on, so every prediction is of a map the model has not seen,
+# made from history only. Repeated at three successive test periods, so the answer is not
+# read off one stretch of form.
+WINDOWS = (14, 30, 45, 60, 90, 120, 180, 270, 365, None)   # days; None is everything before
+TEST_DAYS = 56
+ORIGINS = 3
+
+
+def windows(d, name, floor):
+    import datetime as dt
+    ids = d["key_ids"][name]
+    by_id = {v: k for k, v in d["keys"][name].items()}
+    # Objects collapsed once: per (replay, key) and per (replay, section, key), counts of
+    # objects and misses. Every window and test period is then a sum over whole replays.
+    rk = collections.defaultdict(lambda: [0, 0])
+    rsk = collections.defaultdict(lambda: [0, 0])
+    for i in range(len(ids)):
+        r, k, m = d["rid"][i], ids[i], d["miss"][i]
+        c = rk[(r, k)]
+        c[0] += 1
+        c[1] += m
+        c = rsk[(r, int(d["t"][i] // SECTION), k)]
+        c[0] += 1
+        c[1] += m
+    per_replay = collections.defaultdict(list)
+    for (r, k), c in rk.items():
+        per_replay[r].append((k, c[0], c[1]))
+    per_section = collections.defaultdict(list)
+    for (r, sec, k), c in rsk.items():
+        per_section[r].append((sec, k, c[0], c[1]))
+
+    day = {r: dt.date.fromisoformat(v) for r, v in enumerate(d["dates"]) if v}
+    last = max(day.values())
+    rows = []
+    for origin_n in range(ORIGINS):
+        end = last - dt.timedelta(days=TEST_DAYS * origin_n)
+        start = end - dt.timedelta(days=TEST_DAYS)
+        test = [r for r, t in day.items() if start < t <= end]
+        test_maps = {d["maps"][r] for r in test}
+        for w in WINDOWS:
+            lo = start - dt.timedelta(days=w) if w else dt.date.min
+            train = [r for r, t in day.items()
+                     if lo < t <= start and d["maps"][r] not in test_maps]
+            # Fit: per key, then per prefix for the back-off.
+            counts = collections.defaultdict(lambda: [0, 0])
+            n_all = m_all = 0
+            for r in train:
+                for k, n, m in per_replay[r]:
+                    key = by_id[k]
+                    for depth in range(1, len(key) + 1):
+                        c = counts[key[:depth]]
+                        c[0] += n
+                        c[1] += m
+                    n_all += n
+                    m_all += m
+            if not n_all:
+                continue
+            base = m_all / n_all
+            pred = {}
+
+            def predict(k):
+                if k in pred:
+                    return pred[k]
+                key, value = by_id[k], base
+                for depth in range(len(key), 0, -1):
+                    c = counts[key[:depth]]
+                    if c[0] >= floor:
+                        value = c[1] / c[0]
+                        break
+                pred[k] = value
+                return value
+
+            # Test.
+            groups = collections.defaultdict(lambda: [0, 0])
+            p_sum = m_sum = 0.0
+            within = collections.defaultdict(list)
+            for r in test:
+                for k, n, m in per_replay[r]:
+                    p = predict(k)
+                    g = groups[p]
+                    g[0] += n
+                    g[1] += m
+                    p_sum += p * n
+                    m_sum += m
+                sections = collections.defaultdict(lambda: [0, 0.0, 0])
+                for sec, k, n, m in per_section[r]:
+                    c = sections[sec]
+                    c[0] += n
+                    c[1] += predict(k) * n
+                    c[2] += m
+                for n, p, m in sections.values():
+                    if n >= 5:
+                        within[r].append((round(p / n, 9), m / n))
+            rows.append({
+                "origin": f"{start + dt.timedelta(days=1)}..{end}", "window": w,
+                "train": len(train), "test": len(test),
+                "capture": capture([groups], .10), "auc": auc([groups]),
+                "calibration": m_sum / p_sum if p_sum else float("nan"),
+                "section": correlation(within),
+            })
+    return rows
+
+
+def report_windows(d, name, floor):
+    rows = windows(d, name, floor)
+    print(f"== training window, tested forward on the player's next {TEST_DAYS} days, {name}, "
+          f"floor {floor}\n")
+    print("Test maps are never trained on. obs/pred is observed over predicted misses: above 1 "
+          "the\nmodel thinks the player better than they are, below 1 worse.\n")
+    current = None
+    for row in rows:
+        if row["origin"] != current:
+            current = row["origin"]
+            print(f"  test {current}: {row['test']:,} plays")
+            print(f"    {'window':>8}{'train plays':>13}{'top 10%':>10}{'AUC':>8}{'obs/pred':>10}"
+                  f"{'section r':>11}")
+        label = f"{row['window']} d" if row["window"] else "all"
+        print(f"    {label:>8}{row['train']:>13,}{row['capture']:>10.1%}{row['auc']:>8.3f}"
+              f"{row['calibration']:>10.2f}{row['section']:>11.3f}")
+    # Averaged over the test periods, the number to choose a window by.
+    print(f"\n  mean over {ORIGINS} test periods:")
+    print(f"    {'window':>8}{'top 10%':>10}{'AUC':>8}{'obs/pred':>10}{'section r':>11}")
+    for w in WINDOWS:
+        sel = [r for r in rows if r["window"] == w]
+        if len(sel) < ORIGINS:
+            continue
+        label = f"{w} d" if w else "all"
+        mean = lambda key: sum(r[key] for r in sel) / len(sel)
+        print(f"    {label:>8}{mean('capture'):>10.1%}{mean('auc'):>8.3f}"
+              f"{mean('calibration'):>10.2f}{mean('section'):>11.3f}")
+
+
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--min-train", type=int, nargs="+", default=[50, 200, 500],
                         help="training floors to sweep (default 50 200 500)")
     parser.add_argument("--limit", type=int, help="only the first N replays, for a quick run")
+    parser.add_argument("--windows", action="store_true",
+                        help="sweep how much history to fit on, tested forward in time on "
+                             "the most recent plays, and stop")
     parser.add_argument("--eras", nargs="+",
                         help="fit and test on plays from these eras only (see bins.schema."
                              "ERAS; '?' is undated). The forward-looking question: does a "
@@ -469,6 +639,9 @@ def main() -> int:
     args = parser.parse_args()
 
     d = load_objects(args.limit, set(args.eras) if args.eras else None)
+    if args.windows:
+        report_windows(d, "kind x snap x spacing x run position", args.min_train[0])
+        return 0
     n = len(d["miss"])
     misses = sum(d["miss"])
     print(f"{len(d['replays']):,} replays, {len(set(d['maps'])):,} beatmaps, {n:,} objects, "
