@@ -844,3 +844,23 @@ The "timed out" suffix means the press timing has been regressed out, and the co
 that regression is itself a measurement: 1.00 would mean the cursor was exactly on schedule
 and its position told you nothing beyond when you pressed. Measured 0.33-0.39 at 1/4 and
 0.02 at 1/2, so the aiming hand carries its own error and the two hands are separable.
+
+## 2026-10-13 — reach is not making the rush.py mistake, but on jumps its reading is unproven
+
+`tools/analysis/streamfail.py --path`, the dR/dt table; player and reference
+
+On an acute turn the outgoing direction nearly reverses the incoming one, so a cursor short of
+the circle and one that went through it and came back out toward the next object are the same
+point and both read as negative reach. The rush.py investigation made that mistake on acute,
+widely spaced jumps -- the presses were very late with the cursor already back out, not short.
+Position cannot separate the two; timing can. Regressing reach on velocity x hit error per turn
+band, a positive coefficient means a later press finds the cursor further along (still inbound)
+and a negative one is the arrived-and-left signature.
+
+It is never negative, in either corpus. At 1/4 it is +0.37 to +0.63 at shallow turns, so the
+cursor is demonstrably still on its way in and "fell short" is the right reading there. At 1/2
+it is flat within 0.05 of zero everywhere in both corpora: reach is reliably negative while the
+cursor's position at the press is uncorrelated with when the press happened. That is neither
+reading -- it fits the cursor having settled short of the centre and stopped. So "the cursor
+arrives short on jump chains" overstates it; short and no longer moving is what is established,
+and being universal it is jump geometry rather than a player trait.

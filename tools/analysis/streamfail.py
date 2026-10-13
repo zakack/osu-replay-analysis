@@ -206,6 +206,49 @@ through, 0 doubling back). Offsets in radii, at the press, positions 0-9:
     135:160       2,918  -0.060   +0.091   22,421  -0.024   +0.116
     160:180       4,175  -0.067   +0.032   20,007  -0.036   +0.082
 
+**Did the cursor fall short, or arrive and leave?** (`--path`, the `dR/dt` table). On an
+acute turn the outgoing direction nearly reverses the incoming one, so a cursor short of the
+circle and a cursor that went through it and came back out toward the next object occupy the
+same point, and both read as negative reach. The `rush.py` investigation made exactly this
+mistake -- measuring by arrival heading on acute, widely spaced jumps, where arrival and
+departure headings nearly coincide -- and the presses there turned out to be very late with
+the cursor already back out of the circle.
+
+Position cannot separate them; timing can. `dR/dt` regresses reach on how far the cursor
+travels in the time the press was late by. Positive means a later press finds the cursor
+further along, so it was still inbound. Negative is the signature of having arrived and left.
+
+    1/4                 player                      top 50
+    turn            n   reach  dR/dt            n   reach  dR/dt
+    5:50        1,398  -0.149  +0.05          982  -0.055  +0.10
+    50:135      7,855  -0.119  +0.37        4,599  -0.059  +0.44
+    135:160    27,470  -0.005  +0.49       15,654  -0.025  +0.63
+    160:180    23,122  -0.018  +0.60       11,593  -0.074  +0.58
+
+    1/2         28,209  -0.114  -0.04       15,051  -0.066  -0.02   (5:50, both corpora)
+
+* **Not the rush.py artifact. The coefficient is never negative, in either corpus.** Arriving
+  and leaving would show as negative `dR/dt` and it does not appear anywhere, so reach is not
+  silently measuring an overshoot-and-return as a shortfall.
+
+* **At 1/4 the cursor is demonstrably still inbound**: +0.37 to +0.63 at the shallow turns in
+  both corpora. "Fell short" is the right reading of negative reach on streams, and the
+  coefficient rising toward 1.00 as the turn straightens is what it should do -- 1.00 means
+  exactly on schedule, and a straighter turn gives the projection less to lose.
+
+* **At 1/2 it is flat everywhere, in both corpora, so the reading is unproven.** Reach is
+  reliably negative and `dR/dt` is within 0.05 of zero: the cursor's position at the press
+  is uncorrelated with when the press happened. That is neither "still inbound" nor "arrived
+  and left" -- it is consistent with the cursor having *settled* at a point short of the
+  centre and stopped. So "the cursor arrives short on jump chains" overstates what is known;
+  what is known is that it is short and no longer moving in a way the press time can see.
+  Being universal across corpora, it is a property of jump geometry rather than of a player.
+
+* **This table is pooled over spacing and must not be read for the player-against-field
+  comparison.** The two corpora have different spacing mixes, which is why the reference's
+  160:180 reach looks worse here than the player's and better in the spacing-crossed table
+  below. Like-for-like needs `--by-spacing`.
+
 **Crossing spacing in, and the top-50 boards** (`--path --by-spacing`, `--source reference`).
 Sharp turns are mostly tight in the map pool and reach is normalised by the radius rather than
 by the movement, so the gradient's axis had to be checked. Mean `inside`, 1/4, cells with 200+
@@ -614,6 +657,16 @@ def main() -> int:
     path: dict = collections.defaultdict(lambda: [0, 0.0, 0.0, 0, 0.0])
     # n, sum x, sum inside, sum x*inside, sum x^2 -- for one coefficient per snap.
     fit: dict = collections.defaultdict(lambda: [0, 0.0, 0.0, 0.0, 0.0])
+    # The same regression per turn band, but of *reach* on x rather than inside, plus the
+    # hit error. This is the discriminator for a degeneracy that position alone cannot
+    # resolve: on an acute turn the outgoing direction nearly reverses the incoming one, so
+    # a cursor that fell short of the circle and a cursor that went through it and came back
+    # out toward the next object occupy the same point, and both read as negative reach.
+    # They differ in time. Under "fell short", a later press finds the cursor further along,
+    # so reach rises with hit error and the coefficient is positive. Under "went through and
+    # came back", a later press finds it further out the other side, so the coefficient is
+    # negative. This is the mistake the rush.py investigation made and corrected by hand.
+    arrive: dict = collections.defaultdict(lambda: [0, 0.0, 0.0, 0.0, 0.0, 0.0])
     counted = 0
 
     def flush(rows: list[dict]):
@@ -682,6 +735,13 @@ def main() -> int:
                     counted += 1
                     if x is not None:
                         cell[4] += x
+                        a = arrive[(snap, band)]
+                        a[0] += 1
+                        a[1] += x
+                        a[2] += reach
+                        a[3] += x * reach
+                        a[4] += x * x
+                        a[5] += row["error"]
                         f = fit[snap]
                         f[0] += 1
                         f[1] += x
@@ -834,6 +894,30 @@ def main() -> int:
                         f"{sum(path[(snap, b, sp)][0] for sp in rows):>12,}" for b in bands))
                     print()
             return 0
+
+        print("Does negative reach mean the cursor fell short, or that it went through the "
+              "circle and\ncame back out toward the next object? On an acute turn those are "
+              "the same point, so\nposition cannot say. Time can: 'dR/dt' regresses reach on "
+              "how far the cursor travels in\nthe time the press was late by. Positive means "
+              "a later press finds the cursor further\nalong, which is a cursor still on its "
+              "way in. Negative means a later press finds it\nfurther out the far side -- it "
+              "had already arrived and left.\n")
+        for snap in args.snaps:
+            bands = [b for b in ANGLE.labels if (snap, b) in arrive
+                     and arrive[(snap, b)][0] >= 500]
+            if not bands:
+                continue
+            print(f"snap {snap}")
+            print(f"  {'turn':<12}{'n':>9}{'reach':>9}{'hit err':>9}{'dR/dt':>9}   reading")
+            for band in bands:
+                n, sx, sy, sxy, sxx, se = arrive[(snap, band)]
+                var = sxx - sx * sx / n
+                beta = (sxy - sx * sy / n) / var if var else 0.0
+                reading = ("arrived and left" if beta < -0.05 else
+                           "still on its way in" if beta > 0.05 else "flat, undecidable")
+                print(f"  {band:<12}{n:>9,}{sy / n:>+9.3f}{se / n:>+9.1f}{beta:>+9.2f}"
+                      f"   {reading}")
+            print()
 
         groups = (("taps slower", "taps faster") if args.by_rate
                   else ("holds", "breaks at 10+"))
