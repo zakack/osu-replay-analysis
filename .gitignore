@@ -3,6 +3,7 @@ build/
 resources/
 bin/
 obj/
+.hermes/
 *.user
 __pycache__/
 *.pyc
