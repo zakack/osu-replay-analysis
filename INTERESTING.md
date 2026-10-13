@@ -1042,3 +1042,16 @@ yields a 180 bpm and a 270 bpm sample of the same patterns -- a controlled compa
 than a different population. corpus-nm.json is no-mod by construction, so this is a new fetch;
 note the charter's etiquette line about emailing ppy before pulling at volume, and that lazer
 allows arbitrary rate multipliers so the rate must be read off the mod rather than assumed 1.5.
+
+## 2026-10-13 — DT reference boards are a different quality population, not just different players
+
+`build/reference-dt/manifest.json` against `build/reference/manifest.json`, 40 shared beatmaps
+
+A nomod top-50 board is near-perfect plays: median accuracy 0.9978, ranks S 700 / X 325 /
+A 20. The DT board on the *same 40 maps* is median 0.9619, ranks A 645 / B 136 / SH 86 /
+S 82 / C 51 / D 20 / XH 24 / X 7 — i.e. mostly people who barely cleared it. An accuracy
+floor of 0.99 keeps 1,016 of 1,045 nomod replays and only 155 of 1,051 DT ones. So any
+nomod-vs-ratemod comparison is confounded by sloppiness in the same direction as tempo
+unless a floor is applied to both sides, and the floor has to be swept. Player overlap is
+133 of 818, but only 3 players have 3+ replays on both sides and only 13 player-map pairs
+exist in both conditions.
