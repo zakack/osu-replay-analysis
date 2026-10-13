@@ -77,20 +77,45 @@ One step, at the bottom, and flat above it: rho is the same from 0.96 accuracy u
 rises by half again when the play is actually failing. The gradient survives all three
 centring levels, so it is not a section's worth of common drift.
 
-The two tables reconcile. Those 65 paired players fall from 0.9973 accuracy nomod to
-0.9737 under the mod, 59 of 65 of them, and the gradient prices that drop at roughly
-nothing -- which is the +0.02 the paired table reports.
+**And it is a state, not a skill proxy.** A sloppier play is also a weaker player, so that
+table alone cannot tell "this person couples more" from "this play came apart". The 25
+players holding both a sub-.93 and a .96+ play can, because each is compared to themselves:
+
+    class              clean   failing     gap   players higher when failing
+    1/4, 0-2 radii      0.05      0.22    0.17                          87%
+    1/4, 2+ radii       0.10      0.18    0.08                          61%
+    1/2, 0-2 radii      0.09      0.08   -0.01                          45%
+    1/2, 2+ radii       0.23      0.30    0.07                          64%
+    every circle        0.13      0.23    0.10                          88%
+
+Same person, same mod, same tempo, same 40 maps, and the gap is +0.10 overall in 88% of
+them individually -- so it is not a mean dragged by one outlier. It concentrates in the
+**1/4 stream**, +0.17, where coupling is otherwise lowest, and barely touches the 1/2 jump
+at section level. When a stream comes apart, the hands fall back into sync.
+
+The tables reconcile. Those 65 paired players fall from 0.9973 accuracy nomod to 0.9737
+under the mod, 59 of 65 of them, and the gradient prices that drop at roughly nothing --
+which is the +0.02 the paired table reports.
 
 **So uncoupling is not an adaptation to tempo.** The same players, on the same maps, at
-1.5x the real tempo, are exactly as coupled. Whatever the top of the game does differently
-is a property of the player, not a response to speed, and the earlier reading -- that
-elite uncoupling is flat across tempo rather than a high-tempo adaptation -- now holds with
-the geometry held fixed object for object instead of varying with the band.
+1.5x the real tempo, are exactly as coupled. The earlier reading -- that elite uncoupling
+is flat across tempo rather than a high-tempo adaptation -- now holds with the geometry
+held fixed object for object instead of varying with the band.
 
-What this cannot say: these are not mrekk-tier players. The 40 boards are whoever cleared
-the map, which is the confound the floors and the pairing exist to handle, and no floor
-turns a 282 BPM clear into a 282 BPM elite play. The claim is about tempo holding player
-and map fixed, not about the ceiling.
+Two findings that **stack rather than replace each other**, and conflating them would be
+the easy mistake. Trait coupling is real and independent: zaksynack sits at 0.33-0.38 on
+jumps within section against this corpus's 0.20-0.24, on replays whose accuracy is not
+failing at all -- higher than a *failing* reference play's 0.26. State coupling is the
++0.10 above. A high trait figure is not a diagnosis of a collapsing play.
+
+What this cannot say, in both directions. These are not mrekk-tier players: the 40 boards
+are whoever cleared the map, and no floor turns a 282 BPM clear into a 282 BPM elite play.
+Less obviously, it is also a *floor* caveat -- every one of the 65 paired players sits at
+rho 0.1-0.25, so "tempo does not uncouple" is established for players who were never
+strongly coupled to begin with. Whether a 0.4-coupled player keeps that at 282 BPM is
+untested here, and it is the version of the question nearest to the one that prompted it.
+Splitting the 65 by nomod-rho tercile would not settle it either, because regression to the
+mean drops the top tercile whichever way the effect runs.
 """
 import argparse
 import collections
@@ -287,18 +312,23 @@ def main() -> int:
     parser.add_argument("--level", default="within replay",
                         choices=("pooled", "within replay", "within section"),
                         help="how much common displacement to remove before correlating")
-    parser.add_argument("--only", choices=("headline", "sweep", "paired", "accuracy"),
-                        help="print one table instead of all four")
+    parser.add_argument("--only", choices=("headline", "sweep", "paired", "accuracy",
+                                           "state"),
+                        help="print one table instead of all five")
     args = parser.parse_args()
     want = (lambda name: args.only is None or args.only == name)
 
+    # The accuracy and state tables live inside the rate corpus alone, so asking for one of
+    # them on its own does not pay for the nomod side.
     maps = shared_maps()
-    loaded = {c: load(c, maps) for c in ("nomod", "rate")}
-    accs = [loaded[c][1] for c in ("nomod", "rate")]
+    need = ("rate",) if args.only in ("accuracy", "state") else ("nomod", "rate")
+    loaded = {c: load(c, maps) for c in need}
+    accs = [loaded[c][1] for c in need]
     classes = labels(accs)
-    print(f"the {len(maps)} beatmaps the rate corpus covers, both conditions restricted to "
-          f"them.\nrho centred {args.level}.\n")
-    for c in ("nomod", "rate"):
+    print(f"the {len(maps)} beatmaps the rate corpus covers"
+          + (", both conditions restricted to them" if len(need) > 1 else "")
+          + f".\nrho centred {args.level}.\n")
+    for c in need:
         allowed = loaded[c][0]
         print(f"  {c:<6} {len(allowed):,} replays, "
               f"{len({u for u, _, _ in allowed.values()}):,} players")
@@ -395,6 +425,40 @@ def main() -> int:
                 line += f"{rho:>18.2f}" if rho is not None else f"{'-':>18}"
             print(line)
         print()
+
+    if want("state"):
+        allowed, acc = loaded["rate"]
+        by = collections.defaultdict(list)
+        for f, (user, _, a) in allowed.items():
+            by[user].append((a or 0.0, f))
+        pairs = [(lo, hi) for rows in by.values()
+                 for lo, hi in [({f for a, f in rows if a < 0.93},
+                                 {f for a, f in rows if a >= 0.96})] if lo and hi]
+        print(f"-- state or trait: the {len(pairs)} players with both a failing and a "
+              f"clean play\n")
+        print("The accuracy gradient above cannot tell a player who couples more from a "
+              "play that\ncame apart, because a sloppier play is also a weaker player. "
+              "This can: every row\ncompares one person's own failing plays to their own "
+              "clean ones, at one tempo, under\none mod, on the same 40 maps.\n")
+        print(f"  {'class':<18}{'players':>9}{'clean':>8}{'failing':>9}{'gap':>8}"
+              f"{'worse higher':>14}")
+        for label in classes:
+            got = []
+            for lo, hi in pairs:
+                clean = correlate(acc, label, args.level, hi)[0]
+                fail = correlate(acc, label, args.level, lo)[0]
+                if clean is None or fail is None:
+                    continue
+                got.append((clean, fail))
+            if len(got) < 8:
+                continue
+            clean = sum(a for a, _ in got) / len(got)
+            fail = sum(b for _, b in got) / len(got)
+            share = sum(1 for a, b in got if b > a) / len(got)
+            print(f"  {label:<18}{len(got):>9}{clean:>8.2f}{fail:>9.2f}"
+                  f"{fail - clean:>8.2f}{share:>13.0%}")
+        print("\n  `worse higher` is the share of players whose rho is higher in their "
+              "failing plays,\n  which is what says the mean is not one outlier.\n")
     return 0
 
 

@@ -1071,3 +1071,18 @@ surviving all three centring levels.
 So the two hands couple when a play is failing, not when it is fast. Worth noting what the
 rate corpus cannot do: no accuracy floor turns a 282 BPM clear into a 282 BPM elite play,
 so this says tempo holding player and map fixed, not anything about the ceiling.
+
+## 2026-10-13 — when a stream comes apart, the hands fall back into sync
+
+`python3 tools/analysis/tempopair.py --only state`
+
+Follow-up to the accuracy gradient above, which could not separate "this player couples
+more" from "this play collapsed". The 25 players in the rate corpus holding both a sub-.93
+and a .96+ play settle it against themselves: rho 0.13 clean against 0.23 failing on every
+circle, +0.10, and **88% of them individually** higher when failing. It concentrates in the
+1/4 stream — 0.05 to 0.22, +0.17, 87% of players — the class where coupling is otherwise
+*lowest*, and barely moves the 1/2 jump at section level.
+
+So independence in streams is a thing that is held and then lost, within one person, at one
+tempo. Stacks with trait coupling rather than replacing it: zaksynack's 0.33-0.38 on jumps
+is higher than a failing reference play's 0.26 while his accuracy is not failing at all.
