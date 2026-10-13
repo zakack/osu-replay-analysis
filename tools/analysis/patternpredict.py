@@ -107,6 +107,40 @@ Four readings.
   times weaker, while being the better of the two on aim error. Both numbers are real and
   both are small; the point is the ratio, not the absolute.
 
+* **The miss gradient is not an artifact of how runs are counted** (`--gradient`). Three
+  ways it could have been, each with a control:
+
+      run position             n   miss %   within-map excess
+      0:2                506,007   5.04%             -1.02%
+      2:5                439,733   6.07%             -0.16%
+      5:9                221,471   6.81%             +0.39%
+      9:14               113,990   8.01%             +1.36%
+      14:inf             183,815   8.44%             +1.88%
+
+         snap           n        0:2        2:5        5:9       9:14     14:inf
+       0.1667      40,531     -2.10%     +1.16%     +3.46%     +2.15%     +3.12%
+         0.25     591,790     -1.26%     -0.20%     +0.60%     +2.02%     +2.19%
+       0.3333      36,729     +0.73%     -0.62%     -0.56%     +0.21%     +1.05%
+          0.5     728,923     -0.30%     -0.34%     -0.07%     +0.48%     +1.76%
+            1      58,059     +0.31%     -0.16%     -0.76%     -0.11%     -0.02%
+
+  *Not a map-difficulty proxy.* Long runs live in harder beatmaps, and a beatmap train/test
+  split does not remove a systematic covariate -- only a map's idiosyncrasy. Subtracting each
+  beatmap's own miss rate leaves 2.9 points of the raw 3.4, so roughly a sixth of the
+  gradient was between maps and the rest is within them.
+
+  *Not a stream detector.* Holding snap fixed as well as the beatmap, 1/4 runs 3.5 points
+  from shallow to deep -- and 1/2 runs 2.1, monotone. Chains of half-beat *jumps* get worse
+  with depth too, which "position 14 means you are in a stream" cannot explain. 1/1 is flat
+  (-0.02%), which is the negative control: there is no gradient where there is no chain.
+
+  *Not one slip counted many times.* The worry that a dropped tap cascades, turning one
+  event into twenty rows at high run position, does not hold: the mean consecutive-miss
+  streak inside a run is 1.41 objects, 51,697 of 65,400 streaks are a single miss, and at
+  position 14+ it is 1.50 missed objects per streak start. The effective sample is about
+  two-thirds of the row count, not a twentieth, so no clustering weight would change the
+  ordering. Stream misses are isolated drops, not pile-ups.
+
 * **``whole`` is not the control it looks like.** Dropping the position inside the figure
   pools objects that sit in different cells, so it cuts across the cell rather than
   coarsening it, and losing to the cell is what that should do if the cell carries anything.
@@ -350,6 +384,155 @@ def score(n, total, square_total, pred):
     return square_total - 2 * pred * total + n * pred * pred
 
 
+def gradient(shapes, position, args) -> int:
+    """Is run position's miss gradient a property of play, or of how runs are counted?
+
+    Three ways it could be an artifact, each with its own control.
+
+    *The press belonged to a neighbour.* Aim error is read at whatever press was attributed
+    to the object, so a shifted stream measures a real cursor at the wrong moment. If that
+    is concentrated deep in runs, the axis is scoring attribution rather than aim.
+
+    *Long runs live in hard maps.* Position 14 exists only inside a long run and long runs
+    sit in harder beatmaps, so the axis could be a difficulty proxy. Splitting train and
+    test on beatmaps does not touch this -- it removes a map's idiosyncrasy, not a
+    systematic covariate. The control is to subtract each beatmap's own miss rate and ask
+    whether the gradient survives as an *excess* within the map.
+
+    *One slip, counted many times.* If a dropped tap cascades, a single event becomes twenty
+    bad objects all at high run position, and the row count badly overstates how many
+    independent things were observed. The control is the length of a consecutive-miss streak.
+
+    And one that subsumes the second: run position may simply be detecting that an object is
+    in a stream. Snap is already in the cell, so the last table holds snap fixed as well as
+    the beatmap -- within one rhythm and one map, depth is all that is left to vary.
+    """
+    EXCLUDED = frozenset(("Miss", "LargeTickMiss"))
+    corpus = {os.path.basename(r["Path"]): r["BeatmapMd5"]
+              for r in json.load(open(CORPUS)) if not (EXCLUDE & set(r.get("Mods") or ()))}
+
+    shift = collections.defaultdict(lambda: [0, 0, 0.0])        # bin -> n, shifted, sum aim
+    cell = collections.defaultdict(lambda: [0, 0])              # (snap, md5, bin) -> miss, n
+    per_map = collections.defaultdict(lambda: [0, 0])           # (snap, md5) -> miss, n
+    streaks: collections.Counter = collections.Counter()
+    sequence = collections.defaultdict(list)
+
+    with open(GEOMETRY) as f:
+        for r in csv.DictReader(f):
+            if r["kind"] != "circle" or r["exitSlackRadii"] or r["result"] == "Unjudged":
+                continue
+            md5 = corpus.get(r["replay"])
+            if md5 is None:
+                continue
+            index = position.get(md5, {}).get(round(float(r["startTime"]), 3))
+            if index is None:
+                continue
+            row = shapes[md5][index]
+            band = RUN_POSITION.bin(row["run"]) if row["run"] is not None else None
+            if band is None or not row["snap"]:
+                continue
+            miss = 1 if r["result"] in EXCLUDED else 0
+
+            aim = _num(r["aimErrorRadii"])
+            if aim is not None:
+                error, gap = _num(r["hitError"]), _num(r["deltaTime"])
+                s = shift[band]
+                s[0] += 1
+                s[2] += aim
+                if error is None or gap is None or abs(error) > 0.4 * gap:
+                    s[1] += 1
+
+            cell[(row["snap"], md5, band)][0] += miss
+            cell[(row["snap"], md5, band)][1] += 1
+            per_map[(row["snap"], md5)][0] += miss
+            per_map[(row["snap"], md5)][1] += 1
+            sequence[r["replay"]].append((row["t"], row["run"], miss))
+
+    order = [b for b in RUN_POSITION.labels if b in {k[2] for k in cell}]
+
+    print("\npresses attributed to a neighbour, by depth into the run. A shift displaces a "
+          "press by about\none tap interval, so a hit error over 0.4 of the gap to the "
+          "previous object is one.\n")
+    print(f"{'run position':<14}{'presses':>11}{'shifted':>10}{'rate':>8}{'mean aim':>10}")
+    for band in order:
+        n, bad, total = shift[band]
+        if not n:
+            continue
+        print(f"{band:<14}{n:>11,}{bad:>10,}{bad / n:>8.1%}{total / n:>10.4f}")
+
+    def excess(snap, band):
+        """Miss rate above the same beatmap's own, weighted by objects."""
+        num = den = 0.0
+        for (s, md5, b), (missed, n) in cell.items():
+            if b != band or n == 0 or (snap is not None and s != snap):
+                continue
+            base_missed, base_n = per_map[(s, md5)] if snap is not None else (0, 0)
+            if snap is None:
+                base_missed = sum(v[0] for k, v in per_map.items() if k[1] == md5)
+                base_n = sum(v[1] for k, v in per_map.items() if k[1] == md5)
+            num += n * (missed / n - base_missed / base_n)
+            den += n
+        return num / den if den else None
+
+    print("\nmiss rate by depth, raw and as an excess over the same beatmap's own rate. The "
+          "excess is\nthe control for long runs living in harder maps, which a beatmap "
+          "train/test split does not\nremove.\n")
+    print(f"{'run position':<14}{'n':>12}{'miss %':>9}{'within-map excess':>20}")
+    for band in order:
+        n = sum(v[1] for k, v in cell.items() if k[2] == band)
+        missed = sum(v[0] for k, v in cell.items() if k[2] == band)
+        if not n:
+            continue
+        print(f"{band:<14}{n:>12,}{missed / n:>8.2%}{excess(None, band):>+19.2%}")
+
+    print("\nthe same excess within one snap as well as one beatmap. Depth is the only thing "
+          "left varying,\nso a gradient here is not run position detecting that an object "
+          "is in a stream.\n")
+    print(f"{'snap':>7}{'n':>12}" + "".join(f"{b:>11}" for b in order))
+    for snap in sorted({k[0] for k in cell}, key=lambda s: float(s)):
+        n = sum(v[1] for k, v in cell.items() if k[0] == snap)
+        if n < 20_000:
+            continue
+        cells = [excess(snap, band) for band in order]
+        print(f"{snap:>7}{n:>12,}"
+              + "".join(f"{c:>+11.2%}" if c is not None else f"{'-':>11}" for c in cells))
+
+    # A streak is consecutive missed objects inside one run: a new run starts wherever the
+    # index does not increment, which is how `Rhythm.cs` numbers them.
+    deep_misses = deep_events = 0
+    for events in sequence.values():
+        events.sort()
+        previous, length = None, 0
+        for _, index, miss in events:
+            if previous is None or index != previous + 1:
+                if length:
+                    streaks[length] += 1
+                length = 0
+            if miss:
+                if index >= 14:
+                    deep_misses += 1
+                    if length == 0:
+                        deep_events += 1
+                length += 1
+            elif length:
+                streaks[length] += 1
+                length = 0
+            previous = index
+        if length:
+            streaks[length] += 1
+
+    total = sum(n * L for L, n in streaks.items())
+    events = sum(streaks.values())
+    print(f"\nmisses inside runs: {total:,} objects in {events:,} consecutive streaks, mean "
+          f"{total / max(events, 1):.2f}.\nIf a dropped tap cascaded, one slip would become "
+          f"many rows at high run position and the\nrow count would overstate the "
+          f"independent observations.\n")
+    print("  " + ", ".join(f"{L} long x{n:,}" for L, n in sorted(streaks.items())[:8]))
+    print(f"  run position 14+: {deep_misses:,} missed objects from {deep_events:,} streak "
+          f"starts, {deep_misses / max(deep_events, 1):.2f} per event")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -366,6 +549,12 @@ def main() -> int:
                              "aim-error numbers against stream shifting, which inflates aim "
                              "error and does so deeper into runs -- exactly where it would "
                              "manufacture the run-position result")
+    parser.add_argument("--gradient", action="store_true",
+                        help="instead of the R^2 table, ask whether run position's win is "
+                             "an artifact of how streams work: how often a press is "
+                             "attributed to a neighbour, whether the miss gradient survives "
+                             "removing each beatmap's own level, and whether misses arrive "
+                             "in cascades or singly")
     parser.add_argument("--prepare", action="store_true",
                         help="write the one-replay-per-beatmap corpus the rhythm pass needs")
     parser.add_argument("--min-train", type=int, nargs="*", default=[50, 200, 500],
@@ -430,6 +619,9 @@ def main() -> int:
                 print(f"  {key:<22} train half {train}: {len(shared):>7,} shared "
                       f"sequences, {used:,} tiled", flush=True)
             labelled[key] = per_direction
+
+    if args.gradient:
+        return gradient(shapes, position, args)
 
     CELLS = ("cell |angle|", "cell run position", "cell |angle| x run position")
     # Per direction: training group sums, and test sums keyed by the pair (pattern, cell) so
