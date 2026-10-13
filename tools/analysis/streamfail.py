@@ -165,6 +165,47 @@ is the share of runs above zero.
   "further off"; signed, it says short of the target along the direction of travel -- which is
   the charter's own example of a target finding, arrived at from the other end.
 
+**Lag against cut** (`--path`). Negative along-track has two causes with opposite advice: a
+hand falling short of the target, and a hand taking the shorter route through a turn. Cutting
+needs a corner, so the two separate on how the offset depends on turn magnitude (180 straight
+through, 0 doubling back). Offsets in radii, at the press, positions 0-9:
+
+    1/4, runs that hold      population              player
+    turn              n     lag   inside        n     lag   inside
+    0:5               8  -0.073   +0.064      154  -0.272   +0.078
+    5:50            255  -0.052   +0.077      964  -0.128   +0.063
+    50:135        1,320  -0.060   +0.061    6,042  -0.111   +0.080
+    135:160       2,918  -0.060   +0.091   22,421  -0.024   +0.116
+    160:180       4,175  -0.067   +0.032   20,007  -0.036   +0.082
+
+* **The field's lag is flat in turn magnitude; this player's is not.** The population sits at
+  about -0.06 radii at every turn band, from doubling back to straight through -- a generic
+  lag with no relation to the corner. The player runs from -0.272 at a reversal to -0.024 at
+  135-160 degrees, a tenfold gradient, and is four to five times the field's at the sharpest
+  turns while being *better* than the field at the shallow ones. So this player's negative
+  along-track is corner-related and the field's is not, which is the difference the signed
+  table found and could not explain.
+
+* **Everybody cuts to the inside, and nobody aims at circle centres.** `inside` is positive
+  in almost every cell of both corpora, 50-70% of presses, peaking at 135-160 degrees. That
+  is the direct evidence for the INTERESTING.md hypothesis: the path players actually take
+  through a stream is not the polyline joining circle centres, so cross-track error measured
+  against those centres is partly measuring ordinary play. The player cuts harder than the
+  field at every band (+0.116 against +0.091 at the peak).
+
+* **Breaking runs cut further in and lag further back.** At 1/4 the player's breaking runs
+  reach +0.147 inside at 135-160 against +0.116 for holding ones, and -0.333 lag at a reversal
+  against -0.272. Which way that causes is not settled here: cutting may be the technique that
+  usually works and occasionally overshoots into a miss, or a run already going wrong may
+  produce both.
+
+**The control this wants before it is phrased for a player.** Sharp turns at 1/4 are mostly
+tight and stacked, so turn magnitude and spacing are correlated in the map pool, and lag is
+normalised by the radius rather than by the movement. A fixed lag in radii therefore looks
+larger where the jump is smaller, and the player's map pool is not the field's. Crossing
+spacing into the `--path` key would separate "lags at sharp corners" from "lags on short
+movements"; until then the gradient is real and its axis is not certain.
+
 Caveats that bound all of the above. Every ratio is between 0.98 and 1.16 on the player side,
 so all three mechanisms are present in both rhythms and this is which one moves first rather
 than which is to blame. Only circles are visible, so a miss on a slider head inside positions
@@ -191,6 +232,59 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from analysis.patternpredict import EXCLUDE, MISSED, _num, read_rhythm  # noqa: E402
 from bins.load import TIMESTAMP  # noqa: E402
+from bins.schema import ANGLE  # noqa: E402
+
+DEG = 180.0 / math.pi
+
+
+def cross2(a, b) -> float:
+    """z of the cross product. Sign says which rotational side b is on, relative to a."""
+    return a[0] * b[1] - a[1] * b[0]
+
+
+def corner(previous, here, nxt, cursor, aim):
+    """Split the cursor's offset into lagging behind and cutting the corner.
+
+    Negative along-track has two completely different causes that the magnitude cannot
+    separate, and that imply opposite advice. A hand that falls short of the target is
+    *lagging*. A hand that takes a shorter route through a turn is *cutting*, which is not an
+    error at all if the shorter route keeps the cursor inside successive hitboxes -- the
+    hypothesis in INTERESTING.md about the optimal path not being centre to centre.
+
+    They are distinguishable because cutting needs a corner and lagging does not:
+
+    * ``lag`` is the offset along the incoming direction. Negative is short of the target.
+      A lagging hand does this whether or not the path turns.
+    * ``inward`` is the offset across the incoming direction, with its sign flipped into the
+      turn's own frame, so positive always means *toward the inside of the corner*. Cutting
+      produces this and only at a real turn; a lagging hand has no reason to prefer the
+      inside over the outside.
+
+    ``inward`` is mirror-invariant by construction -- reflecting a map flips the turn and the
+    offset together -- so it is not the per-object chirality Mirror week settled and found
+    empty. It is a relationship between two consecutive legs, which that week never tested.
+
+    Returns (lag, inward), both None if the geometry is degenerate. The turn magnitude comes
+    off the row rather than being recomputed here: the convention (180 straight through, 0
+    doubling back) is pinned by GeometryTests, and reconstructing it from travel directions
+    gets it exactly backwards.
+    """
+    offset = (cursor[0] - here[0], cursor[1] - here[1])
+    length = math.hypot(*offset)
+    if not aim or aim <= 0 or length == 0:
+        return None, None
+    radius = length / aim
+    incoming = (here[0] - previous[0], here[1] - previous[1])
+    outgoing = (nxt[0] - here[0], nxt[1] - here[1])
+    din, dout = math.hypot(*incoming), math.hypot(*outgoing)
+    if din == 0 or dout == 0:
+        return None, None
+    u = (incoming[0] / din, incoming[1] / din)
+    v = (outgoing[0] / dout, outgoing[1] / dout)
+    side = 1.0 if cross2(u, v) >= 0 else -1.0
+    lag = (offset[0] * u[0] + offset[1] * u[1]) / radius
+    inward = cross2(u, offset) * side / radius
+    return lag, inward
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -325,6 +419,12 @@ def main() -> int:
                                         "move, so an all-time tempo number mixes regimes -- "
                                         "the QMK toggle era alone made the two presses "
                                         "mutually exclusive")
+    parser.add_argument("--path", action="store_true",
+                        help="instead of the outcome tables, split the cursor's offset into "
+                             "lagging behind the target and cutting the inside of the corner, "
+                             "by turn magnitude. Negative along-track has those two causes and "
+                             "they imply opposite advice; cutting needs a corner and lagging "
+                             "does not, which is what separates them")
     parser.add_argument("--snaps", nargs="*", default=["0.25", "0.5"])
     args = parser.parse_args()
 
@@ -369,6 +469,8 @@ def main() -> int:
     # snap -> outcome -> metric -> list of per-run values
     acc: dict = collections.defaultdict(lambda: collections.defaultdict(
         lambda: collections.defaultdict(list)))
+    # (snap, turn band, outcome) -> n, sum lag, sum inward, count inward > 0
+    path: dict = collections.defaultdict(lambda: [0, 0.0, 0.0, 0])
     counted = 0
 
     def flush(rows: list[dict]):
@@ -391,6 +493,32 @@ def main() -> int:
             if len(early) < MIN_EARLY or any(r["miss"] for r in early) or not late:
                 continue
             outcome = "breaks at 10+" if any(r["miss"] for r in late) else "holds"
+
+            if args.path:
+                # Per object rather than per run: the question is about the shape of the
+                # offset, not about the run's summary. Still confined to positions 0-9, so
+                # nothing here is measured after a miss.
+                for i, row in enumerate(run):
+                    if row["run"] >= BEFORE or i == 0 or i + 1 >= len(run):
+                        continue
+                    before, after = run[i - 1], run[i + 1]
+                    if (before["run"] != row["run"] - 1 or after["run"] != row["run"] + 1
+                            or row["angle"] is None or None in (row["cx"], row["cy"])):
+                        continue
+                    lag, inward = corner((before["tx"], before["ty"]),
+                                         (row["tx"], row["ty"]), (after["tx"], after["ty"]),
+                                         (row["cx"], row["cy"]), row["aim"])
+                    if lag is None:
+                        continue
+                    band = ANGLE.bin(row["angle"])
+                    if band is None:
+                        continue
+                    cell = path[(snap, band, outcome)]
+                    cell[0] += 1
+                    cell[1] += lag
+                    cell[2] += inward
+                    cell[3] += 1 if inward > 0 else 0
+                continue
 
             taps = [(float(r["run"]), r["error"]) for r in early if r["own"]]
             if len(taps) < MIN_POINTS:
@@ -474,6 +602,9 @@ def main() -> int:
                         cross = (offset[0] * -uy + offset[1] * ux) / radius
 
             held.append({"t": t, "run": run_index, "runid": run_id, "snap": snap,
+                         "cx": cx, "cy": cy, "aim": aim,
+                         "angle": (abs(_num(r["signedAngle"]) or 0.0) * DEG
+                                   if r["signedAngle"] else None),
                          "size": run_size, "error": error, "gap": gap, "own": own,
                          "miss": r["result"] in MISSED, "along": along, "cross": cross,
                          "velocity": _num(r["requiredVelocity"]),
@@ -486,6 +617,36 @@ def main() -> int:
           f"so what shows up here is a cause and not\na consequence. Magnitudes, since a run "
           f"tapped progressively early and one tapped\nprogressively late are equally off "
           f"tempo. t is Welch's on the difference of the two.\n")
+
+    if args.path:
+        print(f"The cursor's offset at the press, split into lagging behind the target and "
+              f"cutting the\ninside of the corner, by how sharp the turn is. 180 is straight "
+              f"through and 0 doubles\nback. Cutting needs a corner, so a lagging hand gives "
+              f"a flat 'inside' column and a cutter\ngives one that grows as the turn "
+              f"sharpens. 'inside' is mirror-invariant: reflecting a map\nflips the turn and "
+              f"the offset together, so it is not the per-object chirality Mirror week\n"
+              f"settled -- it is a relationship between two consecutive legs.\n")
+        for snap in args.snaps:
+            bands = [b for b in ANGLE.labels
+                     if any((snap, b, o) in path for o in ("holds", "breaks at 10+"))]
+            if not bands:
+                continue
+            print(f"snap {snap}")
+            print(f"  {'turn':<12}" + "".join(f"{h:>11}" for h in
+                  ("n holds", "lag", "inside", "inside>0", "n breaks", "lag", "inside",
+                   "inside>0")))
+            for band in bands:
+                cells = ""
+                for outcome in ("holds", "breaks at 10+"):
+                    n, lag, inward, positive = path[(snap, band, outcome)]
+                    if not n:
+                        cells += f"{0:>11}{'-':>11}{'-':>11}{'-':>11}"
+                        continue
+                    cells += (f"{n:>11,}{lag / n:>+11.3f}{inward / n:>+11.3f}"
+                              f"{positive / n:>10.1%} ")
+                print(f"  {band:<12}{cells}")
+            print()
+        return 0
 
     # Along-track with the tap-timing part removed. The coefficient is fitted over both
     # groups of a snap together, so it cannot absorb the difference being tested.

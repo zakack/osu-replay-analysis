@@ -750,3 +750,30 @@ and not the game's. The magnitude table had said only "further off", which is wh
 pass was worth running. This is CLAUDE.md's own example of a target finding ("your cursor
 undershoots wide-angle jumps") reached from the other direction, and it wants the velocity
 and angle facets added before it is phrased for a player.
+
+## 2026-10-13 — nobody aims at circle centres, and this player's lag is corner-shaped where the field's is flat
+
+`tools/analysis/streamfail.py --path`, both corpora
+
+Decomposing the cursor's offset at the press into *lag* (short of the target along the incoming
+direction) and *inside* (across it, signed into the turn's own frame, so positive is the inside
+of the corner; mirror-invariant by construction, so not the per-object chirality Mirror week
+settled).
+
+`inside` is positive in almost every cell of both corpora, 50-70% of presses, peaking at
+135-160 degrees. Direct evidence for the centre-to-centre hypothesis logged yesterday: the path
+players take through a stream is not the polyline joining circle centres, so cross-track error
+measured against those centres is partly measuring ordinary good play, and the "stray" metric in
+the existing stream work inherits that.
+
+The player-versus-field difference the signed pass found, now explained: the population's lag is
+**flat** at about -0.06 radii across every turn band from reversal to straight-through, while
+zaksynack's runs -0.272 at a reversal to -0.024 at 135-160, a tenfold gradient -- four to five
+times the field at sharp turns, *better* than the field at shallow ones. So his negative
+along-track is corner-related and the field's is generic. Player predicted exactly this before it
+was measured.
+
+Caveat before anyone phrases it for a player: sharp turns at 1/4 are mostly tight and stacked, so
+turn magnitude and spacing are correlated in the map pool, and lag is normalised by radius not by
+the movement. Crossing spacing into the --path key would separate "lags at sharp corners" from
+"lags on short movements".
