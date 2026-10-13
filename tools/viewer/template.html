@@ -336,12 +336,16 @@
 
   .inspect[hidden] { display: none; }
 
+  /* Buttons on their own row, title under them at full width: a pattern's title runs
+     longer than the rail is wide once three buttons share its line. */
   .inspect-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
+    gap: 6px 8px;
   }
+  .inspect-head .inspect-actions { order: -1; margin-left: auto; }
+  .inspect-head .inspect-title { flex-basis: 100%; }
 
   .inspect-title {
     font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
@@ -356,6 +360,26 @@
 
   /* Group labels inside the inspector, so the two hands read as two sections. */
   .inspect .k.sub-k { margin: 3px 0 -4px; }
+
+  .inspect-body { display: flex; flex-direction: column; gap: 9px; }
+  .inspect-body[hidden] { display: none; }
+
+  /* The clip command for the selection, selectable as one unit. */
+  .cmd { display: flex; align-items: flex-start; gap: 6px; }
+  .cmd code {
+    flex: 1;
+    min-width: 0;
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 10.5px;
+    line-height: 1.45;
+    color: var(--text);
+    background: var(--panel-2);
+    border-radius: 2px;
+    padding: 5px 7px;
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
+  .cmd button { padding: 4px 8px; font-size: 10.5px; }
 
   .dir {
     display: inline-block;
@@ -471,23 +495,50 @@
         <div class="inspect-head">
           <span class="inspect-title" id="x-title"></span>
           <span class="inspect-actions">
-            <button id="x-go" title="Seek to just before this object">Go to</button>
+            <button id="x-loop" aria-pressed="false" title="Play this selection over and over">Loop</button>
+            <button id="x-go" title="Seek to just before the selection">Go to</button>
             <button id="x-clear" title="Clear the selection (Esc)">&times;</button>
           </span>
         </div>
-        <span class="k sub-k">Button</span>
-        <div class="readout"><span>press</span><span id="x-press"></span></div>
-        <span class="k sub-k">Cursor</span>
-        <div class="readout"><span>deepest</span><span id="x-deep"></span></div>
-        <div class="readout"><span>how deep</span><span id="x-dist"></span></div>
-        <div class="readout"><span>inside</span><span id="x-inside"></span></div>
-        <div class="readout"><span>aim error at press</span><span id="x-aim"></span></div>
-        <span class="k sub-k">Both hands</span>
-        <div class="readout"><span>press vs deepest</span><span id="x-gap"></span></div>
-        <span class="k sub-k">Geometry</span>
-        <div class="readout"><span>jump in</span><span id="x-jump"></span></div>
-        <div class="readout"><span>heading</span><span id="x-heading"></span></div>
-        <div class="readout"><span>turn here</span><span id="x-turn"></span></div>
+
+        <div class="inspect-body" id="x-one">
+          <span class="k sub-k">Button</span>
+          <div class="readout"><span>press</span><span id="x-press"></span></div>
+          <span class="k sub-k">Cursor</span>
+          <div class="readout"><span>deepest</span><span id="x-deep"></span></div>
+          <div class="readout"><span>how deep</span><span id="x-dist"></span></div>
+          <div class="readout"><span>inside the circle</span><span id="x-inside"></span></div>
+          <div class="readout"><span>aim error at press</span><span id="x-aim"></span></div>
+          <div class="readout"><span>reach</span><span id="x-reach"></span></div>
+          <div class="readout"><span>to the inside</span><span id="x-side"></span></div>
+          <span class="k sub-k">Both hands</span>
+          <div class="readout"><span>press vs deepest</span><span id="x-gap"></span></div>
+          <span class="k sub-k">Geometry</span>
+          <div class="readout"><span>jump in</span><span id="x-jump"></span></div>
+          <div class="readout"><span>heading</span><span id="x-heading"></span></div>
+          <div class="readout"><span>turn here</span><span id="x-turn"></span></div>
+        </div>
+
+        <div class="inspect-body" id="x-many" hidden>
+          <span class="k sub-k">Button</span>
+          <div class="readout"><span>timing</span><span id="p-press"></span></div>
+          <div class="readout"><span>misses</span><span id="p-miss"></span></div>
+          <span class="k sub-k">Cursor</span>
+          <div class="readout"><span>deepest</span><span id="p-deep"></span></div>
+          <div class="readout"><span>reach</span><span id="p-reach"></span></div>
+          <div class="readout"><span>to the inside</span><span id="p-side"></span></div>
+          <span class="k sub-k">Both hands</span>
+          <div class="readout"><span>press vs deepest</span><span id="p-gap"></span></div>
+          <div class="readout"><span>moving together</span><span id="p-rho"></span></div>
+        </div>
+
+        <div class="inspect-body" id="x-export">
+          <span class="k sub-k">Practise it</span>
+          <div class="cmd">
+            <code id="x-cmd"></code>
+            <button id="x-copy" title="Copy the command">Copy</button>
+          </div>
+        </div>
       </div>
     </aside>
   </div>
@@ -510,7 +561,9 @@
     <kbd>Space</kbd> play &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> step one frame &middot;
     <kbd>Shift</kbd> + arrows jump a second &middot; <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> speed
     &middot; <kbd>M</kbd> stop on miss &middot; <kbd>K</kbd> hit markers &middot;
-    <kbd>F</kbd> fade &middot; click an object or a tick to inspect it, <kbd>Esc</kbd> to let go
+    <kbd>F</kbd> fade &middot; click an object or a tick to inspect it, <kbd>Shift</kbd>-click
+    another to make a pattern of everything between, <kbd>Shift</kbd>-drag on the seek bar to
+    loop a stretch, <kbd>Esc</kbd> to let go
   </p>
 </div>
 
@@ -883,7 +936,7 @@
       drawPresses(t, r);
     }
 
-    if (selected) drawSelection(selected, t, r);
+    if (sel) drawSelection(t, r);
 
     for (var g = 0; g < ghosts.length; g++) {
       if (ghosts[g].on) drawCursor(ghosts[g], t, false);
@@ -1008,7 +1061,7 @@
         sx.stroke();
       }
       previous = [q[0], q[1], p.t, fade];
-      if (p.o !== selected) drawMarker(p, fade, r);
+      if (!inSel(p.o)) drawMarker(p, fade, r);
     }
   }
 
@@ -1048,13 +1101,48 @@
 
   function deg(rad) { return rad * 180 / Math.PI; }
 
-  function drawSelection(o, t, r) {
+  // The selection on the field. One object gets the full treatment -- the leg into it and a
+  // label. A pattern gets its shape instead: a dashed path through the members' centres,
+  // every member ringed with its press and deepest point, and its two ends numbered so the
+  // range can be read off for the clip command.
+  function drawSelection(t, r) {
+    var single = sel.lo === sel.hi;
+    sx.save();
+    if (!single) {
+      sx.setLineDash([3, 5]);
+      sx.beginPath();
+      for (var k = sel.lo; k <= sel.hi; k++) {
+        var m = OBJ[k];
+        if (m.type === "spinner") continue;
+        if (k === sel.lo) sx.moveTo(px(m.x), py(m.y)); else sx.lineTo(px(m.x), py(m.y));
+      }
+      sx.strokeStyle = rgba(ACCENT, .45);
+      sx.lineWidth = 1.1;
+      sx.stroke();
+      sx.setLineDash([]);
+    }
+    for (k = sel.lo; k <= sel.hi; k++) {
+      if (OBJ[k].type !== "spinner") drawPicked(OBJ[k], t, r, single);
+    }
+    if (!single) {
+      sx.font = "500 10.5px 'IBM Plex Mono', monospace";
+      sx.textBaseline = "middle";
+      sx.fillStyle = rgba(ACCENT, 1);
+      [OBJ[sel.lo], OBJ[sel.hi]].forEach(function (m) {
+        sx.textAlign = "left";
+        sx.fillText(String(m.i), px(m.x) + r * 1.4, py(m.y) - r * 1.1);
+      });
+    }
+    sx.restore();
+  }
+
+  function drawPicked(o, t, r, single) {
     sx.save();
 
     // Where the jump came from: heading and spacing, run backward from the target. This is
     // the apex geometry measured the leg from -- the previous object's exit, which for a
     // slider is where lazer assumes the cursor left it, not its head.
-    if (o.hd != null && o.sp != null) {
+    if (single && o.hd != null && o.sp != null) {
       var len = o.sp * RADIUS;
       var fx = o.x - Math.cos(o.hd) * len, fy = o.y + Math.sin(o.hd) * len;
       var ex = px(o.x) - Math.cos(o.hd) * r * 1.32, ey = py(o.y) + Math.sin(o.hd) * r * 1.32;
@@ -1082,11 +1170,11 @@
       sx.fill();
     }
 
-    // The object, ringed.
+    // The object, ringed. Lighter for a pattern's members, which are many.
     sx.beginPath();
-    sx.arc(px(o.x), py(o.y), r * 1.32, 0, 6.2832);
-    sx.strokeStyle = rgba(ACCENT, .95);
-    sx.lineWidth = 1.6;
+    sx.arc(px(o.x), py(o.y), r * (single ? 1.32 : 1.18), 0, 6.2832);
+    sx.strokeStyle = rgba(ACCENT, single ? .95 : .7);
+    sx.lineWidth = single ? 1.6 : 1.1;
     sx.stroke();
 
     // Where the cursor was deepest, and a thread from there to where the press landed:
@@ -1121,7 +1209,7 @@
     var bits = [];
     if (o.sp != null) bits.push(o.sp.toFixed(2) + " r");
     if (o.tn != null) bits.push(turnWords(o.tn));
-    if (bits.length) {
+    if (single && bits.length) {
       var side = o.hd != null ? o.hd : 0;
       var text = bits.join(" · ");
       sx.font = "500 11px 'IBM Plex Mono', monospace";
@@ -1250,6 +1338,18 @@
       tx.fillRect(x - .75, y - .75, 1.5, 1.5);
     }
 
+    // The selection's span, which is what the loop plays, and a sweep in progress.
+    function band(from, to, alpha) {
+      var a = ((from - START) / (END - START)) * w, b = ((to - START) / (END - START)) * w;
+      tx.fillStyle = rgba(ACCENT, alpha);
+      tx.fillRect(a, 0, Math.max(2, b - a), h);
+    }
+    if (sel) {
+      var span = loopSpan();
+      band(span.from, span.to, looping ? .2 : .1);
+    }
+    if (sweep) band(Math.min(sweep.a, sweep.b), Math.max(sweep.a, sweep.b), .25);
+
     var hx = ((t - START) / (END - START)) * w;
     tx.strokeStyle = braking ? rgba(MISS, 1) : rgba(hex(tok("--accent", "#9B8DF0")), 1);
     tx.lineWidth = braking ? 2 : 1.5;
@@ -1346,20 +1446,27 @@
 
     // The selected object's pair, last and lit, with the slant between them drawn: a
     // vertical connector is the two hands together; a lean is one hand ahead of the other.
-    if (selected) {
+    // Every member of a pattern the same way, so a run of connectors that all lean one way
+    // is a pattern played with one hand ahead throughout, and a fan is hands that wander.
+    if (sel) {
       // Pinned against fading, never against time: a tick still in the future stays unshown.
-      var b = buttonTicks.filter(function (k) { return k.o === selected && k.t <= t; })[0];
-      var c = cursorTicks.filter(function (k) { return k.o === selected && k.t <= t; })[0];
-      if (b && c) {
+      var bs = buttonTicks.filter(function (k) { return inSel(k.o) && k.t <= t; });
+      var cs = cursorTicks.filter(function (k) { return inSel(k.o) && k.t <= t; });
+      var partner = {};
+      cs.forEach(function (c) { partner[c.o.i] = c; });
+      var lean = sel.lo === sel.hi ? 1 : .55;
+      bs.forEach(function (b) {
+        var c = partner[b.o.i];
+        if (!c) return;
         bx.beginPath();
         bx.moveTo(barX(b.e), mid - 3);
         bx.lineTo(barX(c.e), mid + 3);
-        bx.strokeStyle = rgba(ACCENT, 1);
-        bx.lineWidth = 1.5;
+        bx.strokeStyle = rgba(ACCENT, lean);
+        bx.lineWidth = sel.lo === sel.hi ? 1.5 : 1;
         bx.stroke();
-      }
-      if (b) tickOn(b, 1, -1, true);
-      if (c) tickOn(c, 1, 1, true);
+      });
+      bs.forEach(function (b) { tickOn(b, 1, -1, true); });
+      cs.forEach(function (c) { tickOn(c, 1, 1, true); });
     }
   }
 
@@ -1547,7 +1654,7 @@
         var stopped = false;
         braking = false;
 
-        if (brakeOn) {
+        if (brakeOn && !looping) {
           var m = nextMiss(t);
           if (m !== null && m - t < BRAKE_MS) {
             braking = true;
@@ -1569,6 +1676,10 @@
         }
 
         t += advance;
+        if (looping && sel) {
+          var span = loopSpan();
+          if (t >= span.to) t = span.from;
+        }
         if (t >= END) { t = END; stopped = true; }
 
         if (stopped) { braking = false; setPlaying(false); }
@@ -1626,22 +1737,89 @@
   });
 
   // ---- selection ----------------------------------------------------------
-  // One object at a time, picked on the field or off the bar. A selection is pinned: its
-  // ring, its press and its two ticks stay lit however far the playhead moves, so the
-  // object can be watched coming round again or compared against what follows it.
-  var selected = null;
+  // A selection is a run of consecutive objects, lo..hi by index -- one object when the
+  // two are equal. Click picks one; shift-click extends from the first pick to the one
+  // clicked, so a pattern is chosen the way a player names it, first object to last; and
+  // shift-drag on the seek bar takes every object in a stretch of time. A selection is
+  // pinned: its rings, presses and ticks stay lit however far the playhead moves, each
+  // revealed only once the playhead has passed it.
+  //
+  // The indices are the beatmap's own object positions, which is what `ora clip` takes, so
+  // a selection can be handed straight to the clip command (build.py checks the two agree).
+  var sel = null, anchor = null;
   var inspectCard = document.getElementById("inspect");
 
-  function select(o) {
-    selected = o || null;
-    inspectCard.hidden = !selected;
-    if (selected) fillInspector(selected);
+  function inSel(o) { return sel !== null && o.i >= sel.lo && o.i <= sel.hi; }
+
+  function choose(lo, hi) {
+    if (lo == null) {
+      sel = null;
+      anchor = null;
+      setLoop(false);
+    } else {
+      sel = { lo: Math.min(lo, hi), hi: Math.max(lo, hi) };
+      if (looping) {
+        var span = loopSpan();
+        if (t < span.from || t > span.to) t = span.from;
+      }
+    }
+    inspectCard.hidden = !sel;
+    if (sel) fillInspector();
     render();
   }
 
-  function ms(v) {
-    return (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(0) + " ms";
+  // Click and shift-click, shared by the field and the bar.
+  function pick(o, extend) {
+    if (!o) {
+      if (!extend) choose(null);
+      return;
+    }
+    if (extend && anchor !== null) {
+      choose(anchor, o.i);
+      return;
+    }
+    anchor = o.i;
+    choose(o.i, o.i);
   }
+
+  // ---- loop ---------------------------------------------------------------
+  // The selection played over and over. The run-up starts a full approach before the first
+  // object, so it arrives the way it did in play rather than appearing mid-fade, and the
+  // tail lets the last press and the cursor's exit finish. While looping the miss brake
+  // stays quiet: the miss is the thing being looped, and stopping on it every pass is being
+  // stopped on the way to it.
+  var looping = false;
+  var loopBtn = document.getElementById("x-loop");
+
+  function loopSpan() {
+    var first = OBJ[sel.lo], last = OBJ[sel.hi];
+    var end = last.endTime != null ? last.endTime : last.t;
+    return { from: Math.max(START, first.t - PREEMPT - 150), to: Math.min(END, end + SPAN + 250) };
+  }
+
+  function setLoop(on) {
+    looping = !!(on && sel);
+    loopBtn.setAttribute("aria-pressed", looping ? "true" : "false");
+    if (looping) {
+      var span = loopSpan();
+      if (t < span.from || t > span.to) t = span.from;
+      setPlaying(true);
+    }
+    render();
+  }
+  loopBtn.addEventListener("click", function () { setLoop(!looping); });
+
+  // ---- inspector ----------------------------------------------------------
+
+  // Signed, with the sign taken from the rounded value, so a mean of -0.3 reads "0 ms"
+  // rather than a signed zero that looks like a direction.
+  function signed(v, places, unit) {
+    var shown = Number(Math.abs(v).toFixed(places));
+    var sign = shown === 0 ? "" : v > 0 ? "+" : "−";
+    return sign + shown.toFixed(places) + unit;
+  }
+  function ms(v) { return signed(v, 0, " ms"); }
+  function radii(v) { return signed(v, 2, " r"); }
 
   // Early and late always name the hand they belong to. "Late" alone was the word that
   // described a cursor-rushing miss backward, because it looked like the button's fault.
@@ -1656,15 +1834,45 @@
     el.style.color = colour ? rgba(colour, 1) : "";
   }
 
-  function fillInspector(o) {
+  function stats(values) {
+    var n = values.length;
+    if (!n) return null;
+    var mean = values.reduce(function (a, b) { return a + b; }, 0) / n;
+    var sd = Math.sqrt(values.reduce(function (a, b) { return a + (b - mean) * (b - mean); }, 0) / n);
+    return { n: n, mean: mean, sd: sd };
+  }
+
+  function fillInspector() {
+    var single = sel.lo === sel.hi;
+    document.getElementById("x-one").hidden = !single;
+    document.getElementById("x-many").hidden = single;
+
     var title = document.getElementById("x-title");
     title.innerHTML = "";
-    title.appendChild(document.createTextNode("object " + o.i + " "));
     var dim = document.createElement("span");
     dim.className = "dim";
-    dim.textContent = o.type + " · " + o.result.toLowerCase();
+    if (single) {
+      var o = OBJ[sel.lo];
+      title.appendChild(document.createTextNode("object " + o.i + " "));
+      dim.textContent = o.type + " · " + o.result.toLowerCase();
+      fillOne(o);
+    } else {
+      var members = OBJ.slice(sel.lo, sel.hi + 1).filter(function (m) { return m.type !== "spinner"; });
+      var last = OBJ[sel.hi];
+      var span = (last.endTime != null ? last.endTime : last.t) - OBJ[sel.lo].t;
+      title.appendChild(document.createTextNode("objects " + sel.lo + "–" + sel.hi + " "));
+      dim.textContent = members.length + " objects · " + (span / 1000).toFixed(2) + " s";
+      fillMany(members);
+    }
     title.appendChild(dim);
 
+    // The clip command for exactly this range. The lead-in is left to the clip skill,
+    // which knows about breaks and bar lengths; the viewer knows neither.
+    document.getElementById("x-cmd").textContent =
+      "ora clip " + SCENE.beatmapMd5 + " " + sel.lo + " " + sel.hi;
+  }
+
+  function fillOne(o) {
     if (o.error != null) setText("x-press", ms(o.error) + " · " + when(o.error, "button"), errorColour(o.error));
     else if (o.sy != null) setText("x-press", ms(o.sy) + " · judged nothing", MISS);
     else setText("x-press", "no press", o.result === "Miss" ? MISS : null);
@@ -1693,6 +1901,13 @@
     }
 
     setText("x-aim", o.ae != null ? o.ae.toFixed(2) + " r" : "—");
+
+    // streamfail.py's decomposition of that aim error, computed at build time by the same
+    // function: along the incoming leg (negative fell short of the centre) and across it,
+    // signed so positive is toward the inside of the turn. A miss has no aim error in the
+    // geometry pass, so it has neither.
+    setText("x-reach", o.rr != null ? radii(o.rr) + (o.rr < 0 ? " · short" : " · past") : "—");
+    setText("x-side", o.ri != null ? radii(o.ri) + (o.ri > 0 ? " · in" : " · out") : "—");
     setText("x-jump", o.sp != null ? o.sp.toFixed(2) + " r" : "—");
 
     var heading = document.getElementById("x-heading");
@@ -1712,12 +1927,75 @@
     setText("x-turn", o.tn != null ? turnWords(o.tn) : "—");
   }
 
-  document.getElementById("x-clear").addEventListener("click", function () { select(null); });
+  // The same quantities over a pattern: means and spreads, and how strongly the two hands'
+  // timing moved together across its objects -- the corpus-wide coupling statistic, on a
+  // sample of one pattern, so it is printed with its count and withheld below eight.
+  function fillMany(members) {
+    var press = stats(members.filter(function (m) { return m.error != null; })
+                             .map(function (m) { return m.error; }));
+    setText("p-press", press ? ms(press.mean) + " ± " + press.sd.toFixed(0) : "—",
+            press ? errorColour(press.mean) : null);
+
+    var missed = members.filter(function (m) { return m.result === "Miss"; }).length;
+    setText("p-miss", missed + " of " + members.length, missed ? MISS : null);
+
+    var deep = stats(members.filter(function (m) { return m.cl != null; })
+                            .map(function (m) { return m.cl; }));
+    setText("p-deep", deep ? ms(deep.mean) + " ± " + deep.sd.toFixed(0) : "—",
+            deep ? errorColour(deep.mean) : null);
+
+    var reach = stats(members.filter(function (m) { return m.rr != null; })
+                             .map(function (m) { return m.rr; }));
+    var side = stats(members.filter(function (m) { return m.ri != null; })
+                            .map(function (m) { return m.ri; }));
+    setText("p-reach", reach ? radii(reach.mean) + " ± " + reach.sd.toFixed(2) : "—");
+    setText("p-side", side ? radii(side.mean) + " ± " + side.sd.toFixed(2) : "—");
+
+    var both = members.filter(function (m) { return m.error != null && m.cl != null; });
+    var gap = stats(both.map(function (m) { return m.error - m.cl; }));
+    setText("p-gap", gap
+      ? (Math.abs(gap.mean) < 2 ? "together"
+         : Math.abs(gap.mean).toFixed(0) + " ms " + (gap.mean > 0 ? "after" : "before"))
+        + " ± " + gap.sd.toFixed(0)
+      : "—");
+
+    if (both.length < 8) {
+      setText("p-rho", "too few (" + both.length + ")");
+    } else {
+      var b = stats(both.map(function (m) { return m.error; }));
+      var c = stats(both.map(function (m) { return m.cl; }));
+      var cov = both.reduce(function (a, m) { return a + (m.error - b.mean) * (m.cl - c.mean); }, 0) / both.length;
+      var rho = b.sd > 0 && c.sd > 0 ? cov / (b.sd * c.sd) : 0;
+      setText("p-rho", "ρ " + rho.toFixed(2) + " · n " + both.length);
+    }
+  }
+
+  document.getElementById("x-clear").addEventListener("click", function () { choose(null); });
   document.getElementById("x-go").addEventListener("click", function () {
-    if (!selected) return;
+    if (!sel) return;
     setPlaying(false);
-    t = Math.max(START, selected.t - 900);
+    t = loopSpan().from;
     render();
+  });
+  document.getElementById("x-copy").addEventListener("click", function () {
+    var text = document.getElementById("x-cmd").textContent;
+    var button = this;
+    // Clipboard access needs a secure context; a file opened from disk may not be one, and
+    // the command is selectable as one unit for exactly that case.
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () {
+        button.textContent = "Copied";
+        setTimeout(function () { button.textContent = "Copy"; }, 1400);
+      });
+    } else {
+      var range = document.createRange();
+      range.selectNodeContents(document.getElementById("x-cmd"));
+      var s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(range);
+      button.textContent = "Selected";
+      setTimeout(function () { button.textContent = "Copy"; }, 1400);
+    }
   });
 
   // Picking on the field: an object currently drawn, by its head, or a press marker still
@@ -1750,7 +2028,7 @@
         if (d <= reach && d < bestD) { best = p.k.o; bestD = d; }
       });
     }
-    select(best);
+    pick(best, e.shiftKey);
   });
 
   // Picking on the bar: the nearest tick in the lane that was clicked. Missing everything
@@ -1766,7 +2044,7 @@
       var d = Math.abs(barX(a.k.e) - x);
       if (d < bestD) { best = a.k.o; bestD = d; }
     });
-    if (best) select(best);
+    if (best) pick(best, e.shiftKey);
   });
 
   var brakeBtn = document.getElementById("brake");
@@ -1802,22 +2080,53 @@
     b.addEventListener("click", function () { step(parseInt(b.dataset.step, 10)); });
   });
 
-  function seekAt(clientX) {
+  function timeAt(clientX) {
     var r = strip.getBoundingClientRect();
     var u = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
-    t = START + u * (END - START);
+    return START + u * (END - START);
+  }
+
+  function seekAt(clientX) {
+    t = timeAt(clientX);
     render();
   }
 
+  // Plain drag seeks. Shift-drag sweeps out a stretch of time instead, and lets go into a
+  // looping selection of every object that starts inside it -- the quickest way to say
+  // "this section" without finding its first and last object on the field.
   var dragging = false;
+  var sweep = null;
   strip.addEventListener("pointerdown", function (e) {
     dragging = true;
     strip.setPointerCapture(e.pointerId);
     setPlaying(false);
-    seekAt(e.clientX);
+    if (e.shiftKey) {
+      sweep = { a: timeAt(e.clientX), b: timeAt(e.clientX) };
+      render();
+    } else {
+      sweep = null;
+      seekAt(e.clientX);
+    }
   });
-  strip.addEventListener("pointermove", function (e) { if (dragging) seekAt(e.clientX); });
-  strip.addEventListener("pointerup", function () { dragging = false; });
+  strip.addEventListener("pointermove", function (e) {
+    if (!dragging) return;
+    if (sweep) { sweep.b = timeAt(e.clientX); render(); }
+    else seekAt(e.clientX);
+  });
+  strip.addEventListener("pointerup", function () {
+    dragging = false;
+    if (!sweep) return;
+    var lo = Math.min(sweep.a, sweep.b), hi = Math.max(sweep.a, sweep.b);
+    sweep = null;
+    var inside = OBJ.filter(function (o) { return o.type !== "spinner" && o.t >= lo && o.t <= hi; });
+    if (inside.length) {
+      anchor = inside[0].i;
+      choose(inside[0].i, inside[inside.length - 1].i);
+      setLoop(true);
+    } else {
+      render();
+    }
+  });
 
   document.addEventListener("keydown", function (e) {
     if (e.target.tagName === "INPUT") return;
@@ -1827,7 +2136,7 @@
     else if (e.key === "m" || e.key === "M") { setBrake(!brakeOn); }
     else if (e.key === "k" || e.key === "K") { markerBtn.click(); }
     else if (e.key === "f" || e.key === "F") { setPersist((PERSIST.indexOf(persist) + 1) % PERSIST.length); }
-    else if (e.key === "Escape") { select(null); }
+    else if (e.key === "Escape") { choose(null); }
     else if (e.key === "1" || e.key === "2" || e.key === "3") {
       var map = { "1": ".25", "2": ".5", "3": "1" };
       var b = document.querySelector('[data-rate="' + map[e.key] + '"]');

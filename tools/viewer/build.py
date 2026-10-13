@@ -39,6 +39,9 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(ROOT, "tools", "analysis"))
+from streamfail import corner  # noqa: E402
+
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "template.html")
 ORA = os.path.join(ROOT, "src", "Cli", "bin", "Release", "net10.0", "ora.dll")
 
@@ -106,6 +109,9 @@ def inspect(replay: str, work: str) -> dict[int, dict]:
                 "hd": num(r["heading"]),
                 "an": num(r["signedAngle"]),
                 "ae": num(r["aimErrorRadii"]),
+                # Not shipped: the inputs reach and inside are computed from below.
+                "tx": num(r["targetX"]), "ty": num(r["targetY"]),
+                "cx": num(r["cursorX"]), "cy": num(r["cursorY"]),
             })
     with open(clicks, newline="") as handle:
         for r in csv.DictReader(handle):
@@ -138,13 +144,35 @@ def attach(document: dict, numbers: dict[int, dict]) -> int:
     """
     objects = document["objects"]
     matched = 0
+    rows = [numbers.get(round(o["t"])) for o in objects]
     for k, o in enumerate(objects):
-        row = numbers.get(round(o["t"]))
+        # The viewer and `ora clip` both address objects by position in the beatmap, and
+        # a pattern selection hands that number straight to the clip command.
+        if o["i"] != k:
+            raise SystemExit(f"scene object {k} carries index {o['i']}; the clip command "
+                             f"the viewer prints would cut the wrong objects")
+        row = rows[k]
         if row is None:
             continue
         matched += 1
-        following = numbers.get(round(objects[k + 1]["t"])) if k + 1 < len(objects) else None
+        following = rows[k + 1] if k + 1 < len(objects) else None
+        previous = rows[k - 1] if k > 0 else None
+
+        # Reach and inside, by the analysis's own function rather than a copy of it, so the
+        # viewer's numbers and streamfail.py's cannot drift apart. Same inputs it takes:
+        # the targets either side and the cursor at the press (or, on a miss, at the
+        # object's time), against the geometry pass's aim error. A spinner either side
+        # leaves no corner to measure.
+        reach = inside = None
+        if (previous and following and objects[k - 1]["type"] != "spinner"
+                and objects[k + 1]["type"] != "spinner"
+                and None not in (previous.get("tx"), row.get("tx"), following.get("tx"),
+                                 row.get("cx"), row.get("cy"))):
+            reach, inside = corner((previous["tx"], previous["ty"]), (row["tx"], row["ty"]),
+                                   (following["tx"], following["ty"]),
+                                   (row["cx"], row["cy"]), row.get("ae"))
         fields = {
+            "rr": (reach, 3), "ri": (inside, 3),
             "sp": (row.get("sp"), 3), "hd": (row.get("hd"), 4), "ae": (row.get("ae"), 3),
             "tn": (following.get("an") if following else None, 4),
             "cl": (row.get("cl"), 1), "cd": (row.get("cd"), 3),
