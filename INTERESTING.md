@@ -606,3 +606,16 @@ the stack direction alone. Direction is not one-way, though: `StackHeight * Scal
 is up-left for positive stack height, and the two slider branches do `StackHeight -= offset`,
 so objects stacked under a slider offset down-right instead. Any claim about "the stack
 direction" has to say which branch.
+
+## 2026-10-12 — the findings table's own cell has no miss signal
+
+`tools/analysis/patternpredict.py` docstring; 1.46M circles, 1,454 beatmaps, 4,978 players
+
+`snap x spacing x |angle|` -- the key `cells.py` bins on -- scores 0.0277 held-out R^2 on
+aim error and **-0.0009** on miss rate: groups fitted on one half of the beatmaps predict
+misses very slightly worse than the grand mean does. `snap x spacing x run position` gets
+0.0045. So the cell everything is computed over is a good aim-error key and an empty miss
+key, and any finding phrased as "you miss X" is resting on a partition that does not
+separate misses. Crossing in run position recovers a little and costs aim error, so the two
+targets may simply want different axes -- the same conclusion the band-edge search reached
+and then compromised on.
