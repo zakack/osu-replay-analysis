@@ -47,6 +47,8 @@ if (args.Length == 0)
     Console.Error.WriteLine("  clip-list <md5> [from-ms to-ms]  the map as constant-snap runs, or every object in a time range");
     Console.Error.WriteLine("  clip <md5> <first> <last> [label]  cut objects first..last into a practice .osz in build/clips");
     Console.Error.WriteLine("    --lead-in-from <index> also writes objects index..first-1 as a lead-in, recorded apart from the clip");
+    Console.Error.WriteLine("  collection --name <n> [--maps md5...] [--out dir]  a stable collection.db for lazer to import");
+    Console.Error.WriteLine("    without --maps, takes every MD5 in stdin, so any command that prints MD5s can be piped in");
     return 2;
 }
 
@@ -150,6 +152,68 @@ switch (args[0])
         Console.WriteLine("stacking matches the source under NM/HR/EZ; online ids stripped");
         Console.WriteLine($"difficulty: {result.Version}");
         Console.WriteLine(result.OszPath);
+        return 0;
+    }
+
+    case "collection":
+    {
+        // See docs/practice-maps.md. A fixed default folder matters: lazer remembers the stable
+        // path for the rest of its session, so later imports skip the folder picker.
+        string? name = null;
+        string root = Path.Combine("build", "collection");
+        var maps = new List<string>();
+        bool fromArgs = false;
+
+        for (int i = 1; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--name" when i + 1 < args.Length: name = args[++i]; break;
+                case "--out" when i + 1 < args.Length: root = args[++i]; break;
+                case "--maps": fromArgs = true; break;
+                default:
+                    if (!fromArgs)
+                    {
+                        Console.Error.WriteLine($"collection: unexpected argument {args[i]}");
+                        return 2;
+                    }
+
+                    maps.Add(args[i]);
+                    break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            Console.Error.WriteLine("collection: expected --name <name>");
+            return 2;
+        }
+
+        var md5s = Collection.Md5sIn(fromArgs ? string.Join('\n', maps) : Console.In.ReadToEnd());
+
+        if (md5s.Count == 0)
+        {
+            Console.Error.WriteLine("collection: no beatmap MD5s given");
+            return 1;
+        }
+
+        string db = Collection.Write(root, name, md5s);
+        Console.WriteLine($"{md5s.Count} map(s) in \"{name}\"");
+
+        // Absent maps are inert in lazer, but a set drawn from another player's corpus can be
+        // mostly absent, and a playlist of nothing should be said before it is imported.
+        string indexPath = Path.Combine("build", "beatmap-index.json");
+        if (File.Exists(indexPath))
+        {
+            var index = BeatmapIndex.Read(indexPath);
+            int missing = md5s.Count(m => !index.ContainsKey(m));
+            if (missing > 0)
+                Console.WriteLine($"{missing} of them not in {indexPath}; lazer keeps them in the collection but has nothing to show for them");
+        }
+
+        Console.WriteLine(db);
+        Console.WriteLine($"import: Settings > General > Run setup wizard, then the Import from stable step: folder {Path.GetFullPath(root)}, only Collections ticked");
+        Console.WriteLine("lazer merges into a collection of the same name: maps are added, never removed");
         return 0;
     }
 

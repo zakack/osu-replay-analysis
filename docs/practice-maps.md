@@ -116,3 +116,34 @@ stream. No padding was needed. After import, realm shows the clip with `OnlineID
 were stored, failed ones included. `scene` decoded the D play through the rebuilt index and
 reproduced its header exactly (67/54/6/1). Note that `ScoreInfo.BeatmapHash` is the `.osu`'s
 SHA-256, not its MD5.
+
+## Collections: a set of maps as a playlist (2026-10-12)
+
+`ora collection --name <n> [--maps md5...] [--out dir]` (`src/Extract/Collection.cs`). Lazer's
+`BeatmapCollection` is a name and a list of beatmap MD5s, which is this project's join key, so
+any query that yields maps is one import away from a playlist in song select. Without
+`--maps` it takes every MD5 in stdin, so `ora clip-find … | ora collection --name …` works,
+as does any CSV or findings output with an MD5 column.
+
+There is no drop handler for `collection.db`. The only importer is lazer's own
+`LegacyCollectionImporter`, reached through the stable import, so the command writes a folder
+that passes as a stable install: `collection.db` beside an empty `Songs/`
+(`LegacyImportManager.IsUsableForStableImport` accepts `osu!.*.cfg`, `Songs` or `Skins`).
+
+- **Where to click.** Settings → General → *Run setup wizard*, the *Import from stable* step,
+  point it at the folder, tick only Collections. The *Import collections from stable* button
+  under Settings → Debug exists only in debug builds (`DebugSection`). The wizard's checkbox
+  shows the collection count, read through the same importer, before anything is written.
+- **The folder is fixed** (`build/collection/` by default) and overwritten on each run. Lazer
+  keeps the chosen stable path for the rest of its session (`cachedStorage`), so the second
+  import of a session needs no folder picking.
+- **Import merges.** A collection whose name already exists gains the new maps and loses
+  none. To narrow a collection, delete or rename it in lazer first.
+- **Collections-only runs at once.** The collections step is chained after the beatmap import
+  with `OnlyOnRanToCompletion`; with beatmaps unticked that task is already complete.
+- **Not tried:** writing to `~/.osu` instead, which `OsuGameDesktop.getStableInstallPath`
+  auto-detects when it holds `Songs/`. That would remove the folder picker for good, at the cost
+  of a fake stable install in `$HOME`. `--out ~/.osu` does it.
+- `CollectionTests` reads the file back through lazer's private `readCollections` by reflection.
+  Maps absent from `build/beatmap-index.json` are counted on output; lazer keeps them in the
+  collection and shows nothing for them.

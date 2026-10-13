@@ -119,6 +119,12 @@ changed. So:
   outlive their beatmaps), but each score stays tied to the old version's content, not the
   new one's.
 
+## Several maps to practise rather than one section
+
+When the request is a set of whole maps (every map carrying a cell, a mapper's square maps),
+use `ora collection --name <n>` instead of clipping; it pipes in any output carrying MD5s
+and prints the import path. `docs/practice-maps.md` has the details.
+
 ## After the player has played it
 
 Plays on a clip are ordinary local scores. Pass and fail are both kept, and nothing is
