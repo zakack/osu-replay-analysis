@@ -662,3 +662,25 @@ suspects something psychological rather than mechanical in jump runs. Untested.
 Separately, in the same output: inside runs of 20+ the miss excess over the run's own rate is
 -2.65% at positions 0-2 and +0.92% at 14+ for 1/4, so the gradient is depth into the run and
 not a proxy for the run being long. 1/1 is flat, the negative control.
+
+## 2026-10-12 — streams break on tempo, jump chains break on cursor placement
+
+`PYTHONPATH=tools python3 tools/analysis/streamfail.py --cache build/shapes-collected.json`
+
+Runs of 14+ clean through position 9, split on whether they then break at 10+, every quantity
+measured over 0-9 only so a precursor cannot be a consequence. At 1/4 (1,083 hold / 604
+break) the tapping tempo error is the standout: 2.28% vs 2.89%, ratio 1.27, t=5.5, against
+t=2.0 for along-track and t=2.4 for cross-track cursor error. At 1/2 (2,988 / 761) it
+reverses -- absolute tempo error does not separate at all (t=0.4) and along-track cursor error
+is strongest (t=3.3). Same miss gradient, different cause by rhythm.
+
+All ratios sit between 1.02 and 1.27, so every mechanism is present in both and this is which
+one moves first, not which one is to blame. Pooled over 4,978 players, so it is a population
+statement; the within-player version is the better question and is not this.
+
+Also, a correction to the clumping numbers two entries up: those were computed by
+reconstructing runs from consecutive run indices, which fragments a run wherever a slider head
+sits in it. Grouping on `runId` instead gives pooled 1.44, and 1/6 1.29, 1/4 1.37, 1/3 1.45,
+1/2 1.51, with 18.8% vs 25.1% over one -- the conclusion is unchanged. The same bug was
+discarding 95% of long runs in `streamfail.py` before it was caught, which is the real lesson:
+run identity is in the data and must not be inferred from index contiguity.

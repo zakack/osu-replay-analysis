@@ -153,12 +153,13 @@ Four readings.
 
   *Not one slip counted many times.* The worry that a dropped tap cascades, turning one
   event into twenty rows at high run position, does not hold: the mean consecutive-miss
-  streak inside a run is 1.41 objects and 1.50 at position 14+, so the effective sample is
+  streak inside a run is 1.44 objects and 1.59 at position 14+, so the effective sample is
   about two-thirds of the row count rather than a twentieth and no clustering weight would
   reorder the table. Split by rhythm it runs the opposite way to the obvious guess --
-  1/6 1.30, 1/4 1.34, 1/3 1.39, 1/2 1.49, with 18.0% of stream streaks longer than one
-  against 24.3% of jump streaks. Chains of jumps clump more than streams do, monotonically
-  as the rhythm slows. Mechanism not investigated.
+  1/6 1.29, 1/4 1.37, 1/3 1.45, 1/2 1.51, with 18.8% of stream streaks longer than one
+  against 25.1% of jump streaks. Chains of jumps clump more than streams do, monotonically
+  as the rhythm slows. Mechanism not investigated here; `streamfail.py` takes up the
+  question of what breaks a run.
 
 * **``whole`` is not the control it looks like.** Dropping the position inside the figure
   pools objects that sit in different cells, so it cuts across the cell rather than
@@ -241,7 +242,7 @@ def _num(raw):
 
 
 def read_rhythm() -> dict[str, dict[float, tuple]]:
-    """md5 -> object time -> (snap, group, run index, run size).
+    """md5 -> object time -> (snap, group, run id, run index, run size).
 
     Keyed on the beatmap rather than the replay because the file holds one representative
     replay per map, and because the rhythm *is* a map property: `Rhythm.Build` walks the
@@ -268,7 +269,8 @@ def read_rhythm() -> dict[str, dict[float, tuple]]:
             if md5 is None:
                 continue
             table[md5][round(float(r["time"]), 3)] = (
-                r["snap"] or None, int(r["groupId"]), int(r["runIndex"]), int(r["runSize"]))
+                r["snap"] or None, int(r["groupId"]), int(r["runId"]),
+                int(r["runIndex"]), int(r["runSize"]))
     if short:
         print(f"WARNING: {short:,} truncated rows in {os.path.basename(RHYTHM)} -- "
               f"the file is incomplete", flush=True)
@@ -297,9 +299,12 @@ def read_shapes(rhythm, by_replay) -> dict[str, list[dict]]:
             got = rhythm[md5].get(t)
             if got is None:
                 continue
-            snap, group, run_index, run_size = got
+            snap, group, run_id, run_index, run_size = got
+            # The run's identity, not just the position in it. Reconstructing a run from
+            # consecutive indices looks equivalent and is not: these rows drop slider heads
+            # and unjudged objects, so a run containing either comes apart into fragments.
             out[md5].append({"t": t, "snap": snap, "group": group, "run": run_index,
-                             "size": run_size,
+                             "runid": run_id, "size": run_size,
                              "angle": _num(r["signedAngle"]),
                              "spacing": _num(r["spacingRadii"])})
     for rows in out.values():
@@ -474,7 +479,8 @@ def gradient(shapes, position, args) -> int:
             cell[(row["snap"], md5, band)][1] += 1
             per_map[(row["snap"], md5)][0] += miss
             per_map[(row["snap"], md5)][1] += 1
-            sequence[r["replay"]].append((row["t"], row["run"], miss, row["snap"]))
+            sequence[r["replay"]].append((row["t"], row["runid"], row["run"], miss,
+                                          row["snap"]))
             for floor in LONG:
                 if (row["size"] or 0) >= floor:
                     long_cell[(floor, row["snap"], md5, band)][0] += miss
@@ -559,8 +565,8 @@ def gradient(shapes, position, args) -> int:
     for events in sequence.values():
         events.sort()
         previous, length, where = None, 0, None
-        for _, index, miss, snap in events:
-            if previous is None or index != previous + 1:
+        for _, run_id, index, miss, snap in events:
+            if previous is None or run_id != previous:
                 if length:
                     streaks[(where, length)] += 1
                 length = 0
@@ -574,7 +580,7 @@ def gradient(shapes, position, args) -> int:
             elif length:
                 streaks[(where, length)] += 1
                 length = 0
-            previous = index
+            previous = run_id
         if length:
             streaks[(where, length)] += 1
 
