@@ -268,14 +268,20 @@ def vocabulary(spelled, min_len, max_len, min_maps):
     Counted once per beatmap, never once per occurrence, so a map that repeats one figure
     two hundred times cannot vote itself a vocabulary.
     """
-    maps = collections.defaultdict(set)
-    for md5, segs in spelled.items():
+    counts: collections.Counter = collections.Counter()
+    for segs in spelled.values():
+        # One map's distinct substrings, then one increment each. The same answer as a set
+        # of beatmap ids per substring and a great deal smaller: at corpus scale there are
+        # millions of distinct substrings, and holding a set for every one of them costs
+        # gigabytes that buy nothing, since the ids are never read back.
+        here = set()
         for _, syms in segs:
             n = len(syms)
             for i in range(n):
                 for L in range(min_len, min(max_len, n - i) + 1):
-                    maps[tuple(syms[i:i + L])].add(md5)
-    return {p: len(m) for p, m in maps.items() if len(m) >= min_maps}
+                    here.add(tuple(syms[i:i + L]))
+        counts.update(here)
+    return {p: c for p, c in counts.items() if c >= min_maps}
 
 
 def tile(found, total, min_len):

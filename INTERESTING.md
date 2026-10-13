@@ -594,3 +594,15 @@ ramp pays the least. The peak is simply further round than the first measurement
 Also gone is the dissociation -- aim error tracks miss rate here (square 0.405 vs 0.382
 baseline), where on the player's own passes squares had the lowest aim error and the highest
 miss rate. That was survivorship, as suspected.
+
+## 2026-10-12 — stacking is computed after the mods flip, and goes both directions
+
+`ppy/osu/osu.Game/Beatmaps/WorkingBeatmap.cs:334` and `:343`; `OsuHitObject.cs:92`; `OsuBeatmapProcessor.cs:182,264`
+
+Mods implementing `IApplicableToHitObject` (HardRock's `Y = 384 - Y`) run before
+`processor.PostProcess()`, so stacking is computed on already-flipped positions and
+`StackOffset` always points the same way on screen -- a flip moves the targets and leaves
+the stack direction alone. Direction is not one-way, though: `StackHeight * Scale * -6.4f`
+is up-left for positive stack height, and the two slider branches do `StackHeight -= offset`,
+so objects stacked under a slider offset down-right instead. Any claim about "the stack
+direction" has to say which branch.
