@@ -822,3 +822,25 @@ Correction to the entry above: the player's lag gradient is not purely corner-sh
 with spacing, both axes carry comparable gradients at 1/4, and at 1/2 it is predominantly
 spacing (-0.036 at 0:1 radii to -0.165 at 8:10 at fixed turn). The "tenfold" figure came from
 the 0:5 turn band, which holds 242 presses and does not survive a 200-per-cell floor.
+
+## 2026-10-13 — vocabulary note: "lag" and "along-track" are now "reach"
+
+`tools/analysis/streamfail.py` docstring, glossary at the top
+
+Entries above use "lag", "along-track" and "the cursor is behind the note" for one quantity,
+sitting next to "falling behind on tempo", which is a different hand. Renamed throughout the
+tool to one word per concept, so older entries read against this:
+
+    hit error    -> unchanged. ms, signed, negative is early. One object.
+    tempo drift  <- was "rate ms/object" and "rate %". ms per object, positive is pressing
+                    progressively later. A whole run.
+    reach        <- was "lag", "along-track", "along radii". radii, signed, negative fell
+                    short of the circle's centre.
+    inside       -> unchanged. radii, signed in the turn's own frame, positive is the inside
+                    of the corner, mirror-invariant.
+    cross        <- was "cross-track", "cross radii". magnitude only; its sign carries nothing.
+
+The "timed out" suffix means the press timing has been regressed out, and the coefficient of
+that regression is itself a measurement: 1.00 would mean the cursor was exactly on schedule
+and its position told you nothing beyond when you pressed. Measured 0.33-0.39 at 1/4 and
+0.02 at 1/2, so the aiming hand carries its own error and the two hands are separable.

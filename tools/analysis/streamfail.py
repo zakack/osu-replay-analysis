@@ -1,5 +1,28 @@
 """Why does a run break? Three candidate mechanisms, measured against each other.
 
+**One word per concept.** Three of these quantities went by two or three names each while
+this file grew, and two of those names collided: "the cursor is behind the note" and "the
+tapping is behind the beat" are different hands entirely. Fixed vocabulary, used everywhere
+below and in the output:
+
+    hit error     ms, signed. When the press landed against when the note was due.
+                  Negative is early. A property of one object.
+    tempo drift   ms per object, signed. How hit error trends across a run -- positive is
+                  pressing progressively later. A property of a whole run, not an object.
+    reach         radii, signed. How far along its incoming direction the cursor had got
+                  when the press landed. Negative fell short of the circle's centre,
+                  positive went past it. Never "lag", never "along-track".
+    inside        radii, signed, in the turn's own frame. How far across that direction the
+                  cursor sat, positive toward the inside of the corner. Mirror-invariant.
+    cross         radii. The same sideways offset without the turn's frame, so its sign
+                  carries nothing and only its magnitude is read.
+
+`reach` and `inside` are two components of one vector -- where the cursor was -- taken at the
+instant `hit error` describes. The press time is the shutter and the cursor position is the
+photograph, and that is the only place the tapping hand and the aiming hand touch anywhere in
+this file. The `timed out` columns remove it; the fitted coefficient is itself the test of
+whether the cursor was on schedule, since 1.00 is exactly what "on schedule" means.
+
 A run that fails late is usually described as the player "degrading" deep into it, which is
 what `patternpredict.py --gradient` measures: misses concentrate at high run position and the
 gradient survives removing map level, rhythm, run length and miss clumping. That result says
@@ -14,20 +37,19 @@ of the run, not the last: the slope is already there before anything is missed. 
 survives every control in `--gradient`, because it happens on every map, in every rhythm,
 inside long runs, and resyncs in a few taps rather than cascading.
 
-**Along-track cursor error.** The aiming hand travels the stream path at the wrong speed --
-ahead of the notes or behind them -- so the cursor is past or short of each circle along the
-direction of travel. Distinct from rate: the tap can be perfectly timed while the cursor is
-in the wrong place, and vice versa.
+**Reach.** The aiming hand does not cover the distance, so the cursor is short of each circle
+along the direction of travel -- or past it. Distinct from tempo: the press can be perfectly
+timed while the cursor is in the wrong place, and the reverse.
 
-**Cross-track cursor error.** The aiming hand leaves the path sideways. This is what the
+**Cross.** The aiming hand leaves the path sideways. This is what the
 existing stream work calls a "stray" -- an in-rhythm tap with nothing under the cursor -- and
 it is the aim hand rather than the tapping hand.
 
 The first is read off hit error, the other two off the cursor, and they are separable because
 aim error is a *vector* once the path direction is known. For object n in a run, the local
 direction is from the previous target to this one; the cursor's offset from the target
-projects onto that direction as along-track (positive is ahead of the note, the hand running
-early in space) and perpendicular to it as cross-track. Radii come from the row itself:
+projects onto that direction as reach (positive is ahead of the note, the hand running
+early in space) and perpendicular to it as cross. Radii come from the row itself:
 `aimErrorRadii` is the offset's length over the radius, so the radius is recoverable without
 knowing CS.
 
@@ -41,99 +63,105 @@ Hit error is taken only from presses plausibly belonging to their own object (|h
 within 0.4 of the gap to the previous object). A shifted stream reports a real press from a
 neighbour, displaced by about a whole tap interval, which would swamp a sub-millisecond slope.
 
-**Measured 2026-10-12** on the collected corpus, 5,436 qualifying runs. Magnitudes, ratio of
-breaking to holding, and Welch's t:
+**Measured 2026-10-12.** Magnitudes, the ratio of breaking to holding, and Welch's t.
+Magnitudes because a run tapped progressively early and one tapped progressively late are
+equally off tempo; the signed tables further down say which way.
 
-    snap 0.25: 1,083 runs hold, 604 break at position 10+
-      metric              holds   breaks   ratio      t
-      rate ms/object      2.074    2.620    1.26    5.3
-      rate %              2.278    2.890    1.27    5.5
-      hit error ms        9.498   10.262    1.08    1.9
-      interval ms        94.611   92.818    0.98   -1.2
-      along radii         0.173    0.187    1.08    2.0
-      along residual      0.170    0.187    1.10    2.5
-      along slope         0.061    0.054    0.89   -2.8
-      cross radii         0.104    0.114    1.10    2.4
-      cross slope         0.044    0.036    0.82   -4.7
+    the population -- 4,978 players, what breaks a run in general:
+      snap 0.25: 1,083 hold, 604 break at position 10+
+      metric                holds   breaks   ratio      t
+      tempo drift           2.074    2.620    1.26    5.3
+      tempo drift %         2.278    2.890    1.27    5.5
+      hit error ms          9.498   10.262    1.08    1.9
+      interval ms          94.611   92.818    0.98   -1.2
+      reach                 0.173    0.187    1.08    2.0
+      reach, timed out      0.170    0.187    1.10    2.5
+      reach slope           0.061    0.054    0.89   -2.8
+      cross                 0.104    0.114    1.10    2.4
+      cross slope           0.044    0.036    0.82   -4.7
 
-    snap 0.5: 2,988 runs hold, 761 break at position 10+
-      metric              holds   breaks   ratio      t
-      rate ms/object      2.751    2.799    1.02    0.4
-      rate %              1.277    1.470    1.15    3.7
-      hit error ms       11.133   11.513    1.03    0.9
-      interval ms       221.942  189.997    0.86  -15.6
-      along radii         0.117    0.130    1.11    3.3
-      along residual      0.117    0.129    1.10    3.0
-      along slope         0.049    0.050    1.02    0.5
-      cross radii         0.086    0.092    1.07    1.9
-      cross slope         0.040    0.038    0.94   -1.5
+      snap 0.5: 2,988 hold, 761 break at position 10+
+      metric                holds   breaks   ratio      t
+      tempo drift           2.751    2.799    1.02    0.4
+      tempo drift %         1.277    1.470    1.15    3.7
+      hit error ms         11.133   11.513    1.03    0.9
+      interval ms         221.942  189.997    0.86  -15.6
+      reach                 0.117    0.130    1.11    3.3
+      reach, timed out      0.117    0.129    1.10    3.0
+      reach slope           0.049    0.050    1.02    0.5
+      cross                 0.086    0.092    1.07    1.9
+      cross slope           0.040    0.038    0.94   -1.5
 
-**The same test on one player's own runs** (`--source player`, 17,824 replays, 15,608
-qualifying runs), which is the question a diagnosis actually asks:
+    one player's own runs -- 17,824 replays, the question a diagnosis asks:
+      snap 0.25: 5,569 hold, 2,414 break at position 10+
+      metric                holds   breaks   ratio      t
+      tempo drift           2.138    2.342    1.10    4.5
+      tempo drift %         2.310    2.541    1.10    4.6
+      hit error ms          9.818    9.705    0.99   -0.7
+      interval ms          97.735  102.260    1.05    2.7
+      reach                 0.203    0.217    1.07    3.7
+      reach, timed out      0.197    0.214    1.09    4.5
+      reach slope           0.063    0.062    0.98   -0.8
+      cross                 0.126    0.130    1.04    1.8
+      cross slope           0.046    0.049    1.06    3.0
 
-    snap 0.25: 5,569 runs hold, 2,414 break    snap 0.5: 5,072 hold, 2,553 break
-      metric              holds   breaks  ratio     t      holds   breaks  ratio     t
-      rate ms/object      2.138    2.342   1.10   4.5      2.358    2.325   0.99  -0.7
-      rate %              2.310    2.541   1.10   4.6      1.297    1.267   0.98  -1.1
-      interval ms        97.735  102.260   1.05   2.7    188.454  195.138   1.04   2.7
-      along radii         0.203    0.217   1.07   3.7      0.146    0.169   1.16   7.9
-      along residual      0.197    0.214   1.09   4.5      0.146    0.169   1.16   7.8
-      along slope         0.063    0.062   0.98  -0.8      0.053    0.055   1.04   1.8
-      cross radii         0.126    0.130   1.04   1.8      0.107    0.116   1.08   3.9
-      cross slope         0.046    0.049   1.06   3.0      0.049    0.051   1.06   2.5
+      snap 0.5: 5,072 hold, 2,553 break at position 10+
+      metric                holds   breaks   ratio      t
+      tempo drift           2.358    2.325    0.99   -0.7
+      tempo drift %         1.297    1.267    0.98   -1.1
+      hit error ms         10.675   10.180    0.95   -2.4
+      interval ms         188.454  195.138    1.04    2.7
+      reach                 0.146    0.169    1.16    7.9
+      reach, timed out      0.146    0.169    1.16    7.8
+      reach slope           0.053    0.055    1.04    1.8
+      cross                 0.107    0.116    1.08    3.9
+      cross slope           0.049    0.051    1.06    2.5
 
 Restricted to one button era (`--since 2026-01-03`, the doubletap regime, 5,200 replays and
-7,601 runs), since the tempo metrics are exactly what `setup-timeline.csv`'s eras move:
+7,601 runs), since tempo drift is exactly what `setup-timeline.csv`'s eras move:
 
-    snap 0.25: 3,114 hold, 1,400 break      snap 0.5: 2,005 hold, 1,082 break
+      snap 0.25: 3,114 hold, 1,400 break      snap 0.5: 2,005 hold, 1,082 break
       metric              ratio       t        ratio       t
-      rate ms/object       1.13     4.5         1.03     0.8
-      rate %               1.10     3.5         1.02     0.5
+      tempo drift          1.13     4.5         1.03     0.8
+      tempo drift %        1.10     3.5         1.02     0.5
       interval ms          1.10     3.5         1.02     1.1
-      along residual       1.09     3.7         1.10     3.6
-      along slope          0.96    -1.4         1.04     1.1
-      cross radii          1.02     0.9         1.05     1.7
+      reach, timed out     1.09     3.7         1.10     3.6
+      reach slope          0.96    -1.4         1.04     1.1
+      cross                1.02     0.9         1.05     1.7
       cross slope          1.03     1.3         1.04     1.2
 
-Five readings, two of which are corrections to the population reading.
+Six readings, two of which are corrections to an earlier one.
 
-* **A chain of jumps breaks on where the cursor is, in both corpora, and more clearly in
-  one player's.** At 1/2 the along-track offset is the strongest term anywhere in either
-  table -- ratio 1.16 at t=7.9 -- and tapping tempo is flatly irrelevant, t=-0.7 per object
-  and -1.1 as a percentage. The coupling coefficient is -0.02, so none of it is tap timing
-  in spatial clothing. This is the firmest result here.
+* **A stream breaks on tempo; a chain of jumps does not.** At 1/4 tempo drift is 27% larger
+  in runs that go on to break, t=5.5 in the population and 4.5 in the player's, and it is
+  tempo rather than its denominator: the two groups' intervals match within 2% and the
+  per-object and percentage forms agree. At 1/2 it does not separate the groups at all.
 
-* **The population's spurious 1/2 tempo effect is confirmed spurious.** It read t=3.7 as a
-  percentage there only because the breaking runs were faster. Within one player the interval
-  difference goes the other way (1.04, t=2.7) and the percentage effect vanishes with it
-  (t=-1.1), which is what an artifact of the denominator does and a real effect does not.
+* **The population's apparent 1/2 tempo effect is an interval difference.** It read t=3.7 as
+  a percentage only because the breaking runs there were faster, 190.0 ms against 221.9 at
+  t=-15.6. Within one player the interval difference runs the other way and the effect
+  vanishes with it, which is what a denominator artifact does and a real effect does not.
 
-* **For streams, tempo and cursor placement matter equally** -- t=4.5 each at 1/4. The
-  population table had tempo dominant (t=5.5 against 2.5), and the gap closes when the
-  between-player variation is removed, which is exactly the confound the population table was
-  warned to carry: players who tap off-tempo also fail more, and that inflates tempo without
-  tempo causing any individual failure. The honest claim is that a stream breaks on both, and
-  a chain of jumps on the cursor alone.
+* **A chain of jumps breaks on reach, and it is not the press in disguise.** At 1/2 reach is
+  the strongest term anywhere in either table -- ratio 1.16 at t=7.9 on the player's runs --
+  and the fitted coupling to press timing is 0.02, so essentially none of it is hit error
+  wearing spatial units. Tempo there is t=-0.7.
 
-* **The "runs that drift are the ones that hold" result does not replicate and should be
-  dropped.** It was the most interesting row in the population table: breaking runs there had
-  smaller growth in cursor error, along slope t=-2.8 and cross slope t=-4.6. Within one
-  player the along slope difference disappears (t=-0.8) and the cross slope *reverses* to
-  t=+3.0 -- breaking runs drift more, which is the ordinary expectation. So it was a
-  between-player artifact, and the hypothesis logged in INTERESTING.md about the optimal
-  stream path not being centre-to-centre loses this as motivation. The hypothesis is still
-  worth testing; it just is not evidenced by that row.
+* **For streams, tempo and reach matter about equally** on the player's runs, t=4.5 each. The
+  population has tempo dominant (5.5 against 2.5) and the gap closes once between-player
+  variation is removed -- players who tap off-tempo also fail more, which inflates tempo in a
+  pooled table without tempo causing any individual failure.
 
-* **Cross-track is the weakest term everywhere and does not survive holding the era fixed.**
-  1/4 cross-track goes t=2.4 in the population, 1.8 over the player's whole history, 0.9
-  inside one button era. Of the three candidate mechanisms, leaving the path sideways is the
-  one this test cannot show mattering. Which does not mean it never does -- it means a run
-  that is about to break is not, on average, further off the path sideways beforehand.
+* **Cross is the weakest term everywhere and does not survive holding the era fixed**: t=2.4
+  in the population, 1.8 across the player's whole history, 0.9 inside one button era. Of the
+  three mechanisms, leaving the path sideways is the one this test cannot show mattering
+  beforehand.
 
-* **The player is less precise than the population, in level rather than in pattern.**
-  Along-track 0.203 against 0.173 at 1/4, cross-track 0.126 against 0.104, with the same
-  ordering of effects. Map mix and skill both plausibly explain that and it is not separated
-  here.
+* **"The runs that drift are the ones that hold" was between-player and is withdrawn.** The
+  population had breaking runs showing *smaller* growth in cursor error, reach slope t=-2.8
+  and cross slope t=-4.6, which was the most interesting row in that table. Within one player
+  the reach slope difference disappears (t=-0.8) and the cross slope reverses to t=+3.0, and
+  inside one era both are null. A breaking run drifts more, which is the ordinary expectation.
 
 **Which way, not just how far** (the signed tables). Magnitudes answer "how far off" and
 discard the thing a diagnosis needs most. Positive rate is tapping progressively later; `+%`
@@ -144,7 +172,7 @@ is the share of runs above zero.
     player, all-time      -0.005    0.447     49.7%      56.4%    6.3
     player, one era        0.233    0.431     53.2%      56.4%    2.5
 
-    1/2 along-track        holds   breaks  holds +%  breaks +%      t
+    1/2 reach        holds   breaks  holds +%  breaks +%      t
     population            -0.027   -0.018     46.5%      46.5%    1.4
     player, all-time      -0.082   -0.118     30.4%      23.2%   -8.5
     player, one era       -0.099   -0.117     27.1%      24.7%   -2.8
@@ -158,20 +186,20 @@ is the share of runs above zero.
   field and still fails the same way when it goes.
 
 * **On jump chains this player's cursor sits *behind* the note, and breaking runs sit further
-  behind.** The signed along-track is the largest single effect in any table here: only 23.2%
+  behind.** The signed reach is the largest single effect in any table here: only 23.2%
   of breaking 1/2 runs have the cursor ahead, against 30.4% of holding ones, t=-8.5, and it
   replicates inside one era at 24.7% against 27.1%. The population is near-centred on the same
   measure (46.5%), so this is the player's and not the game's. The magnitude table said only
   "further off"; signed, it says short of the target along the direction of travel -- which is
   the charter's own example of a target finding, arrived at from the other end.
 
-**Lag against cut** (`--path`). Negative along-track has two causes with opposite advice: a
+**Reach against cut** (`--path`). Negative reach has two causes with opposite advice: a
 hand falling short of the target, and a hand taking the shorter route through a turn. Cutting
 needs a corner, so the two separate on how the offset depends on turn magnitude (180 straight
 through, 0 doubling back). Offsets in radii, at the press, positions 0-9:
 
     1/4, runs that hold      population              player
-    turn              n     lag   inside        n     lag   inside
+    turn              n     reach   inside        n     reach   inside
     0:5               8  -0.073   +0.064      154  -0.272   +0.078
     5:50            255  -0.052   +0.077      964  -0.128   +0.063
     50:135        1,320  -0.060   +0.061    6,042  -0.111   +0.080
@@ -179,7 +207,7 @@ through, 0 doubling back). Offsets in radii, at the press, positions 0-9:
     160:180       4,175  -0.067   +0.032   20,007  -0.036   +0.082
 
 **Crossing spacing in, and the top-50 boards** (`--path --by-spacing`, `--source reference`).
-Sharp turns are mostly tight in the map pool and lag is normalised by the radius rather than
+Sharp turns are mostly tight in the map pool and reach is normalised by the radius rather than
 by the movement, so the gradient's axis had to be checked. Mean `inside`, 1/4, cells with 200+
 presses:
 
@@ -191,7 +219,7 @@ presses:
     1:1.5     160:180     +0.135    +0.129     +0.066
     1.5:2     135:160     +0.129    +0.145          -
 
-    mean lag, 1/4, spacing 1:1.5
+    mean reach, 1/4, spacing 1:1.5
     turn                  top 50    player   population
     5:50                  -0.002    -0.166          -
     50:135                -0.029    -0.142     -0.073
@@ -199,51 +227,51 @@ presses:
     160:180               -0.045    -0.088     -0.126
 
 * **Cutting inside the polyline is a technique, not an error.** The top-50 boards deviate
-  inward by as much as this player and *more* than the general population: +0.124 and +0.135
+  inside by as much as this player and *more* than the general population: +0.124 and +0.135
   at 1:1.5 spacing against the player's +0.127 and +0.129 and the population's +0.099 and
   +0.066. Excellent players do not aim at circle centres either, and they do it more than
   average players do. So the INTERESTING.md hypothesis has its evidence: the reference path
-  through a stream is not the polyline, and cross-track error measured against circle centres
+  through a stream is not the polyline, and cross error measured against circle centres
   penalises the thing good play does.
 
-* **What separates this player from the top 50 is lag, not inside.** At matched spacing and
-  turn the reference boards sit within 0.05 radii of zero lag everywhere on 1/4 while the
+* **What separates this player from the top 50 is reach, not inside.** At matched spacing and
+  turn the reference boards sit within 0.05 radii of zero reach everywhere on 1/4 while the
   player runs -0.14 to -0.17 at the sharper turns -- three to five times as far behind. The
   two components answer different questions and only one of them is a deficiency.
 
-* **Correction to the reading below: the lag gradient is not purely corner-shaped.** Crossed
+* **Correction to the reading below: the reach gradient is not purely corner-shaped.** Crossed
   with spacing, both axes carry gradients of comparable size at 1/4 -- reading across the
   player's 1:1.5 row gives -0.166 to -0.059, and reading down the 50:135 column gives -0.084
-  to -0.171. At 1/2 it is predominantly spacing: at fixed turn the player's lag runs -0.036 at
+  to -0.171. At 1/2 it is predominantly spacing: at fixed turn the player's reach runs -0.036 at
   0:1 radii to -0.165 at 8:10, while at fixed spacing the turn barely moves it. The tenfold
   figure quoted below came from the 0:5 band, which holds 242 presses in total and does not
   survive a 200-per-cell floor. The corner does matter at 1/4; it is not the whole of it and
   it is not the axis at 1/2.
 
 * **New, and only visible once spacing is crossed in: `inside` changes sign with spacing on
-  jumps.** The player's 1/2 table runs +0.129 inward at 0:1 radii through +0.047 at 3.5:4.5 to
-  -0.051 at 6:8 -- inward on tight patterns, *outward* on wide ones, crossing around four
+  jumps.** The player's 1/2 table runs +0.129 inside at 0:1 radii through +0.047 at 3.5:4.5 to
+  -0.051 at 6:8 -- inside on tight patterns, *outward* on wide ones, crossing around four
   radii. A wide jump is ballistic and overshoots the corner; a tight one gets cut. The
   reference boards sit near zero across the whole 1/2 range, which is consistent with the same
   two effects cancelling at a different balance point rather than with either being absent.
 
-* **The field's lag is flat in turn magnitude; this player's is not.** The population sits at
+* **The field's reach is flat in turn magnitude; this player's is not.** The population sits at
   about -0.06 radii at every turn band, from doubling back to straight through -- a generic
-  lag with no relation to the corner. The player runs from -0.272 at a reversal to -0.024 at
+  reach with no relation to the corner. The player runs from -0.272 at a reversal to -0.024 at
   135-160 degrees, a tenfold gradient, and is four to five times the field's at the sharpest
   turns while being *better* than the field at the shallow ones. So this player's negative
-  along-track is corner-related and the field's is not, which is the difference the signed
+  reach is corner-related and the field's is not, which is the difference the signed
   table found and could not explain.
 
 * **Everybody cuts to the inside, and nobody aims at circle centres.** `inside` is positive
   in almost every cell of both corpora, 50-70% of presses, peaking at 135-160 degrees. That
   is the direct evidence for the INTERESTING.md hypothesis: the path players actually take
-  through a stream is not the polyline joining circle centres, so cross-track error measured
+  through a stream is not the polyline joining circle centres, so cross error measured
   against those centres is partly measuring ordinary play. The player cuts harder than the
   field at every band (+0.116 against +0.091 at the peak).
 
-* **Breaking runs cut further in and lag further back.** At 1/4 the player's breaking runs
-  reach +0.147 inside at 135-160 against +0.116 for holding ones, and -0.333 lag at a reversal
+* **Breaking runs cut further in and reach further back.** At 1/4 the player's breaking runs
+  reach +0.147 inside at 135-160 against +0.116 for holding ones, and -0.333 reach at a reversal
   against -0.272. Which way that causes is not settled here: cutting may be the technique that
   usually works and occasionally overshoots into a miss, or a run already going wrong may
   produce both.
@@ -251,27 +279,27 @@ presses:
 **Does tapping slow favour a pathing strategy?** (`--path --by-rate`, grouping runs by which
 way their tempo drifts instead of by outcome). Two stories predict the same sign, which is why
 the coupling has to come out first: a press landing late arrives after the cursor has moved on
-toward the next note, and "toward the next note" is inward at a corner, so slow tapping
+toward the next note, and "toward the next note" is inside at a corner, so slow tapping
 manufactures an inside reading by itself; and separately, cutting shortens the path, so a hand
 falling behind might cut *to keep up*. `resid` is `inside` with the first divided out.
 
     1/4, player        taps slower                  taps faster
-    turn            n     lag  inside   resid      n     lag  inside   resid
+    turn            n     reach  inside   resid      n     reach  inside   resid
     5:50          625  -0.115  +0.065  +0.069    760  -0.160  +0.073  +0.093
     50:135      3,724  -0.120  +0.084  +0.081  4,190  -0.106  +0.071  +0.076
     135:160    14,220  +0.025  +0.129  +0.128 13,244  -0.035  +0.114  +0.122
     160:180    11,943  +0.005  +0.092  +0.091 10,728  -0.038  +0.085  +0.090
 
-* **No. The cutting is the same either way; only the lag moves.** Residualised `inside` is
+* **No. The cutting is the same either way; only the reach moves.** Residualised `inside` is
   within 0.005 radii between the two groups at every band of the player's 1/4 table and the
-  population's, which on a quantity running 0.03 to 0.13 is nothing. What does change is lag,
+  population's, which on a quantity running 0.03 to 0.13 is nothing. What does change is reach,
   by a consistent 0.04 radii in the same direction at every shallow band -- and at 135-160 it
   changes *sign*, from -0.035 behind the note when tapping fast to +0.025 ahead of it when
   tapping slow. The population shows the same: -0.069 against -0.018 at 135-160.
 
 * **Which is a measurement consequence, not a strategy.** A press landing later samples the
   cursor later, so the cursor is further along its path; the hand did not move differently.
-  The direct implication is that the lag figures elsewhere in this file are partly *when the
+  The direct implication is that the reach figures elsewhere in this file are partly *when the
   player pressed* rather than *where the hand was*, and at 135-160 degrees the tempo drift
   alone is enough to flip the sign.
 
@@ -288,8 +316,8 @@ falling behind might cut *to keep up*. `resid` is `inside` with the first divide
   when it was first reported.
 
 **The control this wants before it is phrased for a player.** Sharp turns at 1/4 are mostly
-tight and stacked, so turn magnitude and spacing are correlated in the map pool, and lag is
-normalised by the radius rather than by the movement. A fixed lag in radii therefore looks
+tight and stacked, so turn magnitude and spacing are correlated in the map pool, and reach is
+normalised by the radius rather than by the movement. A fixed reach in radii therefore looks
 larger where the jump is smaller, and the player's map pool is not the field's. Crossing
 spacing into the `--path` key would separate "lags at sharp corners" from "lags on short
 movements"; until then the gradient is real and its axis is not certain.
@@ -333,7 +361,7 @@ def cross2(a, b) -> float:
 def corner(previous, here, nxt, cursor, aim):
     """Split the cursor's offset into lagging behind and cutting the corner.
 
-    Negative along-track has two completely different causes that the magnitude cannot
+    Negative reach has two completely different causes that the magnitude cannot
     separate, and that imply opposite advice. A hand that falls short of the target is
     *lagging*. A hand that takes a shorter route through a turn is *cutting*, which is not an
     error at all if the shorter route keeps the cursor inside successive hitboxes -- the
@@ -341,18 +369,18 @@ def corner(previous, here, nxt, cursor, aim):
 
     They are distinguishable because cutting needs a corner and lagging does not:
 
-    * ``lag`` is the offset along the incoming direction. Negative is short of the target.
+    * ``reach`` is the offset along the incoming direction. Negative is short of the target.
       A lagging hand does this whether or not the path turns.
-    * ``inward`` is the offset across the incoming direction, with its sign flipped into the
+    * ``inside`` is the offset across the incoming direction, with its sign flipped into the
       turn's own frame, so positive always means *toward the inside of the corner*. Cutting
       produces this and only at a real turn; a lagging hand has no reason to prefer the
       inside over the outside.
 
-    ``inward`` is mirror-invariant by construction -- reflecting a map flips the turn and the
+    ``inside`` is mirror-invariant by construction -- reflecting a map flips the turn and the
     offset together -- so it is not the per-object chirality Mirror week settled and found
     empty. It is a relationship between two consecutive legs, which that week never tested.
 
-    Returns (lag, inward), both None if the geometry is degenerate. The turn magnitude comes
+    Returns (reach, inside), both None if the geometry is degenerate. The turn magnitude comes
     off the row rather than being recomputed here: the convention (180 straight through, 0
     doubling back) is pinned by GeometryTests, and reconstructing it from travel directions
     gets it exactly backwards.
@@ -370,9 +398,9 @@ def corner(previous, here, nxt, cursor, aim):
     u = (incoming[0] / din, incoming[1] / din)
     v = (outgoing[0] / dout, outgoing[1] / dout)
     side = 1.0 if cross2(u, v) >= 0 else -1.0
-    lag = (offset[0] * u[0] + offset[1] * u[1]) / radius
-    inward = cross2(u, offset) * side / radius
-    return lag, inward
+    reach = (offset[0] * u[0] + offset[1] * u[1]) / radius
+    inside = cross2(u, offset) * side / radius
+    return reach, inside
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -519,14 +547,14 @@ def main() -> int:
     parser.add_argument("--path", action="store_true",
                         help="instead of the outcome tables, split the cursor's offset into "
                              "lagging behind the target and cutting the inside of the corner, "
-                             "by turn magnitude. Negative along-track has those two causes and "
+                             "by turn magnitude. Negative reach has those two causes and "
                              "they imply opposite advice; cutting needs a corner and lagging "
                              "does not, which is what separates them")
     parser.add_argument("--by-spacing", action="store_true",
                         help="with --path, cross spacing into the key instead of grouping by "
                              "outcome. Sharp turns are mostly tight and stacked in the map "
-                             "pool, and lag is normalised by the radius rather than by the "
-                             "movement, so a lag gradient along the turn axis could be a "
+                             "pool, and reach is normalised by the radius rather than by the "
+                             "movement, so a reach gradient along the turn axis could be a "
                              "gradient along the spacing axis wearing its clothes")
     parser.add_argument("--by-rate", action="store_true",
                         help="with --path, group runs by which way their tapping tempo drifts "
@@ -534,7 +562,7 @@ def main() -> int:
                              "pathing strategy. Reports the inside component with the press "
                              "timing divided out as well as raw, because a late press lands "
                              "after the cursor has moved on toward the next note, which at a "
-                             "corner reads as inward on its own")
+                             "corner reads as inside on its own")
     parser.add_argument("--snaps", nargs="*", default=["0.25", "0.5"])
     args = parser.parse_args()
 
@@ -557,7 +585,7 @@ def main() -> int:
     else:
         # Mods are recorded only on the collected side. Relax and Autopilot replace one of
         # the two hands being compared; HardRock, Easy and DifficultyAdjust change the
-        # radius that along- and cross-track are measured in.
+        # radius that reach and cross are measured in.
         corpus = {os.path.basename(r["Path"]): r["BeatmapMd5"] for r in records
                   if not (EXCLUDE & set(r.get("Mods") or ()))}
         wanted = set(corpus)
@@ -580,11 +608,11 @@ def main() -> int:
     # snap -> outcome -> metric -> list of per-run values
     acc: dict = collections.defaultdict(lambda: collections.defaultdict(
         lambda: collections.defaultdict(list)))
-    # (snap, turn band, group) -> n, sum lag, sum inward, count inward > 0, sum x
+    # (snap, turn band, group) -> n, sum reach, sum inside, count inside > 0, sum x
     # where x = required velocity * hit error: how far the cursor travels along its path in
     # the time the press was late by. The inside component's mechanical share.
     path: dict = collections.defaultdict(lambda: [0, 0.0, 0.0, 0, 0.0])
-    # n, sum x, sum inward, sum x*inward, sum x^2 -- for one coefficient per snap.
+    # n, sum x, sum inside, sum x*inside, sum x^2 -- for one coefficient per snap.
     fit: dict = collections.defaultdict(lambda: [0, 0.0, 0.0, 0.0, 0.0])
     counted = 0
 
@@ -627,10 +655,10 @@ def main() -> int:
                     if (before["run"] != row["run"] - 1 or after["run"] != row["run"] + 1
                             or row["angle"] is None or None in (row["cx"], row["cy"])):
                         continue
-                    lag, inward = corner((before["tx"], before["ty"]),
+                    reach, inside = corner((before["tx"], before["ty"]),
                                          (row["tx"], row["ty"]), (after["tx"], after["ty"]),
                                          (row["cx"], row["cy"]), row["aim"])
-                    if lag is None:
+                    if reach is None:
                         continue
                     band = ANGLE.bin(row["angle"])
                     if band is None:
@@ -648,17 +676,17 @@ def main() -> int:
                          if row["own"] and row["error"] is not None else None)
                     cell = path[(snap, band, group)]
                     cell[0] += 1
-                    cell[1] += lag
-                    cell[2] += inward
-                    cell[3] += 1 if inward > 0 else 0
+                    cell[1] += reach
+                    cell[2] += inside
+                    cell[3] += 1 if inside > 0 else 0
                     counted += 1
                     if x is not None:
                         cell[4] += x
                         f = fit[snap]
                         f[0] += 1
                         f[1] += x
-                        f[2] += inward
-                        f[3] += x * inward
+                        f[2] += inside
+                        f[3] += x * inside
                         f[4] += x * x
                 continue
 
@@ -670,31 +698,32 @@ def main() -> int:
                 continue
             counted += 1
             here = acc[snap][outcome]
-            here["rate ms/object"].append(rate)
+            here["tempo drift"].append(rate)
             here["hit error ms"].append(sum(y for _, y in taps) / len(taps))
             gap = [r["gap"] for r in early if r["gap"]]
             if gap:
                 # The same slope as a tempo error: ms of phase per object over the interval.
-                here["rate %"].append(100.0 * rate / (sum(gap) / len(gap)))
+                here["tempo drift %"].append(100.0 * rate / (sum(gap) / len(gap)))
             # The interval itself, because a "percentage tempo error" difference between the
             # groups can be an interval difference rather than a tempo one.
             if gap:
                 here["interval ms"].append(sum(gap) / len(gap))
-            # Along-track is measured at the press, so a late tap on a cursor tracking the
-            # path perfectly already shows as the cursor being ahead: along ~ velocity x hit
-            # error. Both parts are recorded per run so the coupling can be divided out
-            # instead of assumed away.
-            coupled = [(r["along"], (r["velocity"] or 0.0) * r["error"]) for r in early
-                       if r["along"] is not None and r["own"] and r["error"] is not None
+            # Reach is measured at the press, so a late press on a cursor exactly on
+            # schedule already reads as having got further: reach ~ velocity x hit error.
+            # Both parts are recorded per run so the coupling can be divided out rather than
+            # assumed away -- and the fitted coefficient is itself the test of whether the
+            # cursor is on schedule, since 1.00 is what "perfectly on schedule" means.
+            coupled = [(r["reach"], (r["velocity"] or 0.0) * r["error"]) for r in early
+                       if r["reach"] is not None and r["own"] and r["error"] is not None
                        and r["velocity"] is not None]
             if coupled:
-                here["along pairs"].append((sum(a for a, _ in coupled) / len(coupled),
+                here["reach pairs"].append((sum(a for a, _ in coupled) / len(coupled),
                                             sum(x for _, x in coupled) / len(coupled)))
-            for name, key in (("along radii", "along"), ("cross radii", "cross")):
+            for name, key in (("reach", "reach"), ("cross", "cross")):
                 vals = [r[key] for r in early if r[key] is not None]
                 if vals:
                     here[name].append(sum(vals) / len(vals))
-                    here[name.replace("radii", "slope")].append(
+                    here[name + " slope"].append(
                         slope([(float(r["run"]), r[key]) for r in early
                                if r[key] is not None]) or 0.0)
 
@@ -749,7 +778,7 @@ def main() -> int:
                                    if r["signedAngle"] else None),
                          "spacing": _num(r["spacingRadii"]),
                          "size": run_size, "error": error, "gap": gap, "own": own,
-                         "miss": r["result"] in MISSED, "along": along, "cross": cross,
+                         "miss": r["result"] in MISSED, "reach": along, "cross": cross,
                          "velocity": _num(r["requiredVelocity"]),
                          "tx": tx, "ty": ty})
     if held:
@@ -775,11 +804,11 @@ def main() -> int:
             beta[snap] = ((sxy - sx * sy / n) / var) if var else 0.0
             print(f"snap {snap}: inside regressed on velocity x hit error, coefficient "
                   f"{beta[snap]:+.3f}. A press landing late\n  arrives after the cursor has "
-                  f"moved on toward the next note, which at a corner reads as\n  inward by "
+                  f"moved on toward the next note, which at a corner reads as\n  inside by "
                   f"itself, so 'resid' is inside with that mechanical share removed.")
         print()
         if args.by_spacing:
-            print("Rows are spacing, columns are the turn. If the lag gradient is really "
+            print("Rows are spacing, columns are the turn. If the reach gradient is really "
                   "about the corner it\nsurvives reading across a row at fixed spacing; if "
                   "it was spacing all along it collapses\nthere and appears down the columns "
                   "instead. Cells with under 200 presses are left out.\n")
@@ -790,15 +819,15 @@ def main() -> int:
                         if sum(path[(snap, b, sp)][0] for b in bands) >= 1_000]
                 if not bands or not rows:
                     continue
-                for what, column in (("lag", 1), ("inside", 2)):
+                for what, column in (("reach", 1), ("inside", 2)):
                     print(f"snap {snap}, mean {what} in radii")
                     print(f"  {'spacing':<12}" + "".join(f"{b:>12}" for b in bands))
                     for sp in rows:
                         cells = ""
                         for b in bands:
-                            n, lag, inward = (path[(snap, b, sp)][0], path[(snap, b, sp)][1],
+                            n, reach, inside = (path[(snap, b, sp)][0], path[(snap, b, sp)][1],
                                               path[(snap, b, sp)][2])
-                            total = lag if column == 1 else inward
+                            total = reach if column == 1 else inside
                             cells += (f"{total / n:>+12.3f}" if n >= 200 else f"{'-':>12}")
                         print(f"  {sp:<12}{cells}")
                     print(f"  {'n':<12}" + "".join(
@@ -815,16 +844,16 @@ def main() -> int:
                 continue
             print(f"snap {snap}" + "".join(f"{'':<14}{g}" for g in groups))
             print(f"  {'turn':<12}" + "".join(f"{h:>10}" for h in
-                  ("n", "lag", "inside", "resid", "n", "lag", "inside", "resid")))
+                  ("n", "reach", "inside", "resid", "n", "reach", "inside", "resid")))
             for band in bands:
                 cells = ""
                 for group in groups:
-                    n, lag, inward, _positive, sx = path[(snap, band, group)]
+                    n, reach, inside, _positive, sx = path[(snap, band, group)]
                     if not n:
                         cells += f"{0:>10}" + f"{'-':>10}" * 3
                         continue
-                    resid = inward / n - beta.get(snap, 0.0) * (sx / n)
-                    cells += (f"{n:>10,}{lag / n:>+10.3f}{inward / n:>+10.3f}"
+                    resid = inside / n - beta.get(snap, 0.0) * (sx / n)
+                    cells += (f"{n:>10,}{reach / n:>+10.3f}{inside / n:>+10.3f}"
                               f"{resid:>+10.3f}")
                 print(f"  {band:<12}{cells}")
             print()
@@ -833,7 +862,7 @@ def main() -> int:
     # Along-track with the tap-timing part removed. The coefficient is fitted over both
     # groups of a snap together, so it cannot absorb the difference being tested.
     for snap in acc:
-        pairs = [p for outcome in acc[snap] for p in acc[snap][outcome].get("along pairs", [])]
+        pairs = [p for outcome in acc[snap] for p in acc[snap][outcome].get("reach pairs", [])]
         if len(pairs) < 20:
             continue
         mx = sum(x for _, x in pairs) / len(pairs)
@@ -841,26 +870,26 @@ def main() -> int:
         var = sum((x - mx) ** 2 for _, x in pairs)
         beta = (sum((x - mx) * (a - my) for a, x in pairs) / var) if var else 0.0
         for outcome in acc[snap]:
-            acc[snap][outcome]["along residual"] = [
-                a - beta * x for a, x in acc[snap][outcome].get("along pairs", [])]
-        print(f"snap {snap}: along-track regressed on velocity x hit error, "
+            acc[snap][outcome]["reach, timed out"] = [
+                a - beta * x for a, x in acc[snap][outcome].get("reach pairs", [])]
+        print(f"snap {snap}: reach regressed on velocity x hit error, "
               f"coefficient {beta:.2f} (1.00 would be pure coupling)")
     print()
 
-    metrics = [("rate ms/object", "tapping tempo error, ms of phase per object"),
-               ("rate %", "the same as a percentage of the interval"),
+    metrics = [("tempo drift", "ms of phase per object; positive is pressing ever later"),
+               ("tempo drift %", "the same against the interval; check the interval row"),
                ("hit error ms", "mean hit error over the stretch, for reference"),
                ("interval ms", "the gap itself: a control for the percentage above"),
-               ("along radii", "cursor ahead of or behind the note, measured at the press"),
-               ("along residual", "the same with the tap-timing part divided out"),
-               ("along slope", "and whether that is growing, radii per object"),
-               ("cross radii", "cursor off the path sideways"),
+               ("reach", "how far the cursor got; negative fell short of the centre"),
+               ("reach, timed out", "the same with the press timing divided out"),
+               ("reach slope", "and whether that is growing, radii per object"),
+               ("cross", "offset across the path, sign not meaningful"),
                ("cross slope", "and whether that is growing, radii per object")]
     for snap in args.snaps:
         if snap not in acc:
             continue
-        holds = len(acc[snap]["holds"].get("rate ms/object", []))
-        breaks = len(acc[snap]["breaks at 10+"].get("rate ms/object", []))
+        holds = len(acc[snap]["holds"].get("tempo drift", []))
+        breaks = len(acc[snap]["breaks at 10+"].get("tempo drift", []))
         print(f"snap {snap}: {holds:,} runs hold, {breaks:,} break at position "
               f"{BEFORE}+\n")
         print(f"  {'metric':<16}{'holds':>9}{'breaks':>9}{'ratio':>8}{'t':>7}   what it is")
