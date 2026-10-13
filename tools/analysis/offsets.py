@@ -21,6 +21,14 @@ Status per replay:
   ambiguous     a change window [after, before] contains the play, so either value is possible
   pre-snapshot  played before the Sep 11 snapshot; its value is assumed, never observed
 
+Convention, from 2026-10-12. A window shows that an offset changed, never when, so the player
+changes per-map offsets only at the end of a session (or ends the session and starts a new one
+when a change cannot wait). A change logged in a window is therefore taken to have happened
+after every play inside it: those plays ran under the old value and are "known", not
+"ambiguous". Only windows opening at or after ``CONVENTION`` are resolved this way; earlier
+ones keep the ambiguous status, since the opposite habit (change mid-session) was attempted
+and not kept up.
+
 The player's global audio offset is out of scope here: it is one setting, not per map, and is
 also not in any score.
 """
@@ -36,6 +44,8 @@ STATE = "build/offset-state.json"
 HISTORY = "build/offset-history.csv"
 FIRST = "build/beatmap-index-2026-09-11.json"
 FIRST_TIME = "2026-09-11T19:48:00-0400"
+# The offset-state snapshot taken when the end-of-session convention above was adopted.
+CONVENTION = "2026-10-12T19:16:39-0400"
 
 # Replay filenames carry local wall-clock time; the machine is US Eastern.
 _STAMP = re.compile(r"\((\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})\)(?: \(\d+\))?\.osr$")
@@ -60,6 +70,7 @@ class Offsets:
         first = json.load(open(p(FIRST)))
         self.first = {k.lower(): v.get("Offset", 0) for k, v in first.items()}
         self.first_time = _parse(FIRST_TIME)
+        self.convention = _parse(CONVENTION)
         self.changes: dict[str, list[tuple[dt.datetime, dt.datetime, float, float]]] = {}
         if os.path.exists(p(HISTORY)):
             with open(p(HISTORY), newline="") as fh:
@@ -81,7 +92,8 @@ class Offsets:
             if t >= before:
                 value = new
             elif t > after:
-                return value, "ambiguous"
+                # Changed at the end of the session, so the play ran under the old value.
+                return value, "known" if after >= self.convention else "ambiguous"
             else:
                 break
         return value, "known"

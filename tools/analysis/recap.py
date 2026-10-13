@@ -250,6 +250,9 @@ if os.path.exists("build/offset-history.csv"):
         if bb >= start and a <= end + timedelta(minutes=10):
             rows.append(f"- {r['title']} [{r['difficulty']}]: {r['old']} -> {r['new']} ms")
 print("\n".join(rows) if rows else "(none)")
+if rows:
+    # The convention in offsets.py: per-map offsets change only at the end of a session.
+    print("changed at the end of the session (convention from 2026-10-12): this session's plays used the old values")
 
 # ---- setup timeline ----
 print("\n## Setup changes dated within 7 days before the session")
