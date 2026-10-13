@@ -131,6 +131,59 @@ acute wide jumps lost to this mechanism, by half-year:
   acute jumps are a different population of maps from high-tempo ones. Crossing
   `requiredVelocity` in would say which axis it is, and that has not been run.
 
+**Are the hands locked to the music, or to each other?** (`--by-bpm --coupling`). The player's
+description is that at a comfortable tempo the button fires right at the tip of the cursor's
+path, and that this feels like bilateral coordination rather than two hands each tracking the
+beat. That is not a distinction without a difference: if each hand tracks the beat on its own
+then the spread of (button - cursor) is the two spreads against the beat added in quadrature,
+and if they move together it collapses below that. Spreads in ms, on the acute wide jumps that
+judged cleanly:
+
+    player                n   button   cursor  if indep  measured  coupling
+    under 140       136,036     22.6     42.3      47.9      38.4      0.80
+    140-160          86,523     23.6     40.5      46.9      36.3      0.78
+    160-180         226,889     17.6     34.2      38.5      31.0      0.81
+    180-200         228,366     16.0     32.5      36.2      29.8      0.82
+    200-220          66,675     17.6     32.5      36.9      29.3      0.79
+    220+              4,782     26.0     34.7      43.4      28.4      0.66
+
+    top 50
+    under 140        40,886     10.9     33.6      35.4      32.7      0.93
+    160-180         101,970      9.5     29.8      31.3      29.1      0.93
+    180-200         129,601      8.9     29.2      30.5      28.4      0.93
+    200-220          25,875      8.9     27.9      29.3      27.2      0.93
+
+* **The hands are coupled, in both corpora, so the player's reading of the mechanism is
+  right.** Every ratio is below 1.00, which means the two timing errors are positively
+  correlated: when the cursor runs ahead of the beat the button does too. Two hands each
+  independently locked to the music would sit at 1.00.
+
+* **But coupling is not the elite trait -- it is the reverse.** The player sits at 0.78-0.82
+  and the top 50 at a flat 0.93. As a correlation between the two errors that is about 0.43
+  against 0.25. So the better players' hands are *more* independent, and the button hand
+  tracks the music more nearly regardless of where the cursor is. The felt experience of the
+  hands moving as a unit is real and it is the less expert pattern.
+
+* **What actually separates them is the button hand's precision against the beat.** 9 ms at
+  the top 50 against 16-26 ms for the player, better than twofold, while cursor spread is
+  close -- 28-34 against 32-42. A twice-as-steady button hand with a similar cursor is most
+  of the gap, and it is nothing this file's cursor measures would have found.
+
+* **Coupling does not break down at the top of the player's range, which contradicts the
+  obvious story.** 220+ is his *most* coupled band at 0.66, not his least, so "past the
+  threshold the cursor detaches while the button keeps time" is not what the clean presses
+  say. The heavy caveat is that this table is `pressInside` only: at 220+ just 78% of jumps
+  judge cleanly against 93% lower down, so the high bands are a progressively more selected
+  subset and the failures -- which are the thing being explained -- are excluded by
+  construction. Whether the hands decouple cannot be read from the presses that worked.
+
+* **The `vs tip` column does not test the claim and is left out of the table above.** It
+  measures the spread against `turnTime`, the cursor's reversal, and runs 67-118 ms, far
+  wider than anything else here. `Clicks.cs` searches for that reversal in a window reaching
+  150 ms before the closest approach, so it is too loosely located to test "the button fires
+  at the tip". Measuring that properly needs the reversal pinned to the object rather than
+  found in a window.
+
 * **The frame-level work this needed was already done.** `Clicks.cs` has written
   `enterTime`, `exitTime`, `closestTime`, `closestDist`, `turnDist` and the stray press with
   its cursor position since the clicks pass existed. Three revisions of `streamfail.py`
@@ -175,6 +228,15 @@ def _num(text):
         return float(text)
     except (TypeError, ValueError):
         return None
+
+
+def moments(n, total, square):
+    """Mean and standard deviation from sufficient statistics."""
+    if n < 2:
+        return 0.0, 0.0
+    mean = total / n
+    var = max(square / n - mean * mean, 0.0)
+    return mean, var ** 0.5
 
 
 def half_year(name: str) -> str | None:
@@ -234,6 +296,12 @@ def main() -> int:
                              "gap between two objects")
     parser.add_argument("--turn-max", type=float, default=50.0,
                         help="with --by-bpm, the sharpest turn to include, degrees")
+    parser.add_argument("--coupling", action="store_true",
+                        help="with --by-bpm: are the two hands each locked to the music, or "
+                             "locked to each other? If each tracks the beat independently "
+                             "then the variance of (button - cursor) is the sum of the two "
+                             "variances against the beat; if they are coupled it collapses "
+                             "below that. Measured on the objects that judged cleanly")
     parser.add_argument("--over-time", action="store_true",
                         help="with --by-bpm, split the tempo bands by half-year as well, to "
                              "test whether the tempo a player comes apart at moves upward. "
@@ -369,6 +437,56 @@ def main() -> int:
           "           the judging press, or at the press that judged nothing.\n"
           "  visit    where in the cursor's stay inside the circle the button fell, 0 at the\n"
           "           moment it crossed in and 1 at the moment it crossed out.\n")
+    if args.by_bpm and args.coupling:
+        # Per band: n, then (sum, sum of squares) for the button against the beat, the cursor
+        # against the beat, the button against the cursor's deepest point, and the button
+        # against the cursor's reversal -- the "tip of the path" the player describes.
+        pair: dict = collections.defaultdict(lambda: [0] + [[0.0, 0.0, 0] for _ in range(4)])
+        with open(clicks) as f:
+            for r in csv.DictReader(f):
+                got = wanted.get((r["replay"], round(float(r["startTime"]), 1)))
+                if got is None or r["pressInside"] != "1":
+                    continue
+                start = float(r["startTime"])
+                press, deep = _num(r["pressTime"]), _num(r["closestTime"])
+                tip = _num(r["turnTime"])
+                if press is None:
+                    continue
+                cell = pair[got[0]]
+                cell[0] += 1
+                for slot, value in ((1, press - start),
+                                    (2, None if deep is None else deep - start),
+                                    (3, None if deep is None else press - deep),
+                                    (4, None if tip is None else press - tip)):
+                    if value is not None:
+                        cell[slot][0] += value
+                        cell[slot][1] += value * value
+                        cell[slot][2] += 1
+
+        print("Are the two hands each locked to the music, or locked to each other? If each "
+              "tracks the\nbeat on its own then the spread of (button - cursor) is the two "
+              "spreads against the beat\nadded in quadrature. If they move together it "
+              "collapses below that. All in ms, on the\nacute wide jumps that judged "
+              "cleanly.\n")
+        print(f"  {'bpm':<12}{'n':>9}{'button':>9}{'cursor':>9}{'if indep':>10}"
+              f"{'measured':>10}{'vs tip':>9}{'coupling':>10}")
+        for band in LABELS:
+            cell = pair.get(band)
+            if not cell or cell[0] < 500:
+                continue
+            _, sd_button = moments(cell[1][2], cell[1][0], cell[1][1])
+            _, sd_cursor = moments(cell[2][2], cell[2][0], cell[2][1])
+            _, sd_deep = moments(cell[3][2], cell[3][0], cell[3][1])
+            _, sd_tip = moments(cell[4][2], cell[4][0], cell[4][1])
+            independent = (sd_button ** 2 + sd_cursor ** 2) ** 0.5
+            print(f"  {band:<12}{cell[0]:>9,}{sd_button:>9.1f}{sd_cursor:>9.1f}"
+                  f"{independent:>10.1f}{sd_deep:>10.1f}{sd_tip:>9.1f}"
+                  f"{sd_deep / independent:>10.2f}")
+        print("\n  'coupling' is measured over independent: 1.00 means the hands are "
+              "independent,\n  below 1.00 means they move together. 'vs tip' is the same "
+              "spread against the cursor's\n  reversal rather than its deepest point.")
+        return 0
+
     if args.by_bpm and args.over_time:
         periods = sorted({b.split(" ", 1)[0] for b, _ in acc})
         print("The tempo a player comes apart at, by half-year. Each cell is the share of "

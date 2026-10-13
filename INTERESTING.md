@@ -946,3 +946,29 @@ tablet area and mapping changed repeatedly before.
 
 Also corrects the single-table BPM reading two entries up, which pooled 2024 through 2026 and
 therefore smeared the very thing being asked about.
+
+## 2026-10-13 — the hands are coupled, not each beat-locked; and the better players are less coupled
+
+`PYTHONPATH=tools python3 tools/analysis/arrival.py --source player|reference --by-bpm --coupling`
+
+Player's hypothesis: at a comfortable tempo the button fires right at the tip of the cursor's
+path, and it feels like bilateral coordinated attention rather than two hands each tracking the
+beat. Testable as a variance decomposition -- independent hands give
+Var(button-cursor) = Var(button-beat) + Var(cursor-beat); coupled hands collapse below it.
+
+Measured on acute wide jumps that judged cleanly, the ratio of measured to independent spread:
+zaksynack 0.78-0.82 across every band below 220 (0.66 at 220+), top-50 boards a flat **0.93**.
+As a correlation between the two timing errors, about 0.43 against 0.25. So the hands are
+coupled in both -- the felt experience is real -- but the better players are *more independent*,
+their button hand tracking the music more nearly regardless of the cursor. Coupling is the less
+expert pattern.
+
+What actually separates them: the button hand's spread against the beat is 9 ms for the top 50
+against 16-26 ms for the player, better than twofold, while cursor spread is close (28-34
+against 32-42). None of the cursor measures in this work would have found that.
+
+Two cautions. The table is pressInside only, so at 220+ it covers the 78% of jumps that judged
+and excludes the failures being explained -- whether the hands decouple under load cannot be
+read from the presses that worked. And the "spread against the cursor's reversal" column runs
+67-118 ms because Clicks.cs searches for that reversal in a window reaching 150 ms back, too
+loose to test "fires at the tip"; that needs the reversal pinned to the object.
