@@ -864,3 +864,25 @@ cursor's position at the press is uncorrelated with when the press happened. Tha
 reading -- it fits the cursor having settled short of the centre and stopped. So "the cursor
 arrives short on jump chains" overstates it; short and no longer moving is what is established,
 and being universal it is jump geometry rather than a player trait.
+
+## 2026-10-13 — correction: flat dR/dt does not mean the cursor settled; a rushing cursor looks the same
+
+`tools/analysis/streamfail.py --path`, the dR/dt table
+
+The entry above reads flat dR/dt at 1/2 as the cursor having settled short of the centre and
+stopped. That is one of two mechanisms and it was asserted as though it were the only one. The
+player's account of the rush.py cases is the other: the cursor arrives *early*, overshoots,
+turns, and is on its way back out toward the next object when a well-timed press lands. Hit
+error is then small by construction, so there is little timing variance to drive any
+correlation, and the coefficient lands near zero rather than negative.
+
+The evidence favours the rushing account. The most negative cells in the table are exactly
+those bands (player 1/2 at 5:50 is -0.04, 0:5 is -0.02, against the reference's 0.00), the
+-0.05 cutoff the tool prints "flat" against is arbitrary rather than a significance test, and
+`inside` goes *negative* on the player's acute wide jumps (-0.017 at 0:5, -0.051 at 6:8 radii)
+-- the cursor is outside the bend, which a cursor that stopped short has no reason to be and
+one arriving too fast to turn tightly does.
+
+Nothing here was late: hit error on those bands is +1.0 to -2.4 ms. "Rushing" is the cursor,
+not the hand on the keys, and the two must not be collapsed. Settling it needs the trajectory
+between presses.

@@ -236,13 +236,28 @@ further along, so it was still inbound. Negative is the signature of having arri
   coefficient rising toward 1.00 as the turn straightens is what it should do -- 1.00 means
   exactly on schedule, and a straighter turn gives the projection less to lose.
 
-* **At 1/2 it is flat everywhere, in both corpora, so the reading is unproven.** Reach is
-  reliably negative and `dR/dt` is within 0.05 of zero: the cursor's position at the press
-  is uncorrelated with when the press happened. That is neither "still inbound" nor "arrived
-  and left" -- it is consistent with the cursor having *settled* at a point short of the
-  centre and stopped. So "the cursor arrives short on jump chains" overstates what is known;
-  what is known is that it is short and no longer moving in a way the press time can see.
-  Being universal across corpora, it is a property of jump geometry rather than of a player.
+* **At 1/2 it is flat, which has two readings and this test cannot choose between them.**
+  Reach is reliably negative while `dR/dt` sits within 0.05 of zero, so the cursor's position
+  at the press is uncorrelated with when the press happened. Two mechanisms produce that:
+
+  - the cursor *settled* short of the centre and stopped, so nothing was moving for the press
+    time to sample differently;
+  - the cursor *rushed* -- arrived early, overshot, turned, and was on its way back out
+    toward the next object when a well-timed press landed. Hit error is then small by
+    construction, so there is little timing variance to drive a correlation at all.
+
+  The second is the player's own account of the `rush.py` cases and the weight of the
+  evidence favours it. The most negative cells in the table are exactly those bands -- the
+  player's 5:50 at -0.04 and 0:5 at -0.02 against the reference's 0.00 -- and the -0.05
+  threshold this tool prints "flat" against is arbitrary, not a significance test. More
+  tellingly, `inside` goes *negative* on the player's acute wide jumps, -0.017 at 0:5 and
+  -0.051 at 6:8 radii: the cursor is outside the bend. A cursor that stopped short has no
+  reason to be outside it; one that arrives too fast to turn tightly does.
+
+  So "the cursor arrives short on jump chains" is wrong as a mechanism and the earlier
+  phrasing here is withdrawn. Reach is negative; that is a fact about the offset. Whether it
+  never got there or got there early and left needs the trajectory between presses, and the
+  surviving hint points at the second.
 
 * **This table is pooled over spacing and must not be read for the player-against-field
   comparison.** The two corpora have different spacing mixes, which is why the reference's
@@ -913,8 +928,13 @@ def main() -> int:
                 n, sx, sy, sxy, sxx, se = arrive[(snap, band)]
                 var = sxx - sx * sx / n
                 beta = (sxy - sx * sy / n) / var if var else 0.0
-                reading = ("arrived and left" if beta < -0.05 else
-                           "still on its way in" if beta > 0.05 else "flat, undecidable")
+                # The cutoffs are for reading the column at a glance, not a significance
+                # test, and "flat" covers two mechanisms rather than ruling both out: a
+                # cursor that settled short and stopped, and one that arrived early,
+                # overshot and was leaving when a well-timed press landed. The second has
+                # little timing variance by construction, so it lands near zero too.
+                reading = ("leaving, or settled" if beta < -0.05 else
+                           "still on its way in" if beta > 0.05 else "either; see docstring")
                 print(f"  {band:<12}{n:>9,}{sy / n:>+9.3f}{se / n:>+9.1f}{beta:>+9.2f}"
                       f"   {reading}")
             print()
