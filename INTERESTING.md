@@ -695,3 +695,22 @@ is not "drifts off the path, then misses" -- a drifting run is more likely to ho
 mechanism proposed. Also in that output: the percentage-tempo difference at 1/2 is entirely an
 interval difference (breaking runs 190.0 ms vs 221.9, t=-15.6), a denominator reading itself
 back as an effect.
+
+## 2026-10-12 — hypothesis: the best cursor path through a curved 1/4 is not centre-to-centre
+
+`tools/analysis/streamfail.py` ("along slope"/"cross slope" rows, the entry above)
+
+Player's hypothesis for why the runs that drift off the path are the ones that *hold*: with
+overlapping hitboxes and notelock, the optimal path through a curved stream may not be the
+polyline joining circle centres. Cutting the inside of a curve keeps the cursor inside
+successive hitboxes for longer, and notelock means object n+1 cannot be judged before n
+resolves, so being "off centre" in the direction of the next note may be strictly better than
+being on centre. If so, cross-track error measured against the centre-to-centre path is
+partly measuring *good* play, which would explain a negative slope difference without any
+appeal to fatigue or attention.
+
+Testable: for curved 1/4 runs, compare the cursor's offset from the centre-to-centre polyline
+against its offset from a chord or inside-cut path, and see which one predicts holding. Needs
+the cursor path between presses, so it needs replay frames rather than the geometry CSV's
+at-press samples. Would also reframe "stray" in the existing stream work, which is defined
+against circle centres.
