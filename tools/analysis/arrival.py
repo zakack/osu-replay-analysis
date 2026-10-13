@@ -91,6 +91,40 @@ that this mechanism is absent below some tempo, remembered as about 160:
   on these jumps at the bottom to 58% at the top -- so the shape of the failure does not
   change with tempo, only how often it happens.
 
+**Over time** (`--by-bpm --over-time`). Pooling two years of one player's runs smears exactly
+the thing the player suspected: a tempo he comes apart at, which has been moving up. Share of
+acute wide jumps lost to this mechanism, by half-year:
+
+    half-year      under 140     140-160     160-180     180-200     200-220        220+
+    2024H2              2.7%        6.5%        4.0%        5.0%        5.5%        8.7%
+    2025H1              2.5%        2.6%        3.2%        3.9%        7.4%        3.2%
+    2025H2              2.3%        2.4%        2.7%        3.0%        5.7%       10.3%
+    2026H1              2.6%        2.3%        2.3%        3.4%        5.8%       11.2%
+    2026H2              2.9%        1.2%        1.8%        2.5%        4.4%       13.1%
+    n                 142,950      93,846     245,314     251,206      75,689       6,082
+
+* **The threshold is real and it has moved, and it is being cleaned up from the bottom
+  upward.** Read down a column rather than across a row: 140-160 falls 6.5% to 1.2%, a
+  fivefold improvement; 160-180 halves; 180-200 halves; 200-220 barely moves; 220+ gets
+  *worse*. The `under 140` column is flat at 2.3-2.9% throughout and is the floor -- a rate
+  that is not skill-limited. Taking the barrier as the first band above 1.5x that floor it
+  sits at 140 in 2024H2, 180 in 2025H1 and 200 from 2025H2 on. The player described this as
+  "I can't do it, I can't do it, and click it's easy", with occasional backsliding, and
+  180-200 does exactly that: 3.0%, then 3.4%, then 2.5%.
+
+* **220+ worsening is the frontier moving, not a regression.** It runs 8.7, 3.2, 10.3, 11.2,
+  13.1 on 6,082 jumps across five periods, so roughly 1,200 each and the 2025H1 figure is
+  thin. More to the point, the maps a player attempts at 220 BPM in 2026 are not the maps he
+  attempted there in 2024; the band's contents change as he climbs.
+
+* **Two things make this result stronger than it looks, and one weaker.** Stronger: the
+  corpus is mostly completed passes and the player only began saving fails recently, so the
+  late periods carry failures the early ones do not -- which biases 2026 to look worse, and
+  it looks better. Also this is a *cursor* mechanism, so the button-firmware eras that
+  dominate `setup-timeline.csv` are unlikely to explain it. Weaker: the tablet filter chain
+  changed in October 2026, inside the last bucket, and tablet area and mapping changed
+  repeatedly before that. A step at a date is a setup change until shown otherwise.
+
 * **Tempo here is confounded with two things and the axis may not be tempo.** At a fixed
   spacing a higher tempo is a higher required cursor velocity, which is the physically
   meaningful quantity and the one the charter names; and low-tempo maps carrying 3.5-radii
@@ -116,6 +150,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from bins.load import TIMESTAMP  # noqa: E402
 from bins.schema import ANGLE, SPACING  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -140,6 +175,15 @@ def _num(text):
         return float(text)
     except (TypeError, ValueError):
         return None
+
+
+def half_year(name: str) -> str | None:
+    """Which half-year a replay was played in, from its filename timestamp."""
+    found = TIMESTAMP.search(name)
+    if not found:
+        return None
+    year, month = found.group(1)[:4], int(found.group(1)[5:7])
+    return f"{year}H{1 if month <= 6 else 2}"
 
 
 def classify(row) -> str:
@@ -190,6 +234,11 @@ def main() -> int:
                              "gap between two objects")
     parser.add_argument("--turn-max", type=float, default=50.0,
                         help="with --by-bpm, the sharpest turn to include, degrees")
+    parser.add_argument("--over-time", action="store_true",
+                        help="with --by-bpm, split the tempo bands by half-year as well, to "
+                             "test whether the tempo a player comes apart at moves upward. "
+                             "Pooling two years of one player's runs smears exactly that, "
+                             "which is why the single-table version cannot answer it")
     args = parser.parse_args()
 
     geometry, clicks, rhythm, prefix = SOURCES[args.source]
@@ -241,12 +290,18 @@ def main() -> int:
                         label = (f"under {hi:g}" if i == 0 else
                                  f"{lo:g}+" if i == len(BPM_EDGES) - 2 else
                                  f"{lo:g}-{hi:g}")
+                        if args.over_time:
+                            when = half_year(r["replay"])
+                            label = None if when is None else f"{when} {label}"
                         wanted[key] = (label, got[1], got[2])
                         found += 1
                         break
         # Anything the rhythm pass did not cover keeps its turn band and is dropped here,
         # so a missing tempo cannot quietly land in a tempo bucket.
-        wanted = {k: v for k, v in wanted.items() if v[0] in LABELS}
+        keep = (set(LABELS) if not args.over_time else
+                {f"{h} {b}" for h in sorted({half_year(k[0]) for k in wanted}
+                                            - {None}) for b in LABELS})
+        wanted = {k: v for k, v in wanted.items() if v[0] in keep}
         print(f"  tempo found for {len(wanted):,} of them\n", flush=True)
     else:
         print(flush=True)
@@ -314,6 +369,28 @@ def main() -> int:
           "           the judging press, or at the press that judged nothing.\n"
           "  visit    where in the cursor's stay inside the circle the button fell, 0 at the\n"
           "           moment it crossed in and 1 at the moment it crossed out.\n")
+    if args.by_bpm and args.over_time:
+        periods = sorted({b.split(" ", 1)[0] for b, _ in acc})
+        print("The tempo a player comes apart at, by half-year. Each cell is the share of "
+              "acute wide\njumps where the cursor reached the circle, left, and the button "
+              "then fell outside it --\nthe mechanism above -- so a threshold moving upward "
+              "shows as the high numbers marching\nright. Cells under 300 jumps are left "
+              "out. Read it against setup-timeline.csv: the\ntablet, filter chain and button "
+              "firmware all changed inside this window.\n")
+        print(f"  {'half-year':<12}" + "".join(f"{b:>12}" for b in LABELS))
+        for period in periods:
+            row = f"  {period:<12}"
+            for b in LABELS:
+                key = f"{period} {b}"
+                total = sum(acc[(key, name)][0] for name in ORDER)
+                left = acc[(key, "cursor left, then button down")][0]
+                row += f"{left / total:>11.1%} " if total >= 300 else f"{'-':>12}"
+            print(row)
+        print(f"\n  {'n':<12}" + "".join(
+            f"{sum(acc[(f'{p} {b}', name)][0] for p in periods for name in ORDER):>12,}"
+            for b in LABELS))
+        return 0
+
     for band in (LABELS if args.by_bpm else ANGLE.labels):
         total = sum(acc[(band, name)][0] for name in ORDER)
         if total < 500:

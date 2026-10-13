@@ -916,3 +916,33 @@ And the lesson that cost three revisions of streamfail.py: Clicks.cs has written
 exitTime, closestTime, closestDist, turnDist and the stray press with its cursor position since
 the clicks pass existed. The mechanisms were being argued from press samples while the columns
 that separate them sat in build/clicks.csv. Check what the corpus already carries.
+
+## 2026-10-13 — the jump barrier is real, measurable, and has moved from ~140 to ~200 BPM
+
+`PYTHONPATH=tools python3 tools/analysis/arrival.py --source player --by-bpm --over-time`
+
+Player's hypothesis, offered before it was measured: there is a tempo he comes apart at, it
+feels like a barrier ("I can't do it, I can't do it, and **click** it's easy"), it sometimes
+backslides, and it trends higher. Share of acute wide jumps (3.5+ radii, turn under 50 degrees)
+lost to the cursor-reached-it-then-left mechanism, by half-year:
+
+    half-year      under 140  140-160  160-180  180-200  200-220    220+
+    2024H2              2.7%     6.5%     4.0%     5.0%     5.5%    8.7%
+    2025H1              2.5%     2.6%     3.2%     3.9%     7.4%    3.2%
+    2025H2              2.3%     2.4%     2.7%     3.0%     5.7%   10.3%
+    2026H1              2.6%     2.3%     2.3%     3.4%     5.8%   11.2%
+    2026H2              2.9%     1.2%     1.8%     2.5%     4.4%   13.1%
+
+Read down the columns. 140-160 falls fivefold, 160-180 and 180-200 halve, 200-220 barely moves,
+220+ worsens as the frontier. `under 140` is flat at 2.3-2.9% and is the floor. Taking the
+barrier as the first band above 1.5x floor: 140 in 2024H2, 180 in 2025H1, 200 from 2025H2 on.
+And the backsliding is there too -- 180-200 goes 3.0%, 3.4%, 2.5%.
+
+Strengthening the result: the corpus is mostly passes and fails were only recently saved, so
+late periods carry failures early ones do not, which biases 2026 *worse* and it reads better.
+And this is a cursor mechanism, so the button-firmware eras are unlikely to explain it.
+Weakening it: the tablet filter chain changed in October 2026 inside the last bucket, and
+tablet area and mapping changed repeatedly before.
+
+Also corrects the single-table BPM reading two entries up, which pooled 2024 through 2026 and
+therefore smeared the very thing being asked about.
