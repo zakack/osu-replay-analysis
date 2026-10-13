@@ -684,3 +684,14 @@ sits in it. Grouping on `runId` instead gives pooled 1.44, and 1/6 1.29, 1/4 1.3
 1/2 1.51, with 18.8% vs 25.1% over one -- the conclusion is unchanged. The same bug was
 discarding 95% of long runs in `streamfail.py` before it was caught, which is the real lesson:
 run identity is in the data and must not be inferred from index contiguity.
+
+## 2026-10-12 — the stream runs that break started off-path and did not drift; the ones that drift hold
+
+`tools/analysis/streamfail.py` ("along slope", "cross slope" rows)
+
+At 1/4, runs that go on to break carry higher cursor error at every position 0-9 and *smaller*
+growth across them: along-track slope ratio 0.89 at t=-2.8, cross-track 0.82 at t=-4.7. So it
+is not "drifts off the path, then misses" -- a drifting run is more likely to hold. No
+mechanism proposed. Also in that output: the percentage-tempo difference at 1/2 is entirely an
+interval difference (breaking runs 190.0 ms vs 221.9, t=-15.6), a denominator reading itself
+back as an effect.

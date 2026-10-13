@@ -49,7 +49,9 @@ breaking to holding, and Welch's t:
       rate ms/object      2.074    2.620    1.26    5.3
       rate %              2.278    2.890    1.27    5.5
       hit error ms        9.498   10.262    1.08    1.9
+      interval ms        94.611   92.818    0.98   -1.2
       along radii         0.173    0.187    1.08    2.0
+      along residual      0.170    0.187    1.10    2.5
       along slope         0.061    0.054    0.89   -2.8
       cross radii         0.104    0.114    1.10    2.4
       cross slope         0.044    0.036    0.82   -4.7
@@ -59,38 +61,49 @@ breaking to holding, and Welch's t:
       rate ms/object      2.751    2.799    1.02    0.4
       rate %              1.277    1.470    1.15    3.7
       hit error ms       11.133   11.513    1.03    0.9
+      interval ms       221.942  189.997    0.86  -15.6
       along radii         0.117    0.130    1.11    3.3
+      along residual      0.117    0.129    1.10    3.0
       along slope         0.049    0.050    1.02    0.5
       cross radii         0.086    0.092    1.07    1.9
       cross slope         0.040    0.038    0.94   -1.5
 
-Three readings.
+Four readings.
 
-* **A stream breaks on tempo; a chain of jumps breaks on where the cursor is.** At 1/4 the
-  tempo error is the one term that stands out -- 27% higher in runs that go on to break,
-  t=5.5, against t=2.0 and t=2.4 for the two cursor terms. At 1/2 it reverses: absolute
-  tempo error does not separate the groups at all (ratio 1.02, t=0.4) and along-track cursor
-  error is the strongest term (t=3.3). So the same gradient in the miss table has different
-  causes in different rhythms, and a finding that says "you fail late in runs" is pointing at
-  two different problems depending on the snap.
+* **A stream breaks on tempo; a chain of jumps does not.** At 1/4 the tempo error is the one
+  term that stands out -- 27% higher in runs that go on to break, t=5.5 -- and it is tempo
+  rather than tempo's denominator: the two groups' intervals are within 2% of each other
+  (t=-1.2) and the per-object and percentage forms agree. At 1/2 it does not separate the
+  groups at all, ratio 1.02 and t=0.4.
 
-* **All three mechanisms are present in both, and the differences are of degree.** Every
-  ratio is between 1.02 and 1.27. Nothing here says a run breaks for one reason; it says
-  which reason moves first. That matches the obvious intuition and is worth stating plainly,
-  because a ratio of 1.27 with t=5.5 is a reliable difference and a small one.
+* **The percentage form at 1/2 is an interval difference, not a tempo one.** It looks
+  significant (t=3.7) only because the breaking runs are *faster*: 190.0 ms against 221.9,
+  t=-15.6. Dividing by a shorter interval is the whole of the effect, and faster chains
+  missing more is already known. Read the per-object row at 1/2 and ignore the percentage.
+  This is the same trap as reading a cell's score off a quantity its denominator encodes.
 
-* **The 1/2 tempo result depends on how tempo is scaled, which is a caution not a finding.**
-  Per object the error does not separate (t=0.4); as a percentage of the interval it does
-  (t=3.7). The two disagree only if the effect sits in the faster jump runs, since dividing
-  by a shorter interval is what distinguishes the measures. Worth splitting by BPM before
-  any weight is put on it.
+* **What separates a jump chain is where the cursor is, and that is not the tap in disguise.**
+  The cursor is sampled at the press, so a late tap on a cursor tracking the path perfectly
+  already reads as the cursor being ahead: along-track and hit error are mechanically coupled,
+  and a coupling coefficient of 1.00 would mean along-track measured nothing new. Fitted over
+  both groups it is 0.02 at 1/2 and 0.33 at 1/4, and the residual still separates -- t=3.0 at
+  1/2, t=2.5 at 1/4. So the offset is the aiming hand, not the tapping hand read in radii.
 
-Caveats that bound all of the above. The groups are runs pooled over 4,978 players, so this
-is a population statement and not one about any player -- the same split within one player's
-runs is a different and better-controlled question. The comparison is across runs rather than
-within a player, so a player who taps off-tempo and also fails more would produce this table
-without tempo causing any individual failure. And only circles are visible, so a miss on a
-slider head inside positions 0-9 does not disqualify a run from the "clean" group.
+* **The runs that break started further off the path and did not get worse.** At 1/4 the
+  breaking runs carry higher cursor error at every position yet *smaller* growth across
+  positions 0-9: along slope ratio 0.89 at t=-2.8, cross slope 0.82 at t=-4.7. So the picture
+  is not "drifts off the path and then misses" -- the runs that drift are the ones that hold.
+  Unexplained, and the most interesting row in the table.
+
+Caveats that bound all of the above. Every ratio is between 1.02 and 1.27, so all three
+mechanisms are present in both rhythms and this is which one moves first rather than which is
+to blame. The groups are runs pooled over 4,978 players, so it is a population statement: a
+player who taps off-tempo and also fails more would produce the 1/4 table without tempo
+causing any individual failure, and the within-player version is the better question. Only
+circles are visible, so a miss on a slider head inside positions 0-9 does not disqualify a
+run from the clean group. And the cursor is only ever sampled at a press here, which is why
+"the cursor moved too fast along the path" is not yet measured as such -- that needs the
+replay frames between presses, not the press samples.
 
     PYTHONPATH=tools python3 tools/analysis/streamfail.py --cache build/shapes-collected.json
 """
@@ -227,6 +240,20 @@ def main() -> int:
             if gap:
                 # The same slope as a tempo error: ms of phase per object over the interval.
                 here["rate %"].append(100.0 * rate / (sum(gap) / len(gap)))
+            # The interval itself, because a "percentage tempo error" difference between the
+            # groups can be an interval difference rather than a tempo one.
+            if gap:
+                here["interval ms"].append(sum(gap) / len(gap))
+            # Along-track is measured at the press, so a late tap on a cursor tracking the
+            # path perfectly already shows as the cursor being ahead: along ~ velocity x hit
+            # error. Both parts are recorded per run so the coupling can be divided out
+            # instead of assumed away.
+            coupled = [(r["along"], (r["velocity"] or 0.0) * r["error"]) for r in early
+                       if r["along"] is not None and r["own"] and r["error"] is not None
+                       and r["velocity"] is not None]
+            if coupled:
+                here["along pairs"].append((sum(a for a, _ in coupled) / len(coupled),
+                                            sum(x for _, x in coupled) / len(coupled)))
             for name, key in (("along radii", "along"), ("cross radii", "cross")):
                 vals = [r[key] for r in early if r[key] is not None]
                 if vals:
@@ -282,6 +309,7 @@ def main() -> int:
                          "snap": shape["snap"],
                          "size": shape["size"], "error": error, "gap": gap, "own": own,
                          "miss": r["result"] in MISSED, "along": along, "cross": cross,
+                         "velocity": _num(r["requiredVelocity"]),
                          "tx": tx, "ty": ty})
     if held:
         flush(held)
@@ -292,10 +320,29 @@ def main() -> int:
           f"tapped progressively early and one tapped\nprogressively late are equally off "
           f"tempo. t is Welch's on the difference of the two.\n")
 
+    # Along-track with the tap-timing part removed. The coefficient is fitted over both
+    # groups of a snap together, so it cannot absorb the difference being tested.
+    for snap in acc:
+        pairs = [p for outcome in acc[snap] for p in acc[snap][outcome].get("along pairs", [])]
+        if len(pairs) < 20:
+            continue
+        mx = sum(x for _, x in pairs) / len(pairs)
+        my = sum(a for a, _ in pairs) / len(pairs)
+        var = sum((x - mx) ** 2 for _, x in pairs)
+        beta = (sum((x - mx) * (a - my) for a, x in pairs) / var) if var else 0.0
+        for outcome in acc[snap]:
+            acc[snap][outcome]["along residual"] = [
+                a - beta * x for a, x in acc[snap][outcome].get("along pairs", [])]
+        print(f"snap {snap}: along-track regressed on velocity x hit error, "
+              f"coefficient {beta:.2f} (1.00 would be pure coupling)")
+    print()
+
     metrics = [("rate ms/object", "tapping tempo error, ms of phase per object"),
                ("rate %", "the same as a percentage of the interval"),
                ("hit error ms", "mean hit error over the stretch, for reference"),
-               ("along radii", "cursor ahead of or behind the note along its path"),
+               ("interval ms", "the gap itself: a control for the percentage above"),
+               ("along radii", "cursor ahead of or behind the note, measured at the press"),
+               ("along residual", "the same with the tap-timing part divided out"),
                ("along slope", "and whether that is growing, radii per object"),
                ("cross radii", "cursor off the path sideways"),
                ("cross slope", "and whether that is growing, radii per object")]
