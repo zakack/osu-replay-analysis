@@ -16,11 +16,24 @@ property of the file format rather than a request.
 
 A bare list of notes is accepted too. Fields:
 
-    text     required. Prose, with placeholders {N.field} for object N or {A-B.field} for
+    text     optional. Prose, with placeholders {N.field} for object N or {A-B.field} for
              the pattern A..B. The viewer fills them in with the inspector's own formatting.
+             Without text, an object note is a mark: its objects are highlighted on the
+             field and it does not stop playback -- a bookmark, or a way to show a set of
+             objects with no commentary at all.
+    label    optional. A short name, up to 48 characters and with no placeholders: a tag on
+             the field beside the objects, and the name the notes list groups by. Notes
+             sharing a label collapse into one row of the list with a step back and forth.
     objects  an index, or [first, last]: the note is about those objects. Indices are the
              beatmap's object positions, the same numbers the viewer shows and `ora clip`
-             takes. Exactly one of objects or time.
+             takes. Exactly one of objects, time or select.
+    select   instead of objects: {"run": {"snap": "1/4", "size": 3}} makes one note per
+             constant-snap run matching it, with that run's objects. size counts tapped
+             objects -- circles and slider heads, not slider ends -- and is a number or
+             [least, most], defaulting to 3 or more; "circles": true keeps only runs whose
+             taps are all circles. The objects come from the rhythm pass, never from the
+             author. In a select note's text, {run.field} cites the pattern of that note's
+             own run.
     anchor   with objects: which object the pointer goes to. Defaults to the last one.
     point    with objects: "object" (its centre, the default), "press" (where the press
              landed) or "deep" (where the cursor was deepest). Before the press or the deepest
@@ -28,8 +41,8 @@ A bare list of notes is accepted too. Fields:
     time     map time in ms, for a note about a stretch rather than objects.
     until    with time: when it ends. Defaults to three seconds after.
     at       with time: [x, y] in playfield units to point at. Without it the note is a caption.
-    stop     whether playback eases to a halt for it. Defaults to true for object notes and
-             false for time notes.
+    stop     whether playback eases to a halt for it. Defaults to true for an object note
+             with text, and false for a mark or a time note.
 
 Stopping happens just after the last event the note mentions. A note citing {916.press}
 stops once that press has landed, so the field shows what the sentence says; one citing
@@ -50,11 +63,14 @@ REFERENCE = re.compile(r"^(\d+)(?:-(\d+))?\.([a-z]+)$")
 
 # How long a note stays up after its stop, and how long a time note lasts by default.
 HOLD = 1500.0
+MARK_TAIL = 240.0
 CAPTION = 3000.0
 # The viewer withholds the hands' correlation below this many objects; so does a note.
 RHO_MIN = 8
 
-KEYS = {"text", "objects", "anchor", "point", "time", "until", "at", "stop"}
+KEYS = {"text", "label", "objects", "select", "anchor", "point", "time", "until", "at", "stop"}
+# A label is a name for the list and a tag on the field, not a sentence.
+LABEL_MAX = 48
 POINTS = ("object", "press", "deep")
 
 # Per-object placeholders: what the value needs to exist, and what to suggest when it does not.
@@ -166,168 +182,336 @@ def pattern_field(members: list[dict], name: str):
     return table[name]
 
 
-def resolve(raw, document: dict) -> tuple[list[dict], list[str]]:
-    """Validate notes against a scene document. Returns (notes for the payload, errors).
+def read_runs(path: str) -> tuple[list[dict], int]:
+    """Constant-snap runs from `ora rhythm`'s CSV for one replay: (runs, skipped).
 
-    Every problem is collected rather than the first one raised, because an agent fixing a
-    file in a loop pays a full build per round trip.
+    Each run as its snap in beats and the times and kinds of its tapped events. Rebuilt from
+    the run's first event and its size rather than by collecting rows with its id, because
+    neighbouring runs share their boundary event and the CSV files that event under the
+    later run only.
+
+    Then checked, because the CSV only writes events that belong to a group. A run whose
+    gaps reach a beat or more can have members outside any group, and rebuilding it from
+    the rows that were written makes a run with holes in it. Measured on one replay: nine of
+    295 runs, every one at 1 or 2 beats. Those are skipped and counted, never guessed.
+    Every sub-beat run -- the bursts and streams a selector is for -- rebuilds cleanly.
     """
-    objects = [o for o in document["objects"]]
+    import csv
+    with open(path, newline="") as handle:
+        rows = sorted(csv.DictReader(handle), key=lambda r: float(r["time"]))
+    starts = [(k, int(r["runSize"]), float(r["snap"])) for k, r in enumerate(rows)
+              if r["runIndex"] == "0" and r["runId"] != "-1" and r["snap"]]
+    runs, skipped = [], 0
+    for k, size, snap in starts:
+        events = rows[k:k + size]
+        gaps = [(float(b["time"]) - float(a["time"])) / float(a["beatLength"])
+                for a, b in zip(events, events[1:])]
+        if len(events) < size or any(abs(g - snap) > 0.03 for g in gaps):
+            skipped += 1
+            continue
+        tapped = [e for e in events if e["clickIndex"] != "-1"]
+        runs.append({"snap": snap, "taps": [float(e["time"]) for e in tapped],
+                     "kinds": [e["kind"] for e in tapped]})
+    return runs, skipped
+
+
+def snap_value(spec):
+    """A snap as written by an author -- "1/4", 0.25 -- in beats, or None."""
+    if isinstance(spec, bool):
+        return None
+    if isinstance(spec, (int, float)):
+        return float(spec) if spec > 0 else None
+    if isinstance(spec, str):
+        found = re.fullmatch(r"\s*(\d+)\s*/\s*(\d+)\s*", spec)
+        if found and int(found.group(2)) > 0 and int(found.group(1)) > 0:
+            return int(found.group(1)) / int(found.group(2))
+    return None
+
+
+def expand(index: int, note: dict, objects: list[dict], runs: list[dict] | None):
+    """One selector into the marks it matches. Returns (marks, problems, warnings).
+
+    The objects come from the rhythm pass's runs, never from the author: this is where the
+    charter's rule -- the model never decides which objects are in a group -- holds even for
+    an agent asking to mark two hundred bursts. A run's size counts what is tapped in it,
+    circles and slider heads, because a slider end belongs to the rhythm but not to the
+    fingers, and "a 3-note burst" means three taps.
+    """
+    where = f"notes[{index}] (select)"
+    problems, warnings = [], []
+    for key in ("objects", "time", "anchor", "at", "until"):
+        if key in note:
+            problems.append(f"{key} does not go with select; the selector chooses the objects")
+    select = note["select"]
+    if not (isinstance(select, dict) and set(select) == {"run"} and isinstance(select["run"], dict)):
+        return [], [f'{where}: select is {{"run": {{"snap": "1/4", "size": 3}}}}'], []
+    run = select["run"]
+    unknown = sorted(set(run) - {"snap", "size", "circles"})
+    if unknown:
+        problems.append(f"select.run has no field {', '.join(unknown)}; it takes snap, size "
+                        f"and circles")
+    snap = snap_value(run.get("snap"))
+    if snap is None:
+        problems.append('select.run.snap is required: a fraction of a beat like "1/4", or a '
+                        'number of beats')
+    size = run.get("size")
+    if size is None:
+        lo_size, hi_size = 3, 10 ** 9
+    elif isinstance(size, int) and not isinstance(size, bool) and size >= 2:
+        lo_size = hi_size = size
+    elif (isinstance(size, list) and len(size) == 2
+          and all(isinstance(v, int) and not isinstance(v, bool) for v in size)
+          and 2 <= size[0] <= size[1]):
+        lo_size, hi_size = size
+    else:
+        problems.append("select.run.size is a number of tapped objects, 2 or more, or "
+                        "[least, most]")
+        lo_size, hi_size = 3, 10 ** 9
+    circles = run.get("circles", False)
+    if not isinstance(circles, bool):
+        problems.append("select.run.circles is true or false")
+    if runs is None:
+        problems.append("select needs the rhythm pass, which did not run for this replay")
+    if problems:
+        return [], [f"{where}: {p}" for p in problems], []
+
+    by_time = {round(o["t"]): o["i"] for o in objects}
+    label = note.get("label")
+    shape = (f"{size}" if isinstance(size, int) else
+             f"{lo_size}-{hi_size}" if size is not None else "3+")
+    group = label if isinstance(label, str) and label else \
+        f"{run['snap']} runs of {shape}{' circles' if circles else ''}"
+    marks = []
+    for r in runs:
+        if abs(r["snap"] - snap) > 0.01 or not lo_size <= len(r["taps"]) <= hi_size:
+            continue
+        if circles and any(kind != "circle" for kind in r["kinds"]):
+            continue
+        indices = [by_time.get(round(t)) for t in r["taps"]]
+        if None in indices or indices != list(range(indices[0], indices[0] + len(indices))):
+            continue
+        lo, hi = indices[0], indices[-1]
+        mark = {k: v for k, v in note.items() if k != "select"}
+        if isinstance(mark.get("text"), str):
+            mark["text"] = mark["text"].replace("{run.", "{" + f"{lo}-{hi}.")
+        mark["objects"] = [lo, hi]
+        mark["_group"] = group
+        mark["_where"] = f"notes[{index}] (select, objects {lo}-{hi})"
+        marks.append(mark)
+    if not marks:
+        warnings.append(f"{where}: matched no runs on this map ({group})")
+    return marks, [], warnings
+
+
+def resolve(raw, document: dict, runs: list[dict] | None = None):
+    """Validate notes against a scene document.
+
+    Returns (notes for the payload, errors, warnings). Every problem is collected rather than
+    the first one raised, because an agent fixing a file in a loop pays a full build per
+    round trip. A selector's marks share their author's mistakes, so a bad placeholder in a
+    selector is reported once with a count, not two hundred times.
+    """
+    objects = list(document["objects"])
     count = len(objects)
     preempt = document["beatmap"]["timePreempt"]
     errors: list[str] = []
+    warnings: list[str] = []
 
     if isinstance(raw, dict):
         if set(raw) != {"notes"}:
-            return [], ['top level: expected {"notes": [...]} or a bare list of notes']
+            return [], ['top level: expected {"notes": [...]} or a bare list of notes'], []
         raw = raw["notes"]
     if not isinstance(raw, list):
-        return [], ["top level: notes must be a list"]
+        return [], ["top level: notes must be a list"], []
 
     out = []
     for n, note in enumerate(raw):
-        where = f"notes[{n}]"
         if not isinstance(note, dict):
-            errors.append(f"{where}: a note is an object with at least a text")
+            errors.append(f"notes[{n}]: a note is an object, with objects, time or select")
             continue
-        label = note.get("text", "")
+        if "select" in note:
+            marks, problems, said = expand(n, note, objects, runs)
+            errors.extend(problems)
+            warnings.extend(said)
+            failed, first = 0, None
+            for mark in marks:
+                entry, trouble = check(mark, mark.pop("_where"), objects, preempt, count)
+                if trouble:
+                    failed += 1
+                    first = first or trouble
+                else:
+                    entry["group"] = mark["_group"]
+                    out.append(entry)
+            if first:
+                errors.extend(first)
+                if failed > 1:
+                    errors.append(f"notes[{n}] (select): and the same in {failed - 1} more "
+                                  f"of its {len(marks)} marks")
+            continue
+        label = note.get("text") or note.get("label") or ""
+        where = f"notes[{n}]"
         if isinstance(label, str) and label:
             where += f' ("{label[:40]}{"..." if len(label) > 40 else ""}")'
-        problems: list[str] = []
-
-        unknown = sorted(set(note) - KEYS)
-        if unknown:
-            problems.append(f"unknown field {', '.join(unknown)}; the fields are "
-                            f"{', '.join(sorted(KEYS))}")
-        text = note.get("text")
-        if not isinstance(text, str) or not text.strip():
-            problems.append("text is required and must be a non-empty string")
-            text = ""
-
-        has_objects, has_time = "objects" in note, "time" in note
-        if has_objects == has_time:
-            problems.append("give exactly one of objects or time")
-
-        entry: dict = {"text": text}
-        events: list[float] = []
-
-        # Placeholders first, since they decide the stop.
-        for match in PLACEHOLDER.finditer(text):
-            body = match.group(1)
-            ref = REFERENCE.match(body)
-            if not ref:
-                problems.append(f"{{{body}}} is not a placeholder; write {{N.field}} for an "
-                                f"object or {{A-B.field}} for a pattern")
-                continue
-            a, b, name = int(ref.group(1)), ref.group(2), ref.group(3)
-            if b is None:
-                if not 0 <= a < count:
-                    problems.append(f"{{{body}}}: object {a} does not exist (the map has "
-                                    f"0-{count - 1})")
-                    continue
-                if name not in OBJECT_FIELDS:
-                    problems.append(f"{{{body}}}: no object field '{name}'; the fields are "
-                                    f"{', '.join(OBJECT_FIELDS)}")
-                    continue
-                present, evs, why = object_field(objects[a], name)
-                if not present:
-                    problems.append(f"{{{body}}} is empty for object {a}: " + why.replace("{N.", "{" + str(a) + "."))
-                    continue
-            else:
-                b = int(b)
-                if not (0 <= a <= b < count):
-                    problems.append(f"{{{body}}}: pattern {a}-{b} is not a range inside "
-                                    f"0-{count - 1}")
-                    continue
-                if name not in PATTERN_FIELDS:
-                    problems.append(f"{{{body}}}: no pattern field '{name}'; the fields are "
-                                    f"{', '.join(PATTERN_FIELDS)}")
-                    continue
-                members = [o for o in objects[a:b + 1] if o["type"] != "spinner"]
-                if not members:
-                    problems.append(f"{{{body}}}: pattern {a}-{b} holds only spinners")
-                    continue
-                present, evs, why = pattern_field(members, name)
-                if not present:
-                    problems.append(f"{{{body}}} is empty: {why}")
-                    continue
-            events.extend(evs)
-
-        if has_objects and not has_time:
-            span = note["objects"]
-            if isinstance(span, bool) or not (isinstance(span, int) or (
-                    isinstance(span, list) and len(span) == 2
-                    and all(isinstance(v, int) and not isinstance(v, bool) for v in span))):
-                problems.append("objects is an index or [first, last]")
-            else:
-                lo, hi = (span, span) if isinstance(span, int) else span
-                if not (0 <= lo <= hi < count):
-                    problems.append(f"objects {lo}-{hi} is not a range inside 0-{count - 1}")
-                else:
-                    anchor = note.get("anchor", hi)
-                    if not isinstance(anchor, int) or isinstance(anchor, bool) or not lo <= anchor <= hi:
-                        problems.append(f"anchor must be one of the note's objects, {lo}-{hi}")
-                        anchor = hi
-                    point = note.get("point", "object")
-                    if point not in POINTS:
-                        problems.append(f"point is one of {', '.join(POINTS)}")
-                    if "at" in note or "until" in note:
-                        problems.append("at and until belong to time notes; an object note "
-                                        "is timed and placed by its objects")
-
-                    # Stop just after the last event the note cites, and never before the
-                    # anchor's own press: the field should already show what the text says.
-                    # Not after the last object's: a pattern note anchored on one miss is
-                    # about that miss, and stopping four seconds later at the pattern's end
-                    # shows something else. A note that cites the whole pattern ({A-B.x})
-                    # carries every member's events and so stops at the end anyway.
-                    last = objects[hi]
-                    held = press_time(objects[anchor])
-                    base = [held if held is not None else objects[anchor]["t"]]
-                    stop_at = max(base + events) + 1
-                    end = last.get("endTime", last["t"])
-                    entry.update({
-                        "kind": "objects", "lo": lo, "hi": hi, "anchor": anchor,
-                        "point": point if point in POINTS else "object",
-                        "from": objects[lo]["t"] - preempt,
-                        "to": max(stop_at, end) + HOLD,
-                        "stop": note.get("stop", True), "stopAt": stop_at,
-                    })
-
-        if has_time and not has_objects:
-            time = note["time"]
-            until = note.get("until")
-            if not isinstance(time, (int, float)) or isinstance(time, bool) or not math.isfinite(time):
-                problems.append("time is a number of milliseconds of map time")
-            else:
-                if until is None:
-                    until = time + CAPTION
-                if not isinstance(until, (int, float)) or isinstance(until, bool) or until <= time:
-                    problems.append("until must be a number after time")
-                    until = time + CAPTION
-                at = note.get("at")
-                if at is not None and not (isinstance(at, list) and len(at) == 2 and all(
-                        isinstance(v, (int, float)) and not isinstance(v, bool) for v in at)):
-                    problems.append("at is [x, y] in playfield units (512 x 384, y down)")
-                    at = None
-                if "anchor" in note or "point" in note:
-                    problems.append("anchor and point belong to object notes; a time note "
-                                    "points with at")
-                entry.update({
-                    "kind": "time", "from": time, "to": until,
-                    "stop": note.get("stop", False), "stopAt": time + 1,
-                })
-                if at is not None:
-                    entry["at"] = at
-
-        if not isinstance(entry.get("stop", True), bool):
-            problems.append("stop is true or false")
-
-        if problems:
-            errors.extend(f"{where}: {p}" for p in problems)
+        entry, trouble = check(note, where, objects, preempt, count)
+        if trouble:
+            errors.extend(trouble)
         else:
             out.append(entry)
-    return out, errors
+    return out, errors, warnings
+
+
+def check(note: dict, where: str, objects: list[dict], preempt: float, count: int):
+    """One note, hand-written or expanded from a selector: (payload entry, problems)."""
+    problems: list[str] = []
+
+    unknown = sorted(set(note) - KEYS - {"_group"})
+    if unknown:
+        problems.append(f"unknown field {', '.join(unknown)}; the fields are "
+                        f"{', '.join(sorted(KEYS))}")
+    text = note.get("text", "")
+    if not isinstance(text, str):
+        problems.append("text is a string")
+        text = ""
+    label = note.get("label")
+    if label is not None and (not isinstance(label, str) or not label.strip()
+                              or len(label) > LABEL_MAX or "{" in label):
+        problems.append(f"label is a short name, 1-{LABEL_MAX} characters, with no "
+                        f"placeholders; numbers go in text")
+        label = None
+
+    has_objects, has_time = "objects" in note, "time" in note
+    if has_objects == has_time:
+        problems.append("give exactly one of objects, time or select")
+
+    entry: dict = {"text": text}
+    if label:
+        entry["label"] = label
+    events: list[float] = []
+
+    # Placeholders first, since they decide the stop.
+    for match in PLACEHOLDER.finditer(text):
+        body = match.group(1)
+        ref = REFERENCE.match(body)
+        if not ref:
+            hint = (" -- {run.field} only works inside a select note"
+                    if body.startswith("run.") else "")
+            problems.append(f"{{{body}}} is not a placeholder; write {{N.field}} for an "
+                            f"object or {{A-B.field}} for a pattern{hint}")
+            continue
+        a, b, name = int(ref.group(1)), ref.group(2), ref.group(3)
+        if b is None:
+            if not 0 <= a < count:
+                problems.append(f"{{{body}}}: object {a} does not exist (the map has "
+                                f"0-{count - 1})")
+                continue
+            if name not in OBJECT_FIELDS:
+                problems.append(f"{{{body}}}: no object field '{name}'; the fields are "
+                                f"{', '.join(OBJECT_FIELDS)}")
+                continue
+            present, evs, why = object_field(objects[a], name)
+            if not present:
+                problems.append(f"{{{body}}} is empty for object {a}: "
+                                + why.replace("{N.", "{" + str(a) + "."))
+                continue
+        else:
+            b = int(b)
+            if not (0 <= a <= b < count):
+                problems.append(f"{{{body}}}: pattern {a}-{b} is not a range inside "
+                                f"0-{count - 1}")
+                continue
+            if name not in PATTERN_FIELDS:
+                problems.append(f"{{{body}}}: no pattern field '{name}'; the fields are "
+                                f"{', '.join(PATTERN_FIELDS)}")
+                continue
+            members = [o for o in objects[a:b + 1] if o["type"] != "spinner"]
+            if not members:
+                problems.append(f"{{{body}}}: pattern {a}-{b} holds only spinners")
+                continue
+            present, evs, why = pattern_field(members, name)
+            if not present:
+                problems.append(f"{{{body}}} is empty: {why}")
+                continue
+        events.extend(evs)
+
+    if has_objects and not has_time:
+        span = note["objects"]
+        if isinstance(span, bool) or not (isinstance(span, int) or (
+                isinstance(span, list) and len(span) == 2
+                and all(isinstance(v, int) and not isinstance(v, bool) for v in span))):
+            problems.append("objects is an index or [first, last]")
+        else:
+            lo, hi = (span, span) if isinstance(span, int) else span
+            if not (0 <= lo <= hi < count):
+                problems.append(f"objects {lo}-{hi} is not a range inside 0-{count - 1}")
+            else:
+                anchor = note.get("anchor", hi)
+                if not isinstance(anchor, int) or isinstance(anchor, bool) or not lo <= anchor <= hi:
+                    problems.append(f"anchor must be one of the note's objects, {lo}-{hi}")
+                    anchor = hi
+                point = note.get("point", "object")
+                if point not in POINTS:
+                    problems.append(f"point is one of {', '.join(POINTS)}")
+                if "at" in note or "until" in note:
+                    problems.append("at and until belong to time notes; an object note "
+                                    "is timed and placed by its objects")
+
+                # Stop just after the last event the note cites, and never before the
+                # anchor's own press: the field should already show what the text says.
+                # Not after the last object's: a pattern note anchored on one miss is
+                # about that miss, and stopping four seconds later at the pattern's end
+                # shows something else. A note that cites the whole pattern ({A-B.x})
+                # carries every member's events and so stops at the end anyway.
+                last = objects[hi]
+                held = press_time(objects[anchor])
+                base = [held if held is not None else objects[anchor]["t"]]
+                stop_at = max(base + events) + 1
+                end = last.get("endTime", last["t"])
+                # A note with words is read, so it stops; a bare mark is a highlight, and
+                # stopping on two hundred of them would be the brake at its worst.
+                entry.update({
+                    "kind": "objects", "lo": lo, "hi": hi, "anchor": anchor,
+                    "point": point if point in POINTS else "object",
+                    "from": objects[lo]["t"] - preempt,
+                    # A note is held up long enough to read; a mark only as long as its
+                    # objects are on screen, or neighbouring marks overlap and the list
+                    # cannot say which one the playhead is in.
+                    "to": max(stop_at, end) + (HOLD if text.strip() else MARK_TAIL),
+                    "stop": note.get("stop", bool(text.strip())), "stopAt": stop_at,
+                })
+
+    if has_time and not has_objects:
+        time = note["time"]
+        until = note.get("until")
+        if not isinstance(time, (int, float)) or isinstance(time, bool) or not math.isfinite(time):
+            problems.append("time is a number of milliseconds of map time")
+        else:
+            if until is None:
+                until = time + CAPTION
+            if not isinstance(until, (int, float)) or isinstance(until, bool) or until <= time:
+                problems.append("until must be a number after time")
+                until = time + CAPTION
+            at = note.get("at")
+            if at is not None and not (isinstance(at, list) and len(at) == 2 and all(
+                    isinstance(v, (int, float)) and not isinstance(v, bool) for v in at)):
+                problems.append("at is [x, y] in playfield units (512 x 384, y down)")
+                at = None
+            if "anchor" in note or "point" in note:
+                problems.append("anchor and point belong to object notes; a time note "
+                                "points with at")
+            if not text.strip() and not label:
+                problems.append("a time note needs text or a label: with neither there is "
+                                "nothing to show and no objects to highlight")
+            entry.update({
+                "kind": "time", "from": time, "to": until,
+                "stop": note.get("stop", False), "stopAt": time + 1,
+            })
+            if at is not None:
+                entry["at"] = at
+
+    if not isinstance(entry.get("stop", True), bool):
+        problems.append("stop is true or false")
+
+    return (None if problems else entry), [f"{where}: {p}" for p in problems]
 
 
 def values(text: str, document: dict) -> list[str]:

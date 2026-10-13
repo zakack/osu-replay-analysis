@@ -68,7 +68,7 @@ def scene(replay: str, destination: str) -> dict:
         return json.load(handle)
 
 
-def inspect(replay: str, work: str) -> dict[int, dict]:
+def inspect(replay: str, work: str) -> tuple[dict[int, dict], list[dict] | None]:
     """Per-object numbers the analysis already has, for the viewer's object inspector.
 
     The viewer draws nothing it computed itself, and that holds for the inspector too:
@@ -78,7 +78,9 @@ def inspect(replay: str, work: str) -> dict[int, dict]:
     own through a one-file folder first. Keyed by start time rounded to the millisecond,
     which is how the two CSVs and the scene document agree on an object.
 
-    Returns an empty dict on any failure. The inspector is an addition to the viewer, not
+    Returns (numbers, runs): the runs are the rhythm pass's constant-snap stretches, which
+    note selectors pick objects from. An empty dict and no runs on any failure. The
+    inspector is an addition to the viewer, not
     a precondition of it, and a lap that cannot be inspected is still worth watching.
     """
     folder = os.path.join(work, "inspect")
@@ -87,16 +89,18 @@ def inspect(replay: str, work: str) -> dict[int, dict]:
     corpus = os.path.join(work, "inspect.json")
     geometry = os.path.join(work, "inspect-geometry.csv")
     clicks = os.path.join(work, "inspect-clicks.csv")
+    rhythm = os.path.join(work, "inspect-rhythm.csv")
 
     for command in (["survey", "--out", corpus, folder],
                     ["geometry", "--corpus", corpus, "--out", geometry],
-                    ["clicks", "--corpus", corpus, "--out", clicks]):
+                    ["clicks", "--corpus", corpus, "--out", clicks],
+                    ["rhythm", "--corpus", corpus, "--out", rhythm]):
         result = subprocess.run(["dotnet", ORA, *command], capture_output=True, text=True,
                                 cwd=ROOT)
         if result.returncode != 0 or (command[0] != "survey"
                                       and not os.path.exists(command[-1])):
             print(f"  inspector: `ora {command[0]}` failed, building without it")
-            return {}
+            return {}, None
 
     def num(text):
         try:
@@ -133,7 +137,13 @@ def inspect(replay: str, work: str) -> dict[int, dict]:
                 "zx": num(r["strayX"]),
                 "zy": num(r["strayY"]),
             })
-    return out
+    # The runs a selector picks from: constant-snap stretches, from the same rhythm pass the
+    # analysis uses, at its default gap and tolerance.
+    runs, skipped = annotations.read_runs(rhythm)
+    if skipped:
+        print(f"  rhythm: {skipped} run(s) at a beat or wider could not be rebuilt and are "
+              f"left out of selectors")
+    return out, runs
 
 
 def attach(document: dict, numbers: dict[int, dict]) -> int:
@@ -298,7 +308,8 @@ def main() -> int:
         print(f"{len(subject['objects'])} objects, {subject['frameCount']} frames, "
               f"spread {spread(subject)}ms")
 
-        matched = attach(subject, inspect(args.replay, work))
+        numbers, runs = inspect(args.replay, work)
+        matched = attach(subject, numbers)
         clickable = sum(1 for o in subject["objects"] if o["type"] != "spinner")
         print(f"inspector: {matched} of {clickable} objects carry geometry and cursor visits")
 
@@ -316,7 +327,10 @@ def main() -> int:
         # Notes are validated before anything slow, and every problem is reported at once.
         notes = []
         if args.notes:
-            notes, problems = annotations.resolve(annotations.load(args.notes), subject)
+            notes, problems, warnings = annotations.resolve(
+                annotations.load(args.notes), subject, runs)
+            for w in warnings:
+                print("  warning: " + w, file=sys.stderr)
             if problems:
                 print(f"\n{len(problems)} problem(s) in {args.notes}:", file=sys.stderr)
                 for p in problems:
@@ -325,13 +339,26 @@ def main() -> int:
             stops = sum(1 for n in notes if n["stop"])
             print(f"notes: {len(notes)} valid, {stops} stop playback")
             if args.check:
+                # A selector's marks are summarised -- how many, and the first few -- since
+                # two hundred identical rows tell an author less than one count does.
+                shown: dict[str, int] = {}
                 for n in notes:
+                    group = n.get("group")
+                    if group is not None:
+                        shown[group] = shown.get(group, 0) + 1
+                        if shown[group] > 3:
+                            continue
                     where = (f"objects {n['lo']}-{n['hi']}" if n["kind"] == "objects"
                              else f"{n['from']:.0f}-{n['to']:.0f} ms")
                     stop = f"stops at {n['stopAt']:.0f} ms" if n["stop"] else "no stop"
-                    print(f"  {where:<22} {stop:<20} {n['text'][:70]}")
+                    words = n["text"] or f"(mark{', ' + n['label'] if n.get('label') else ''})"
+                    tag = f"[{group}] " if group is not None else ""
+                    print(f"  {where:<22} {stop:<20} {tag}{words[:60]}")
                     for line in annotations.values(n["text"], subject):
                         print(f"  {'':<22} {'':<20}   {line}")
+                for group, count in shown.items():
+                    if count > 3:
+                        print(f"  [{group}]: {count} marks in all, first three shown")
                 return 0
 
         paths, field = args.reference, "reference"

@@ -50,6 +50,31 @@ Choose objects from these rows, or better, take them from a deterministic findin
 - Use `time`/`until` (ms of map time) only for a stretch with no objects to name: a section
   or a break. Those notes show as captions and don't stop playback unless you add
   `"stop": true`.
+
+## Marks, labels and selectors
+
+`text` is optional. A note without it is a **mark**: its objects are highlighted on the field
+and playback doesn't stop. Use marks for bookmarks, or whenever the player wants objects shown
+without commentary. Never add text the player didn't ask for.
+
+`label` is a short name, up to 48 characters, with no placeholders. It is a tag beside the
+objects, and the name the notes list groups by: notes sharing a label collapse into one row
+with ◀ ▶ to step through them.
+
+To mark every instance of a rhythm, **use a selector, never a hand-made list of objects**:
+
+```json
+{"select": {"run": {"snap": "1/4", "size": 3}}, "label": "3-note burst"}
+{"select": {"run": {"snap": "1/4", "size": [5, 12], "circles": true}}, "label": "stream",
+ "text": "Button {run.press}, {run.misses} missed."}
+```
+
+The selector picks the objects from the rhythm pass's constant-snap runs: one mark per run.
+`size` counts tapped objects (circles and slider heads; slider ends belong to the rhythm but
+aren't tapped). It is a number or `[least, most]` and defaults to 3 or more. `"circles": true`
+keeps only runs where every tap is a circle. In a selector's text, `{run.field}` cites each
+mark's own run with the pattern fields. A selector with no matches is a warning, not an error,
+because a map with no 1/8 runs is not a mistake.
 - Name the hand whenever you say early, late or rush: "cursor early", "button late". "Late"
   on its own once described a cursor-rushing miss backward.
 

@@ -356,6 +356,53 @@
 
   .callout.held { border-color: rgba(155, 141, 240, 1); }
 
+  .callout-tag {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 9.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: rgba(155, 141, 240, 1);
+    margin-bottom: 2px;
+  }
+
+  /* A run of marks sharing a label: one row, a count, and a step back and forth. */
+  .note-group {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 4px;
+    border-radius: 2px;
+    color: var(--dim);
+    font-size: 12px;
+  }
+
+  .note-group.active { color: var(--text); background: var(--panel-2); }
+
+  .note-group .group-name {
+    border: 0;
+    background: none;
+    padding: 2px 0;
+    text-align: left;
+    font-family: Archivo, sans-serif;
+    font-size: 12px;
+    letter-spacing: 0;
+    color: inherit;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .note-group .group-count {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 10.5px;
+    color: var(--faint);
+    padding: 0 4px;
+  }
+
+  .note-group button.step { padding: 2px 7px; font-size: 10px; }
+
   /* A note about a stretch of time with nothing to point at: a caption along the bottom. */
   .callout.caption { max-width: 70%; text-align: center; border-color: rgba(147, 166, 176, .35); }
 
@@ -1342,10 +1389,59 @@
     return { x: o.x, y: o.y };
   }
 
+  // A mark -- a note with no text -- is a highlight on its objects, drawn while each one is
+  // on screen and fading with it, with its label as a tag by the first. No box, no leader:
+  // a mark is asked for precisely when nothing should be said.
+  function drawMark(n, t, r) {
+    var tagged = false;
+    for (var k = n.lo; k <= n.hi; k++) {
+      var o = OBJ[k];
+      if (o.type === "spinner") continue;
+      var end = o.endTime != null ? o.endTime : o.t;
+      var a = fadeIn(o, t);
+      if (t > end) a *= Math.max(0, 1 - (t - end) / 240);
+      if (a <= .01) continue;
+      sx.beginPath();
+      sx.arc(px(o.x), py(o.y), r * 1.12, 0, 6.2832);
+      sx.fillStyle = rgba(ACCENT, .1 * a);
+      sx.fill();
+      sx.strokeStyle = rgba(ACCENT, .6 * a);
+      sx.lineWidth = 2.2;
+      sx.stroke();
+      if (n.label && !tagged) {
+        sx.font = "500 10.5px 'IBM Plex Mono', monospace";
+        sx.textBaseline = "bottom";
+        sx.fillStyle = rgba(ACCENT, .9 * a);
+        // Up and to the right of the circle, or up and to the left near the right edge.
+        var width = sx.measureText(n.label).width;
+        var right = px(o.x) + r * .9 + width < view.w - 6;
+        var lx = px(o.x) + (right ? r * .9 : -r * .9), ly = Math.max(14, py(o.y) - r * .95);
+        // Neighbouring marks with the same label get one tag between them: the second says
+        // nothing the first did not, and two of them inches apart read as a smudge.
+        var near = tagsDrawn.some(function (d) {
+          return d.label === n.label && Math.abs(d.x - lx) < width && Math.abs(d.y - ly) < 28;
+        });
+        if (!near) {
+          sx.textAlign = right ? "left" : "right";
+          sx.fillText(n.label, lx, ly);
+          tagsDrawn.push({ label: n.label, x: lx, y: ly });
+        }
+        tagged = true;
+      }
+    }
+  }
+
+  var tagsDrawn = [];
+
   function drawNotes(t, r) {
     var placed = [];
+    tagsDrawn = [];
     for (var k = 0; k < NOTES.length; k++) {
       var n = NOTES[k];
+      if (!n.text) {
+        if (n.kind === "objects" && t >= n.from && t <= n.to) drawMark(n, t, r);
+        continue;
+      }
       var a = noteAlpha(n, t);
       var el = noteEls[k];
       if (a <= 0) {
@@ -1355,6 +1451,12 @@
       if (!el) {
         el = noteEls[k] = document.createElement("div");
         renderNote(el, n.text);
+        if (n.label) {
+          var tag = document.createElement("div");
+          tag.className = "callout-tag";
+          tag.textContent = n.label;
+          el.insertBefore(tag, el.firstChild);
+        }
         noteLayer.appendChild(el);
       }
       var anchor = noteAnchor(n, t);
@@ -1528,6 +1630,14 @@
     var hx = ((t - START) / (END - START)) * w;
     // Note marks along the top: where each stop is, and a time note's whole stretch.
     NOTES.forEach(function (n) {
+      // A mark is a short faint tick, so seventy-six of them read as a texture along the
+      // top rather than a fence; a note with words keeps its triangle.
+      if (!n.text) {
+        var mx = (OBJ[n.lo].t - START) / (END - START) * w;
+        tx.fillStyle = rgba(ACCENT, .55);
+        tx.fillRect(mx - .5, 0, 1.5, 4);
+        return;
+      }
       var at = ((n.stop ? n.stopAt : n.from) - START) / (END - START) * w;
       if (n.kind === "time") {
         var a = (n.from - START) / (END - START) * w, b = (n.to - START) / (END - START) * w;
@@ -2376,43 +2486,139 @@
   }
 
   // ---- the notes list -------------------------------------------------------
-  // Every note in time order. Clicking one goes to the moment it stops at -- or a time
-  // note's start -- and selects its objects, so a pattern note is one click from looping.
+  // Every note in time order. Notes that share a group -- the marks one selector made, or
+  // hand-written notes sharing a label -- collapse into one row with a count and a step
+  // back and forth, because seventy-six bursts as seventy-six rows would bury everything
+  // else in the list. Going to a note selects its objects, so one more click loops it.
   var notesList = document.getElementById("notes-list");
-  var noteItems = [];
+  var listRows = [];
+
+  // Where going to a note puts the playhead: a note with words at its stop, where it is
+  // read; a mark at the start of its objects' approach, where pressing play shows it.
+  function noteMoment(n) {
+    if (n.kind === "time") return n.from + 1;
+    if (n.text) return n.stopAt;
+    return Math.max(START, n.from + 1);
+  }
+
+  function goToNote(n) {
+    setPlaying(false);
+    if (n.kind === "objects") {
+      anchor = n.lo;
+      t = noteMoment(n);
+      choose(n.lo, n.hi);
+    } else {
+      t = noteMoment(n);
+      render();
+    }
+  }
+
+  function noteRow(n) {
+    var item = document.createElement("button");
+    item.className = "note-item";
+    var when = document.createElement("span");
+    when.className = "note-time";
+    when.textContent = clock(noteMoment(n)).slice(0, -2);
+    var body = document.createElement("span");
+    if (n.text) renderNote(body, n.text);
+    else body.textContent = (n.label ? n.label + " · " : "") + "objects " + n.lo +
+                            (n.hi > n.lo ? "–" + n.hi : "");
+    item.appendChild(when);
+    item.appendChild(body);
+    item.addEventListener("click", function () { goToNote(n); });
+    return item;
+  }
+
+  function groupRow(name, members) {
+    var row = document.createElement("div");
+    row.className = "note-group";
+    var title = document.createElement("button");
+    title.className = "group-name";
+    title.textContent = name;
+    title.title = "Go to the next one";
+    var count = document.createElement("span");
+    count.className = "group-count";
+    var back = document.createElement("button");
+    back.className = "step";
+    back.textContent = "◀";
+    back.title = "Previous";
+    var on = document.createElement("button");
+    on.className = "step";
+    on.textContent = "▶";
+    on.title = "Next";
+    row.appendChild(title);
+    row.appendChild(count);
+    row.appendChild(back);
+    row.appendChild(on);
+
+    // Stepping remembers where it last went, so the first mark is reachable even when it
+    // sits at the very start of the map, and falls back to the playhead once anything else
+    // has moved it -- a seek, a scrub, a loop.
+    var state = { index: -1, at: null };
+    function step(dir) {
+      var i, k;
+      if (state.at !== null && Math.abs(t - state.at) < .5) {
+        i = (state.index + dir + members.length) % members.length;
+      } else if (dir > 0) {
+        i = 0;
+        for (k = 0; k < members.length; k++) if (noteMoment(members[k]) >= t - 1) { i = k; break; }
+      } else {
+        i = members.length - 1;
+        for (k = members.length - 1; k >= 0; k--) if (noteMoment(members[k]) < t - 1) { i = k; break; }
+      }
+      goToNote(members[i]);
+      state.index = i;
+      state.at = t;
+    }
+    title.addEventListener("click", function () { step(1); });
+    on.addEventListener("click", function () { step(1); });
+    back.addEventListener("click", function () { step(-1); });
+    return { el: row, count: count, members: members, state: state };
+  }
+
   if (NOTES.length) {
     document.getElementById("notes-card").hidden = false;
-    NOTES.map(function (n, k) { return { n: n, k: k }; })
-         .sort(function (a, b) { return a.n.stopAt - b.n.stopAt; })
-         .forEach(function (entry) {
-      var n = entry.n;
-      var item = document.createElement("button");
-      item.className = "note-item";
-      var when = document.createElement("span");
-      when.className = "note-time";
-      when.textContent = clock(n.kind === "time" ? n.from : n.stopAt).slice(0, -2);
-      var body = document.createElement("span");
-      renderNote(body, n.text);
-      item.appendChild(when);
-      item.appendChild(body);
-      item.addEventListener("click", function () {
-        setPlaying(false);
-        t = n.kind === "time" ? n.from + 1 : n.stopAt;
-        if (n.kind === "objects") {
-          anchor = n.lo;
-          choose(n.lo, n.hi);
-        } else {
-          render();
-        }
-      });
-      notesList.appendChild(item);
-      noteItems.push({ el: item, n: n });
+    var ordered = NOTES.slice().sort(function (a, b) { return noteMoment(a) - noteMoment(b); });
+    var groups = {};
+    ordered.forEach(function (n) {
+      var key = n.group || n.label;
+      if (key) (groups[key] = groups[key] || []).push(n);
+    });
+    var placedGroups = {};
+    ordered.forEach(function (n) {
+      var key = n.group || n.label;
+      if (key && groups[key].length > 1) {
+        if (placedGroups[key]) return;
+        placedGroups[key] = true;
+        var g = groupRow(key, groups[key]);
+        notesList.appendChild(g.el);
+        listRows.push({ el: g.el, members: groups[key], count: g.count, state: g.state });
+      } else {
+        var item = noteRow(n);
+        notesList.appendChild(item);
+        listRows.push({ el: item, members: [n] });
+      }
     });
   }
 
   function markNotes(t) {
-    noteItems.forEach(function (it) {
-      it.el.classList.toggle("active", t >= it.n.from && t <= it.n.to);
+    listRows.forEach(function (row) {
+      // The one just stepped to, while the playhead has not moved; otherwise the first
+      // whose span holds the playhead.
+      var current = -1;
+      if (row.state && row.state.at !== null && Math.abs(t - row.state.at) < .5) {
+        current = row.state.index;
+      } else {
+        for (var i = 0; i < row.members.length; i++) {
+          var n = row.members[i];
+          if (t >= n.from && t <= n.to) { current = i; break; }
+        }
+      }
+      row.el.classList.toggle("active", current >= 0);
+      // "12 / 76" while inside one of them, "76" otherwise.
+      if (row.count) {
+        row.count.textContent = (current >= 0 ? (current + 1) + " / " : "") + row.members.length;
+      }
     });
   }
 
