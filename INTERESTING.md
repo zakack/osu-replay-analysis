@@ -714,3 +714,20 @@ against its offset from a chord or inside-cut path, and see which one predicts h
 the cursor path between presses, so it needs replay frames rather than the geometry CSV's
 at-press samples. Would also reframe "stray" in the existing stream work, which is defined
 against circle centres.
+
+## 2026-10-12 — correction: "the runs that drift are the ones that hold" was between-player
+
+`tools/analysis/streamfail.py --source player`, and `--source player --since 2026-01-03`
+
+Two entries above record that runs which break carry higher cursor error with *smaller* growth
+across positions 0-9, in the population corpus (along slope t=-2.8, cross slope t=-4.6). It
+does not replicate within one player: all-time the along slope difference is t=-0.8 and the
+cross slope *reverses* to t=+3.0, and inside one button era both are null (t=-1.4, t=+1.3). So
+it was variation between players, not a property of a run. The centre-to-centre hypothesis
+logged above loses this as its motivation -- it is still worth testing on its own merits, and
+the overlapping-hitbox reasoning does not depend on that row.
+
+What does replicate, across the population, the player's whole history and one button era: a
+chain of 1/2 jumps breaks on along-track cursor offset (t=3.3 / 7.9 / 3.9) and never on
+tapping tempo (t=0.4 / -0.7 / 0.8), while a 1/4 stream breaks on both (tempo t=5.3 / 4.5 / 4.5,
+along-track t=2.5 / 4.5 / 3.7). Cross-track is weakest everywhere and null within one era.

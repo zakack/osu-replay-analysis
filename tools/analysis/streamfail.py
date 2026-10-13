@@ -68,44 +68,84 @@ breaking to holding, and Welch's t:
       cross radii         0.086    0.092    1.07    1.9
       cross slope         0.040    0.038    0.94   -1.5
 
-Four readings.
+**The same test on one player's own runs** (`--source player`, 17,824 replays, 15,608
+qualifying runs), which is the question a diagnosis actually asks:
 
-* **A stream breaks on tempo; a chain of jumps does not.** At 1/4 the tempo error is the one
-  term that stands out -- 27% higher in runs that go on to break, t=5.5 -- and it is tempo
-  rather than tempo's denominator: the two groups' intervals are within 2% of each other
-  (t=-1.2) and the per-object and percentage forms agree. At 1/2 it does not separate the
-  groups at all, ratio 1.02 and t=0.4.
+    snap 0.25: 5,569 runs hold, 2,414 break    snap 0.5: 5,072 hold, 2,553 break
+      metric              holds   breaks  ratio     t      holds   breaks  ratio     t
+      rate ms/object      2.138    2.342   1.10   4.5      2.358    2.325   0.99  -0.7
+      rate %              2.310    2.541   1.10   4.6      1.297    1.267   0.98  -1.1
+      interval ms        97.735  102.260   1.05   2.7    188.454  195.138   1.04   2.7
+      along radii         0.203    0.217   1.07   3.7      0.146    0.169   1.16   7.9
+      along residual      0.197    0.214   1.09   4.5      0.146    0.169   1.16   7.8
+      along slope         0.063    0.062   0.98  -0.8      0.053    0.055   1.04   1.8
+      cross radii         0.126    0.130   1.04   1.8      0.107    0.116   1.08   3.9
+      cross slope         0.046    0.049   1.06   3.0      0.049    0.051   1.06   2.5
 
-* **The percentage form at 1/2 is an interval difference, not a tempo one.** It looks
-  significant (t=3.7) only because the breaking runs are *faster*: 190.0 ms against 221.9,
-  t=-15.6. Dividing by a shorter interval is the whole of the effect, and faster chains
-  missing more is already known. Read the per-object row at 1/2 and ignore the percentage.
-  This is the same trap as reading a cell's score off a quantity its denominator encodes.
+Restricted to one button era (`--since 2026-01-03`, the doubletap regime, 5,200 replays and
+7,601 runs), since the tempo metrics are exactly what `setup-timeline.csv`'s eras move:
 
-* **What separates a jump chain is where the cursor is, and that is not the tap in disguise.**
-  The cursor is sampled at the press, so a late tap on a cursor tracking the path perfectly
-  already reads as the cursor being ahead: along-track and hit error are mechanically coupled,
-  and a coupling coefficient of 1.00 would mean along-track measured nothing new. Fitted over
-  both groups it is 0.02 at 1/2 and 0.33 at 1/4, and the residual still separates -- t=3.0 at
-  1/2, t=2.5 at 1/4. So the offset is the aiming hand, not the tapping hand read in radii.
+    snap 0.25: 3,114 hold, 1,400 break      snap 0.5: 2,005 hold, 1,082 break
+      metric              ratio       t        ratio       t
+      rate ms/object       1.13     4.5         1.03     0.8
+      rate %               1.10     3.5         1.02     0.5
+      interval ms          1.10     3.5         1.02     1.1
+      along residual       1.09     3.7         1.10     3.6
+      along slope          0.96    -1.4         1.04     1.1
+      cross radii          1.02     0.9         1.05     1.7
+      cross slope          1.03     1.3         1.04     1.2
 
-* **The runs that break started further off the path and did not get worse.** At 1/4 the
-  breaking runs carry higher cursor error at every position yet *smaller* growth across
-  positions 0-9: along slope ratio 0.89 at t=-2.8, cross slope 0.82 at t=-4.7. So the picture
-  is not "drifts off the path and then misses" -- the runs that drift are the ones that hold.
-  Unexplained, and the most interesting row in the table.
+Five readings, two of which are corrections to the population reading.
 
-Caveats that bound all of the above. Every ratio is between 1.02 and 1.27, so all three
-mechanisms are present in both rhythms and this is which one moves first rather than which is
-to blame. The groups are runs pooled over 4,978 players, so it is a population statement: a
-player who taps off-tempo and also fails more would produce the 1/4 table without tempo
-causing any individual failure, and the within-player version is the better question. Only
-circles are visible, so a miss on a slider head inside positions 0-9 does not disqualify a
-run from the clean group. And the cursor is only ever sampled at a press here, which is why
-"the cursor moved too fast along the path" is not yet measured as such -- that needs the
-replay frames between presses, not the press samples.
+* **A chain of jumps breaks on where the cursor is, in both corpora, and more clearly in
+  one player's.** At 1/2 the along-track offset is the strongest term anywhere in either
+  table -- ratio 1.16 at t=7.9 -- and tapping tempo is flatly irrelevant, t=-0.7 per object
+  and -1.1 as a percentage. The coupling coefficient is -0.02, so none of it is tap timing
+  in spatial clothing. This is the firmest result here.
 
-    PYTHONPATH=tools python3 tools/analysis/streamfail.py --cache build/shapes-collected.json
+* **The population's spurious 1/2 tempo effect is confirmed spurious.** It read t=3.7 as a
+  percentage there only because the breaking runs were faster. Within one player the interval
+  difference goes the other way (1.04, t=2.7) and the percentage effect vanishes with it
+  (t=-1.1), which is what an artifact of the denominator does and a real effect does not.
+
+* **For streams, tempo and cursor placement matter equally** -- t=4.5 each at 1/4. The
+  population table had tempo dominant (t=5.5 against 2.5), and the gap closes when the
+  between-player variation is removed, which is exactly the confound the population table was
+  warned to carry: players who tap off-tempo also fail more, and that inflates tempo without
+  tempo causing any individual failure. The honest claim is that a stream breaks on both, and
+  a chain of jumps on the cursor alone.
+
+* **The "runs that drift are the ones that hold" result does not replicate and should be
+  dropped.** It was the most interesting row in the population table: breaking runs there had
+  smaller growth in cursor error, along slope t=-2.8 and cross slope t=-4.6. Within one
+  player the along slope difference disappears (t=-0.8) and the cross slope *reverses* to
+  t=+3.0 -- breaking runs drift more, which is the ordinary expectation. So it was a
+  between-player artifact, and the hypothesis logged in INTERESTING.md about the optimal
+  stream path not being centre-to-centre loses this as motivation. The hypothesis is still
+  worth testing; it just is not evidenced by that row.
+
+* **Cross-track is the weakest term everywhere and does not survive holding the era fixed.**
+  1/4 cross-track goes t=2.4 in the population, 1.8 over the player's whole history, 0.9
+  inside one button era. Of the three candidate mechanisms, leaving the path sideways is the
+  one this test cannot show mattering. Which does not mean it never does -- it means a run
+  that is about to break is not, on average, further off the path sideways beforehand.
+
+* **The player is less precise than the population, in level rather than in pattern.**
+  Along-track 0.203 against 0.173 at 1/4, cross-track 0.126 against 0.104, with the same
+  ordering of effects. Map mix and skill both plausibly explain that and it is not separated
+  here.
+
+Caveats that bound all of the above. Every ratio is between 0.98 and 1.16 on the player side,
+so all three mechanisms are present in both rhythms and this is which one moves first rather
+than which is to blame. Only circles are visible, so a miss on a slider head inside positions
+0-9 does not disqualify a run from the clean group. The cursor is only ever sampled at a press
+here, which is why "the cursor travelled the path too fast" is not yet measured as such --
+that needs the replay frames between presses, not the press samples, and it is also what the
+centre-to-centre hypothesis in INTERESTING.md would need. And the player run is all-time, so
+it spans every button era in `setup-timeline.csv`; the tempo metrics are precisely what those
+eras move, which is what `--since` is for.
+
+    PYTHONPATH=tools python3 tools/analysis/streamfail.py --source player
 """
 from __future__ import annotations
 
@@ -119,14 +159,58 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from analysis.patternpredict import (CORPUS, EXCLUDE, GEOMETRY, MISSED, _num,  # noqa: E402
-                                     read_rhythm, read_shapes)
+from analysis.patternpredict import EXCLUDE, MISSED, _num, read_rhythm  # noqa: E402
+from bins.load import TIMESTAMP  # noqa: E402
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# The two corpora answer different questions. `collected` is 4,978 players, so it says what
+# breaks a run in the population; `player` is one player's own runs, so it says what breaks
+# *his*, which is the question a diagnosis actually asks and the one the population cannot
+# answer -- a player who taps off-tempo and also fails more produces the population table
+# without tempo causing any single failure.
+#
+# They also differ in what rhythm is available, and that decides how the join works. The
+# collected side has one representative replay per beatmap, since the rhythm pass was run
+# that way, so its runs are looked up by beatmap md5 and a replay whose mods changed the
+# timing simply fails to join. The player side has rhythm for every replay, so runs are
+# looked up by replay and time -- strictly better, because each replay then carries its own
+# mods and nothing has to match across them.
+SOURCES = {
+    "collected": ("build/geometry-collected.csv", "build/rhythm-collected.csv",
+                  "build/corpus-collected.json"),
+    "player": ("build/geometry.csv", "build/rhythm.csv", "build/corpus.json"),
+}
 
 BEFORE = 10        # positions 0..9: measured, and required to be clean in both groups
 MIN_SIZE = 14      # a run has to be long enough for "breaks at 10 or later" to be possible
 MIN_POINTS = 6     # own-tap presses needed inside positions 0..9 to fit a slope
 MIN_EARLY = 6      # measurable circles needed inside positions 0..9
 OWN_TAP = 0.4      # |hit error| within this fraction of the gap is the object's own press
+
+
+def read_player_runs(path, replays, snaps) -> dict:
+    """(replay, object time) -> (run id, run index, run size, snap), long runs only.
+
+    Keyed on the replay rather than the beatmap, which is what makes mods a non-issue here:
+    a rate mod scales a replay's object times and its rhythm together, so each replay joins
+    against its own numbers and nothing has to agree across replays.
+
+    Filtered while reading because the file is 6.1GB and only runs long enough to break late,
+    in the rhythms being asked about, are ever looked up.
+    """
+    table: dict = {}
+    with open(path) as f:
+        for r in csv.DictReader(f):
+            if r["tolerance"] != "0.02" or r["clickIndex"] == "-1":
+                continue
+            if r["snap"] not in snaps or r["replay"] not in replays:
+                continue
+            if int(r["runSize"]) < MIN_SIZE:
+                continue
+            table[(r["replay"], round(float(r["time"]), 3))] = (
+                int(r["runId"]), int(r["runIndex"]), int(r["runSize"]), r["snap"])
+    return table
 
 
 def slope(points: list[tuple[float, float]]) -> float | None:
@@ -184,21 +268,56 @@ def runs_of(rows: list[dict]) -> list[list[dict]]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--cache", help="the map shapes patternpredict.py writes")
+    parser.add_argument("--source", default="collected", choices=sorted(SOURCES),
+                        help="which corpus: the population, or one player's own runs")
+    parser.add_argument("--player", default="zaksynack",
+                        help="player source only; the corpus holds a few others' imports")
+    parser.add_argument("--since", help="player source only: keep replays on or after this "
+                                        "date, YYYY-MM-DD. The tapping-hand metrics here are "
+                                        "exactly what setup-timeline.csv's eight button eras "
+                                        "move, so an all-time tempo number mixes regimes -- "
+                                        "the QMK toggle era alone made the two presses "
+                                        "mutually exclusive")
     parser.add_argument("--snaps", nargs="*", default=["0.25", "0.5"])
     args = parser.parse_args()
 
-    if args.cache and os.path.exists(args.cache):
-        shapes = json.load(open(args.cache))
+    geometry, rhythm_path, corpus_path = (os.path.join(ROOT, p)
+                                          for p in SOURCES[args.source])
+    records = json.load(open(corpus_path))
+    if args.source == "player":
+        wanted = {os.path.basename(r["Path"]) for r in records if r.get("Paired")
+                  and os.path.basename(r["Path"]).startswith(args.player + " playing ")}
+        if args.since:
+            dated = {}
+            for name in wanted:
+                found = TIMESTAMP.search(name)
+                if found and found.group(1) >= args.since:
+                    dated[name] = found.group(1)
+            print(f"{len(dated):,} of {len(wanted):,} replays on or after {args.since}")
+            wanted = set(dated)
+        corpus = {}
     else:
-        rhythm, by_replay = read_rhythm()
-        shapes = read_shapes(rhythm, by_replay)
-        if args.cache:
-            json.dump(shapes, open(args.cache, "w"))
-    index = {md5: {row["t"]: row for row in rows} for md5, rows in shapes.items()}
+        # Mods are recorded only on the collected side. Relax and Autopilot replace one of
+        # the two hands being compared; HardRock, Easy and DifficultyAdjust change the
+        # radius that along- and cross-track are measured in.
+        corpus = {os.path.basename(r["Path"]): r["BeatmapMd5"] for r in records
+                  if not (EXCLUDE & set(r.get("Mods") or ()))}
+        wanted = set(corpus)
+    print(f"{args.source}: {len(wanted):,} replays\n", flush=True)
 
-    corpus = {os.path.basename(r["Path"]): r["BeatmapMd5"]
-              for r in json.load(open(CORPUS)) if not (EXCLUDE & set(r.get("Mods") or ()))}
+    if args.source == "player":
+        runs = read_player_runs(rhythm_path, wanted, set(args.snaps))
+        def find(replay, t):
+            return runs.get((replay, t))
+    else:
+        by_md5, _ = read_rhythm()
+        def find(replay, t):
+            md5 = corpus.get(replay)
+            got = by_md5.get(md5, {}).get(t) if md5 else None
+            if got is None:
+                return None
+            snap, _group, run_id, run_index, run_size = got
+            return (run_id, run_index, run_size, snap)
 
     # snap -> outcome -> metric -> list of per-run values
     acc: dict = collections.defaultdict(lambda: collections.defaultdict(
@@ -264,7 +383,7 @@ def main() -> int:
 
     held: list[dict] = []
     current_replay = None
-    with open(GEOMETRY) as f:
+    with open(geometry) as f:
         for r in csv.DictReader(f):
             if r["replay"] != current_replay:
                 if held:
@@ -272,13 +391,14 @@ def main() -> int:
                 held, current_replay = [], r["replay"]
             if r["kind"] != "circle" or r["exitSlackRadii"] or r["result"] == "Unjudged":
                 continue
-            md5 = corpus.get(r["replay"])
-            if md5 is None:
+            if r["replay"] not in wanted:
                 continue
-            shape = index.get(md5, {}).get(round(float(r["startTime"]), 3))
-            if shape is None or shape["run"] is None or not shape["snap"]:
+            t = round(float(r["startTime"]), 3)
+            got = find(r["replay"], t)
+            if got is None:
                 continue
-            if (shape["size"] or 0) < MIN_SIZE:
+            run_id, run_index, run_size, snap = got
+            if run_size < MIN_SIZE:
                 continue
 
             error, gap = _num(r["hitError"]), _num(r["deltaTime"])
@@ -296,7 +416,8 @@ def main() -> int:
                 offset = (cx - tx, cy - ty)
                 length = math.hypot(*offset)
                 radius = length / aim if length else None
-                previous = held[-1] if held and held[-1]["run"] == shape["run"] - 1 else None
+                previous = (held[-1] if held and held[-1]["runid"] == run_id
+                            and held[-1]["run"] == run_index - 1 else None)
                 if radius and previous is not None:
                     dx, dy = tx - previous["tx"], ty - previous["ty"]
                     travel = math.hypot(dx, dy)
@@ -305,9 +426,8 @@ def main() -> int:
                         along = (offset[0] * ux + offset[1] * uy) / radius
                         cross = (offset[0] * -uy + offset[1] * ux) / radius
 
-            held.append({"t": shape["t"], "run": shape["run"], "runid": shape["runid"],
-                         "snap": shape["snap"],
-                         "size": shape["size"], "error": error, "gap": gap, "own": own,
+            held.append({"t": t, "run": run_index, "runid": run_id, "snap": snap,
+                         "size": run_size, "error": error, "gap": gap, "own": own,
                          "miss": r["result"] in MISSED, "along": along, "cross": cross,
                          "velocity": _num(r["requiredVelocity"]),
                          "tx": tx, "ty": ty})
