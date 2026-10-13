@@ -67,7 +67,10 @@ def token():
 def call(url, bearer, params=None, raw=False):
     """One request, paced, retrying on rate limit and transient server errors."""
     if params:
-        url += "?" + urllib.parse.urlencode(params)
+        # doseq, so a list value becomes repeated parameters: the scores endpoint takes
+        # mods[] once per mod and filters to that exact set. A plain string is still encoded
+        # as one value, so the single-mod callers are unaffected.
+        url += "?" + urllib.parse.urlencode(params, doseq=True)
 
     headers = {"Authorization": f"Bearer {bearer}", "x-api-version": "20220705",
                "Accept": "application/x-osu-replay" if raw else "application/json"}
@@ -126,6 +129,11 @@ def main():
         MANIFEST = f"{OUT}/manifest.json"
     lazer_only = "--include-stable" not in sys.argv
     mod_filter = sys.argv[sys.argv.index("--mods") + 1] if "--mods" in sys.argv else "NM"
+    # Comma-separated means an exact mod *set*: --mods DT,HD is the double-time board with
+    # hidden, which is where the volume is at the top of these leaderboards. The manifest
+    # records each score's own mods either way, so the filter only decides what is fetched.
+    if "," in mod_filter:
+        mod_filter = [m for m in mod_filter.split(",") if m]
     count = int(args[0]) if args else 30
     os.makedirs(OUT, exist_ok=True)
 
