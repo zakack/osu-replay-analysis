@@ -67,10 +67,39 @@ Four readings.
 * **Run position beats the turn on misses at every floor, and both halves agree.** .0045,
   .0046, .0033 against the |angle| cell's -.0009, .0004, .0007; split by half it is .0032
   and .0056, best of all schemes on each. On aim error it wins at the two lower floors and
-  loses at 500, where it has fewer usable groups than the cell. `unitsize.py` found the same
+  loses at 500 -- but see the next reading: that win does not survive cleaning up press
+  attribution, and the miss win does. `unitsize.py` found the same
   ordering on one player's squared hit error; this is 4,978 players and two different
   targets, on a corpus sharing no replays. That is as much corroboration as this project can
   produce for anything.
+
+* **Run position's aim-error edge was stream shifting, and the miss edge was not.**
+  `aimErrorRadii` is measured at whichever press the simulator attributed to the object, so
+  a stream that shifted reports a real number taken from a tap meant for a neighbour. The
+  displacement is about one tap interval, so `--own-tap 0.4` drops a press whose hit error
+  exceeds 0.4 of the gap to the previous object. 126,554 presses go, 8.7% of the scored set,
+  and they are not spread evenly:
+
+      run position       presses   shifted    rate  mean aim
+      0:2                482,345    41,058    8.5%    0.3631
+      2:5                414,124    32,894    7.9%    0.3780
+      5:9                207,132    16,398    7.9%    0.3884
+      9:14               105,358     9,279    8.8%    0.3994
+      14:inf             168,826    27,004   16.0%    0.4121
+
+  Flat to position 14 and double beyond it, against a mean aim error that climbs the whole
+  way -- so the deepest run positions, which is where the axis earns its score, are twice as
+  likely to be scored from the wrong tap. Remove them and the aim ordering inverts: at floor
+  200 the |angle| cell goes .0280 -> .0304 and run position .0287 -> .0302, so |angle| is
+  the better aim key once the attribution is clean. The miss column does not move at all
+  (.0004 and .0046), by construction: the filter drops only the aim contribution, a miss has
+  no press to misattribute, and the rows and denominator are identical either way.
+
+  Caveat on the instrument. This is a proxy, not `drift.py`'s self/next/prev/far/extra
+  classification, and it also discards taps that were genuinely late but the object's own.
+  The proper filter needs a clicks pass over the collected corpus, which does not exist yet.
+  What the proxy establishes is the *direction*: part of the aim-error result was
+  attribution, and none of the miss result was.
 
 * **Misses are an order of magnitude harder to predict than aim error, for everything.**
   Best aim R^2 .0297, best miss R^2 .0046. The |angle| cell in particular -- the key
@@ -329,6 +358,14 @@ def main() -> int:
     parser.add_argument("--cache", help="parsed map shapes, so re-runs skip the first pass")
     parser.add_argument("--max-maps", type=int, default=0,
                         help="cap the beatmap count, for a cheap smoke run")
+    parser.add_argument("--own-tap", type=float, default=0.0, metavar="FRACTION",
+                        help="keep only objects whose attributed press is plausibly their "
+                             "own: |hit error| within this fraction of the gap to the "
+                             "previous object. A shifted press in a stream is displaced by "
+                             "about one whole tap interval, so 0.4 excludes it. Guards the "
+                             "aim-error numbers against stream shifting, which inflates aim "
+                             "error and does so deeper into runs -- exactly where it would "
+                             "manufacture the run-position result")
     parser.add_argument("--prepare", action="store_true",
                         help="write the one-replay-per-beatmap corpus the rhythm pass needs")
     parser.add_argument("--min-train", type=int, nargs="*", default=[50, 200, 500],
@@ -410,7 +447,7 @@ def main() -> int:
     print(f"{len(corpus):,} of {len(records):,} replays kept; "
           f"{len(records) - len(corpus):,} dropped for {'/'.join(sorted(EXCLUDE))}\n",
           flush=True)
-    rows = kept = 0
+    rows = kept = dropped = 0
     with open(GEOMETRY) as f:
         for r in csv.DictReader(f):
             rows += 1
@@ -429,9 +466,24 @@ def main() -> int:
             if not shape["snap"] or spacing is None or turn is None or run is None:
                 continue
 
-            kept += 1
             y_aim = _num(r["aimErrorRadii"])
             miss = 1.0 if r["result"] in MISSED else 0.0
+
+            if args.own_tap:
+                # Aim error is measured at whichever press the simulator attributed to this
+                # object, so a stream that shifted reports a real number taken from a tap
+                # meant for a neighbour. The displacement is about one tap interval, which
+                # `deltaTime` is, so a hit error well inside that interval is its own tap.
+                # A miss has no press and nothing to misattribute, so it is kept.
+                error, gap = _num(r["hitError"]), _num(r["deltaTime"])
+                if y_aim is not None and (error is None or gap is None
+                                          or abs(error) > args.own_tap * gap):
+                    # Only the aim contribution goes: the row still counts for the miss
+                    # target, which has no press to misattribute, so that column stays
+                    # comparable with the unfiltered run instead of changing denominator.
+                    dropped += 1
+                    y_aim = None
+            kept += 1
 
             base = (shape["snap"], spacing, turn)
             keys = {"cell |angle|": base,
@@ -466,7 +518,9 @@ def main() -> int:
             if kept % 500_000 == 0:
                 print(f"  {kept:,} scored", flush=True)
 
-    print(f"\n{rows:,} geometry rows, {kept:,} scored\n")
+    print(f"\n{rows:,} geometry rows, {kept:,} scored"
+          + (f", {dropped:,} presses excluded as not their object's own "
+             f"(|hit error| over {args.own_tap:g} x the gap)" if args.own_tap else "") + "\n")
 
     def report(train_groups, test_groups, fallback, min_train, only=None):
         """R^2 per target, plus how much of the test set the groups actually claimed.

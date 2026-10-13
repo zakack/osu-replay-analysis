@@ -632,3 +632,19 @@ position reaches 0.0033-0.0046 on misses at every floor while the |angle| cell r
 0.0007, about five times weaker, and the |angle| cell is simultaneously the *better* of the
 two on aim error. Two targets wanting different axes is the real content, and it is the same
 conclusion the band-edge search reached before compromising on one shared axis.
+
+## 2026-10-12 — stream shifting bought run position its aim-error score; the miss score is clean
+
+`tools/analysis/patternpredict.py --own-tap 0.4`; 1.46M circles, collected corpus
+
+`aimErrorRadii` is taken at whatever press the simulator attributed to the object, so a
+shifted stream reports a real number measured from a neighbour's tap. Excluding presses whose
+hit error exceeds 0.4 of the gap to the previous object removes 8.7% of them -- and the rate
+is 8.5/7.9/7.9/8.8% through run positions 0-14 and **16.0%** beyond 14, while mean aim error
+climbs 0.363 -> 0.412 across the same bins. So the deepest run positions, which is where the
+axis earns its score, are twice as likely to be scored off the wrong tap. Cleaned, the aim
+ordering inverts (|angle| .0280 -> .0304, run position .0287 -> .0302) while the miss column
+is untouched (.0004 vs .0046), because a miss has no press to misattribute. Any aim-error
+finding conditioned on depth into a run needs this filter; a miss finding does not. Proper
+instrument would be `drift.py`'s self/next/prev classification, which needs a clicks pass
+over the collected corpus.
