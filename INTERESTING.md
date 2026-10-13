@@ -997,3 +997,26 @@ at 0.09-0.13. Highest coupling anywhere is his 220+ jumps at 0.59.
 Uncontrolled: any timing offset common to both hands -- a mistimed section, a map offset, the
 audio path -- inflates rho for both at once with no bilateral coordination involved, and the
 map pools differ. Centering within map and section before correlating is the control.
+
+## 2026-10-13 — the elite uncoupling is not a high-tempo adaptation; it is their baseline
+
+`arrival.py --by-bpm --coupling`, reference rows; player's reaction to the coupling result
+
+Player's suspicion, offered watching mrekk and NINERIK: that syncing the two hands together
+cannot work at 280 bpm, so the top players must be doing something else. The coupling numbers
+support it but reshape it. The boards' rho does not *decline* with tempo -- it is flat at
+0.23-0.25 on jumps and 0.09-0.13 on streams across every band from under 140 to 200-220. They
+are already uncoupled at 140, where coupling would cost nothing. So it is not an adaptation
+that kicks in when the tempo demands it; it is how they play throughout. Meanwhile the player's
+rho *rises* with tempo on streams, 0.19 to 0.35, so the two diverge rather than converging on a
+shared limit.
+
+Caveat on "independence is a good thing": this is correlational between two corpora, and the
+confound named in the entry above is still live -- a timing offset common to both hands
+(mistimed section, map offset, audio path) inflates rho with no coordination involved, and the
+map pools differ. Nobody has shown that uncoupling causes the skill rather than accompanying it.
+
+And the 280 bpm question cannot be answered with this corpus at all: the reference side is
+top-50 boards on *this player's* maps, 5.0-6.5 stars, so it has under 500 objects above 220 bpm
+and no rows there. Settling it means pulling boards for high-tempo maps specifically, which is
+a new fetch rather than a new analysis.
