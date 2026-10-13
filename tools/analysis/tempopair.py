@@ -193,9 +193,17 @@ def correlate(acc, label, level, pick=None):
     return sxy / (sxx * syy) ** 0.5, n, (sxx / n) ** 0.5, (syy / n) ** 0.5
 
 
-def load(condition, maps, floor):
+
+
+def load(condition, maps):
+    """Read one condition once, unfiltered by accuracy.
+
+    Every table here is a different accuracy floor or a different set of players, and
+    `correlate` takes a `pick`, so one pass over the CSVs serves all of them. Re-reading
+    two gigabytes per floor is what the first version of this did.
+    """
     geometry, clicks, rhythm, manifest, keep = CONDITIONS[condition]
-    allowed = replays_of(manifest, keep, maps, floor)
+    allowed = replays_of(manifest, keep, maps, None)
     classes = classify(geometry, rhythm, allowed)
     return allowed, accumulate(clicks, classes, allowed)
 
@@ -214,92 +222,97 @@ def labels(accs):
     return [c for c in order if all(c in p for p in present)]
 
 
+def pick_at(allowed, floor):
+    """The replay files of a condition whose play was at least this accurate."""
+    return {f for f, (_, _, a) in allowed.items() if (a or 0.0) >= floor}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--floor", type=float, default=0.98,
-                        help="accuracy floor applied to both conditions (default 0.98, "
-                             "which matches the rate side's quality to the nomod side's)")
-    parser.add_argument("--sweep", action="store_true",
-                        help="move the accuracy floor instead of fixing it; one floor is a "
-                             "coincidence and a monotone trend across floors is not")
-    parser.add_argument("--paired", action="store_true",
-                        help="keep only players present in both corpora and pair within "
-                             "player, which controls the population outright")
-    parser.add_argument("--by-accuracy", action="store_true",
-                        help="rho against accuracy inside the rate corpus alone, to measure "
-                             "how much of any gap play quality could account for")
+                        help="accuracy floor for the headline table (default 0.98, which "
+                             "matches the rate side's play quality to the nomod side's)")
     parser.add_argument("--level", default="within replay",
-                        choices=("pooled", "within replay", "within section"))
+                        choices=("pooled", "within replay", "within section"),
+                        help="how much common displacement to remove before correlating")
+    parser.add_argument("--only", choices=("headline", "sweep", "paired", "accuracy"),
+                        help="print one table instead of all four")
     args = parser.parse_args()
+    want = (lambda name: args.only is None or args.only == name)
 
     maps = shared_maps()
-    print(f"the {len(maps)} beatmaps the rate corpus covers, both conditions restricted "
-          f"to them\n", flush=True)
-
-    if args.sweep:
-        floors = (0.95, 0.97, 0.98, 0.99)
-        print("rho by accuracy floor. A gap that holds as the floor rises is a tempo "
-              "effect;\none that closes was play quality.\n")
-        print(f"  {'floor':<7}{'class':<18}"
-              + "".join(f"{c:>12}" for c in ("nomod n", "nomod", "rate n", "rate", "gap")))
-        for floor in floors:
-            loaded = [load(c, maps, floor) for c in ("nomod", "rate")]
-            for label in labels([a for _, a in loaded]):
-                cells = [correlate(a, label, args.level) for _, a in loaded]
-                if any(c[0] is None for c in cells):
-                    continue
-                print(f"  {floor:<7.2f}{label:<18}"
-                      f"{cells[0][1]:>12,}{cells[0][0]:>12.2f}"
-                      f"{cells[1][1]:>12,}{cells[1][0]:>12.2f}"
-                      f"{cells[1][0] - cells[0][0]:>12.2f}")
-            print()
-        return 0
-
-    floor = args.floor
-    loaded = [load(c, maps, floor) for c in ("nomod", "rate")]
-    for condition, (allowed, _) in zip(("nomod", "rate"), loaded):
-        print(f"  {condition:<6} {len(allowed):,} replays, "
-              f"{len({u for u, _, _ in allowed.values()}):,} players, accuracy >= {floor}")
+    loaded = {c: load(c, maps) for c in ("nomod", "rate")}
+    accs = [loaded[c][1] for c in ("nomod", "rate")]
+    classes = labels(accs)
+    print(f"the {len(maps)} beatmaps the rate corpus covers, both conditions restricted to "
+          f"them.\nrho centred {args.level}.\n")
+    for c in ("nomod", "rate"):
+        allowed = loaded[c][0]
+        print(f"  {c:<6} {len(allowed):,} replays, "
+              f"{len({u for u, _, _ in allowed.values()}):,} players")
     print()
 
-    if args.by_accuracy:
-        _, acc = loaded[1]
-        allowed = loaded[1][0]
-        bands = ((0.0, 0.93, "under .93"), (0.93, 0.96, ".93-.96"),
-                 (0.96, 0.98, ".96-.98"), (0.98, 1.01, ".98+"))
-        print("Inside the rate corpus only: rho against how clean the play was. If rho "
-              "tracks\naccuracy here, then a nomod-to-rate gap measured at one floor is "
-              "partly quality.\n")
-        print(f"  {'accuracy':<12}{'replays':>9}" + "".join(f"{c:>18}" for c in
-                                                            labels([acc])))
-        for lo, hi, name in bands:
-            pick = {f for f, (_, _, a) in allowed.items() if lo <= (a or 0) < hi}
-            if not pick:
+    if want("headline"):
+        picks = [pick_at(loaded[c][0], args.floor) for c in ("nomod", "rate")]
+        print(f"-- the same maps at two tempos, accuracy >= {args.floor} both sides "
+              f"({len(picks[0]):,} and {len(picks[1]):,} replays)\n")
+        print("sigma is beatmap-time ms and is printed for scale only: the conditions "
+              "measure it in\ndifferent real-time units, so only rho compares across them.\n")
+        print(f"  {'class':<18}" + "".join(f"{h:>11}" for h in
+                                           ("nomod n", "sb", "sc", "rho",
+                                            "rate n", "sb", "sc", "rho", "gap")))
+        for label in classes:
+            cells = [correlate(a, label, args.level, p) for a, p in zip(accs, picks)]
+            if any(c[0] is None for c in cells):
                 continue
-            line = f"  {name:<12}{len(pick):>9,}"
-            for label in labels([acc]):
-                rho, n, _, _ = correlate(acc, label, args.level, pick)
-                line += f"{rho:>18.2f}" if rho is not None else f"{'-':>18}"
-            print(line)
-        return 0
+            line = f"  {label:<18}"
+            for rho, n, sb, sc in cells:
+                line += f"{n:>11,}{sb:>11.1f}{sc:>11.1f}{rho:>11.2f}"
+            print(line + f"{cells[1][0] - cells[0][0]:>11.2f}")
+        print()
 
-    if args.paired:
-        people = [collections.defaultdict(set) for _ in loaded]
-        for (allowed, _), by in zip(loaded, people):
-            for name, (user, _, _) in allowed.items():
+    if want("sweep"):
+        print("-- the same table as the accuracy floor rises\n")
+        print("The rate boards are a much sloppier population than the nomod boards, and "
+              "sloppiness\nruns the same way as the hypothesis. A gap that survives the "
+              "floor rising is tempo;\none that closes was quality.\n")
+        print(f"  {'class':<18}" + "".join(f"{f:>26}" for f in (0.95, 0.97, 0.98, 0.99)))
+        print(f"  {'':<18}" + "".join(f"{h:>8}" for _ in range(4)
+                                      for h in ("n", "rho", "gap")))
+        for label in classes:
+            line = f"  {label:<18}"
+            for floor in (0.95, 0.97, 0.98, 0.99):
+                picks = [pick_at(loaded[c][0], floor) for c in ("nomod", "rate")]
+                cells = [correlate(a, label, args.level, p) for a, p in zip(accs, picks)]
+                if any(c[0] is None for c in cells):
+                    line += f"{'-':>8}{'-':>8}{'-':>8}"
+                    continue
+                line += (f"{cells[1][1]:>8,}{cells[1][0]:>8.2f}"
+                         f"{cells[1][0] - cells[0][0]:>8.2f}")
+            print(line)
+        print("\n  n and rho are the rate side; gap is rate minus nomod at that floor.\n")
+
+    if want("paired"):
+        people = []
+        for c in ("nomod", "rate"):
+            by = collections.defaultdict(set)
+            for name, (user, _, _) in loaded[c][0].items():
                 by[user].add(name)
-        both = set(people[0]) & set(people[1])
-        print(f"{len(both):,} players with replays in both corpora at this floor. Each "
-              f"player's rho is\nmeasured in each condition and the pair differenced, so "
-              f"nothing here compares one\nplayer to another.\n")
+            people.append(by)
+        both = sorted(set(people[0]) & set(people[1]))
+        print(f"-- within player: the {len(both):,} players present in both corpora\n")
+        print("Each player's rho is measured in each condition and the pair differenced, "
+              "so nothing\nhere compares one player to another. No accuracy floor, because "
+              "the player is the\ncontrol. Costs most of the sample and answers what the "
+              "pooled table cannot.\n")
         print(f"  {'class':<18}{'players':>9}{'nomod':>9}{'rate':>9}{'gap':>9}"
               f"{'rate lower':>12}")
-        for label in labels([a for _, a in loaded]):
+        for label in classes:
             gaps = []
-            for user in sorted(both):
-                pair = [correlate(acc, label, args.level, people[i][user])
-                        for i, (_, acc) in enumerate(loaded)]
+            for user in both:
+                pair = [correlate(a, label, args.level, by[user])
+                        for a, by in zip(accs, people)]
                 if any(p[0] is None for p in pair):
                     continue
                 gaps.append((pair[0][0], pair[1][0]))
@@ -310,23 +323,27 @@ def main() -> int:
             lower = sum(1 for a, b in gaps if b < a) / len(gaps)
             print(f"  {label:<18}{len(gaps):>9,}{nomod:>9.2f}{rate:>9.2f}"
                   f"{rate - nomod:>9.2f}{lower:>11.0%}")
-        return 0
+        print()
 
-    print("Correlation between the two hands' errors against the beat, on the same maps at "
-          "two\ntempos. sigma is in beatmap-time ms and is printed for scale only -- the "
-          "conditions\nmeasure it in different real-time units, so only rho compares.\n")
-    print(f"  {'class':<18}" + "".join(f"{c:>11}" for c in
-                                       ("nomod n", "sb", "sc", "rho",
-                                        "rate n", "sb", "sc", "rho", "gap")))
-    for label in labels([a for _, a in loaded]):
-        cells = [correlate(a, label, args.level) for _, a in loaded]
-        if any(c[0] is None for c in cells):
-            continue
-        line = f"  {label:<18}"
-        for rho, n, sb, sc in cells:
-            line += f"{n:>11,}{sb:>11.1f}{sc:>11.1f}{rho:>11.2f}"
-        line += f"{cells[1][0] - cells[0][0]:>11.2f}"
-        print(line)
+    if want("accuracy"):
+        allowed, acc = loaded["rate"]
+        bands = ((0.0, 0.93, "under .93"), (0.93, 0.96, ".93-.96"),
+                 (0.96, 0.98, ".96-.98"), (0.98, 1.01, ".98+"))
+        print("-- inside the rate corpus alone: rho against how clean the play was\n")
+        print("The calibration for the sweep. If rho tracks accuracy here, a gap measured "
+              "at one\nfloor is partly quality rather than tempo.\n")
+        print(f"  {'accuracy':<12}{'replays':>9}"
+              + "".join(f"{c:>18}" for c in classes))
+        for lo, hi, name in bands:
+            pick = {f for f, (_, _, a) in allowed.items() if lo <= (a or 0) < hi}
+            if not pick:
+                continue
+            line = f"  {name:<12}{len(pick):>9,}"
+            for label in classes:
+                rho, n, _, _ = correlate(acc, label, args.level, pick)
+                line += f"{rho:>18.2f}" if rho is not None else f"{'-':>18}"
+            print(line)
+        print()
     return 0
 
 
