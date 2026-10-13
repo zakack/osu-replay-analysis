@@ -1055,3 +1055,19 @@ nomod-vs-ratemod comparison is confounded by sloppiness in the same direction as
 unless a floor is applied to both sides, and the floor has to be swept. Player overlap is
 133 of 818, but only 3 players have 3+ replays on both sides and only 13 player-map pairs
 exist in both conditions.
+
+## 2026-10-13 — the hands' coupling is deaf to tempo, but hears a play falling apart
+
+`python3 tools/analysis/tempopair.py` (and `--level "within section"`), results in its docstring
+
+Same 40 beatmaps nomod and under DT/NC, 1,045 against 1,051 replays, so identical geometry
+object for object and 1.5x the real tempo. Coupling rho does not move: gap 0.00 on every
+circle at accuracy floors .95/.97/.98, and within the 65 players present in both corpora
+it is +0.02 with the rate side *lower* in 43% of them. Meanwhile, inside the rate corpus
+alone with map, mod and tempo all fixed, rho runs 0.21 / 0.13 / 0.11 / 0.11 across accuracy
+bands under .93 / .93-.96 / .96-.98 / .98+ — one step at the bottom and flat above it,
+surviving all three centring levels.
+
+So the two hands couple when a play is failing, not when it is fast. Worth noting what the
+rate corpus cannot do: no accuracy floor turns a 282 BPM clear into a 282 BPM elite play,
+so this says tempo holding player and map fixed, not anything about the ceiling.

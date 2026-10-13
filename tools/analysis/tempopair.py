@@ -31,15 +31,66 @@ here; the sigma columns are printed for scale only and are not comparable across
 **Two confounds, controlled rather than argued away.**
 
 - *Population.* The rate boards are not the same players as the nomod boards: 818 against
-  3,568, overlapping in 133. `--paired` keeps only those 133 and pairs within player, which
-  costs most of the sample and answers the question the pooled table cannot.
+  3,568, overlapping in 133 -- and in only 65 once the nomod side is cut to the shared 40
+  maps, which is the number the paired table reports. Pairing within player costs most of
+  the sample and answers the question the pooled table cannot.
 - *Play quality.* This is the sharp one, and it runs the same way as the hypothesis. The
   nomod side is almost all S and X, median accuracy 0.998; the rate side runs down to D,
   median 0.962, because a nomod top-50 board is near-perfect plays and a DT board is
   whoever cleared it. Comparing those pooled would read a difference in sloppiness as a
-  difference in tempo. `--floor` applies an accuracy floor to both sides and `--sweep`
-  moves it, because one floor is a coincidence and a monotone trend across floors is not --
-  the same discipline the pattern work needed when a single training floor inverted an answer.
+  difference in tempo. `--floor` applies an accuracy floor to both sides and the sweep
+  table moves it, because one floor is a coincidence and a trend across floors is not --
+  the same discipline the pattern work needed when a single training floor inverted an
+  answer.
+
+Measured 2026-10-13 on 1,045 nomod and 1,051 rate-mod replays of the same 40 beatmaps,
+188-204 BPM nomod and so 282-306 under the mod. rho centred within replay, with the
+within-section and pooled columns run as controls.
+
+**Tempo does not uncouple the hands.** Accuracy >= 0.98 on both sides, 1,042 against 310
+replays:
+
+    class              nomod rho   rate rho    gap
+    1/4, 0-2 radii          0.08       0.09   0.02
+    1/4, 2+ radii           0.11       0.14   0.03
+    1/2, 0-2 radii          0.06       0.08   0.02
+    1/2, 2+ radii           0.22       0.24   0.02
+    every circle            0.13       0.13   0.00
+
+The gap on every circle is 0.00 at floors 0.95, 0.97 and 0.98 and 0.01 at 0.99, and
+-0.00 at every floor centred within section. Within player it is +0.02 over the 65
+players present in both corpora, with the rate side *lower* in 43% of them -- a coin
+flip, not a direction. Half the shape of the earlier coupling result survives untouched:
+coupling still lives in the 2+ radii 1/2 jump (0.22) and not in the 1/4 stream (0.08),
+in both conditions.
+
+**What does move rho is the play coming apart**, inside the rate corpus alone, where the
+maps, the mod and the tempo are all fixed and only the quality of the play varies:
+
+    accuracy     replays   pooled   within replay   within section
+    under .93        314     0.27            0.23             0.21
+    .93-.96          197     0.17            0.15             0.13
+    .96-.98          230     0.15            0.13             0.11
+    .98+             310     0.15            0.13             0.11
+
+One step, at the bottom, and flat above it: rho is the same from 0.96 accuracy upward and
+rises by half again when the play is actually failing. The gradient survives all three
+centring levels, so it is not a section's worth of common drift.
+
+The two tables reconcile. Those 65 paired players fall from 0.9973 accuracy nomod to
+0.9737 under the mod, 59 of 65 of them, and the gradient prices that drop at roughly
+nothing -- which is the +0.02 the paired table reports.
+
+**So uncoupling is not an adaptation to tempo.** The same players, on the same maps, at
+1.5x the real tempo, are exactly as coupled. Whatever the top of the game does differently
+is a property of the player, not a response to speed, and the earlier reading -- that
+elite uncoupling is flat across tempo rather than a high-tempo adaptation -- now holds with
+the geometry held fixed object for object instead of varying with the band.
+
+What this cannot say: these are not mrekk-tier players. The 40 boards are whoever cleared
+the map, which is the confound the floors and the pairing exist to handle, and no floor
+turns a 282 BPM clear into a 282 BPM elite play. The claim is about tempo holding player
+and map fixed, not about the ceiling.
 """
 import argparse
 import collections
