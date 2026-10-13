@@ -19,7 +19,7 @@ first: kind, snap, spacing, run position, angle.
     capture   share of the misses that fall in the riskiest 1/5/10/20% of objects. Chance is
               the percentage itself, so "10%: 31%" is a lift of 3.1.
     AUC       the chance a random miss was rated riskier than a random hit.
-    calibration  predicted against observed miss rate, by decile of predicted risk.
+    calibration  predicted against observed miss rate, by band of predicted risk.
     first     the same capture, counting only a miss with no miss in the eight judged objects
               before it, against only the objects that could be one. Misses cascade: a broken
               stream is five misses and the model that flagged the stream would be credited
@@ -45,6 +45,52 @@ RX/AP play half of it for you, NS hides the cursor, Classic is unported. A repla
 are unknown is dropped rather than guessed.
 
     PYTHONPATH=tools python3 tools/analysis/riskmap.py [--min-train 50] [--limit N]
+
+Measured 2026-10-13 on 13,731 of the player's replays: 2,930 beatmaps, 6,203,378 objects,
+244,252 misses (3.94%). Training floors 50, 200 and 500 agree to a tenth of a point, so at
+this size the floor does not matter.
+
+**Yes, and the lift is in the geometry.** Share of held-out misses in the riskiest objects:
+
+    scheme                                   top 1%  top 5%  top 10%  top 20%   AUC
+    constant (base rate)                       1.0%    5.0%    10.0%    20.0%  0.500
+    kind x snap                                1.4%    6.9%    13.9%    27.7%  0.576
+    kind x snap x run position                 2.0%    9.6%    17.9%    32.2%  0.607
+    kind x snap x spacing                      3.4%   11.5%    20.4%    35.0%  0.625
+    kind x snap x spacing x |angle|            3.6%   11.6%    20.8%    35.6%  0.628
+    kind x snap x spacing x run position       3.9%   12.6%    21.9%    36.9%  0.641
+    kind x snap x spacing x run x |angle|      3.9%   12.6%    21.5%    37.2%  0.640
+
+The riskiest tenth of objects on a map the model has never seen holds 22% of the misses,
+a lift of 2.2; the riskiest hundredth holds 3.9%. Spacing does most of it -- snap alone
+to snap x spacing is 13.9% to 20.4% -- and run position adds 1.5 points on top. So the
+lift is not "streams break": run position on its own reaches 17.9%, and with it removed the
+model keeps 20.4%. |angle| buys almost nothing, the third measurement here to say so.
+
+**It predicts the failure, not the aftermath.** On first misses only, the best scheme puts
+23.0% in its top tenth, AUC 0.648 -- slightly *better* than on all misses. A cascade is not
+what it learned.
+
+**It is calibrated.** Predicted against observed, by band of predicted risk:
+
+    predicted   1.60%  2.48%  3.45%  4.81%  7.02%  9.00%  14.78%
+    observed    1.92%  2.54%  3.32%  4.82%  6.71%  8.58%  14.32%
+
+Within a few tenths of a point from 1.6% to 15%; only the thin ends drift (0.5% predicted
+is 1.9% observed on 15k objects, 24% is 21% on 8k). A risk the strain graph shows is a
+risk the player actually runs.
+
+**It finds the bad sections better than the bad maps.** Within a replay, across ten-second
+sections, the best scheme's mean predicted risk correlates 0.33 with the section's actual
+miss rate (the constant baseline: 0). On counts it is 0.47 against density's 0.37. Across
+replays the map-level correlation is only 0.21, and that is expected: the same map played
+on different days gets the same prediction and very different results, so form, fatigue
+and attempt number sit entirely outside it. The strain graph's claim -- *where* on this
+map -- is the stronger of the two.
+
+What it is not: an AUC of 0.64 leaves most misses outside the riskiest tenth. Shown per
+object it would mostly be wrong; shown as a curve over the map, aggregated, it is
+calibrated and finds the sections. That is the form the strain graph should take.
 """
 from __future__ import annotations
 
@@ -275,18 +321,26 @@ def auc(tables):
     return area / pairs if pairs else float("nan")
 
 
-def calibration(groups, bins=10):
-    """(mean predicted, observed, n) per decile of objects by predicted risk."""
-    total = sum(g[0] for g in groups.values())
-    rows, n_acc, p_acc, m_acc, edge = [], 0, 0.0, 0, total / bins
-    for p in sorted(groups):
-        n, m = groups[p]
-        n_acc += n
-        p_acc += p * n
-        m_acc += m
-        if n_acc >= edge * (len(rows) + 1) or p == max(groups):
-            rows.append((p_acc / n_acc, m_acc / n_acc, n_acc))
-            n_acc, p_acc, m_acc = 0, 0.0, 0
+# Bands of predicted risk for the calibration table. Deciles of objects do not work here:
+# a cell's whole held-out population shares one predicted risk, a block of a million objects
+# can span several deciles, and it cannot honestly be split, since every object in it was
+# predicted the same.
+BANDS = (0.0, .01, .02, .03, .04, .06, .08, .12, .20, 1.01)
+
+
+def calibration(groups):
+    """(mean predicted, observed, n) per band of predicted risk."""
+    rows = []
+    for lo, hi in zip(BANDS, BANDS[1:]):
+        n = m = 0
+        p_sum = 0.0
+        for p, (count, misses) in groups.items():
+            if lo <= p < hi:
+                n += count
+                m += misses
+                p_sum += p * count
+        if n:
+            rows.append((p_sum / n, m / n, n))
     return rows
 
 
@@ -393,7 +447,8 @@ def main() -> int:
     # Calibration for the scheme the earlier work found best on misses, at the lowest floor.
     best = "kind x snap x spacing x run position"
     preds = predictions(d, best, counted[best], args.min_train[0])
-    print(f"== calibration, {best}, floor {args.min_train[0]}: deciles of held-out objects\n")
+    print(f"== calibration, {best}, floor {args.min_train[0]}: held-out objects by band of "
+          f"predicted risk\n")
     print(f"  {'predicted':>10}{'observed':>10}{'objects':>11}")
     merged = collections.defaultdict(lambda: [0, 0])
     for table in grouped(counted[best], preds):

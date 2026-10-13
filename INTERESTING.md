@@ -1102,3 +1102,15 @@ Two lessons, neither about this corpus. An aborted pull is not a no-op: it leave
 and replays that the next pull into the same directory silently adopts. And a map's presence
 in a selection does not mean it yielded anything, because the lazer-score share of a board
 varies from 0 to 50 — worth reconciling requested against delivered after any fetch.
+
+## 2026-10-13 — the player's own cells predict their misses on unseen maps, and it is spacing, not streams
+
+`PYTHONPATH=tools python3 tools/analysis/riskmap.py`, results in its docstring
+
+6.2M objects, 2,930 beatmaps, split by beatmap. snap x spacing x run position puts 22% of
+held-out misses in its riskiest tenth of objects (lift 2.2, AUC 0.64) and is calibrated from
+1.6% to 15% predicted risk. Spacing carries it: snap alone 13.9%, + spacing 20.4%, + run
+position 21.9%. On first misses only (no miss in the eight before) the lift is slightly
+*higher*, 23.0%, so the model predicts failures, not cascades. Within a play, predicted risk
+correlates 0.33 with ten-second sections' miss rates; across replays of maps only 0.21 —
+the same map gets one prediction and very different days.
