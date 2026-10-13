@@ -70,6 +70,9 @@ fmt = lambda d: d.astimezone(local).strftime("%Y-%m-%d %H:%M")
 
 print(f"# Session {fmt(start)} to {fmt(end)[11:]} local ({(end - start).seconds // 60} min)")
 print(f"output {s.get('output', '?')}, monitor profile {s.get('monitor', '?')}, pipewire {s.get('pipewire', '?')}")
+if "audio_offset_end" in s:
+    a, b = s.get("audio_offset_start") or "?", s["audio_offset_end"] or "?"
+    print(f"global audio offset {b} ms" if a == b else f"global audio offset {a} -> {b} ms (changed during the session)")
 
 # ---- plays ----
 idx = json.load(open("build/score-index.json"))

@@ -19,24 +19,33 @@ ddc() { timeout 5 ddcutil --mfg DEL getvcp 10 14 DC E0 E1 E2 E3 F0 --brief 2>/de
 # The game's display mode: tools/display/osu-mode switches it before launch, so this is what
 # the session was played at.
 display() { hyprctl monitors -j 2>/dev/null | jq -r '[.[] | select(.focused)][0] | "\(.width)x\(.height)@\(.refreshRate|round)"' 2>/dev/null; }
+# The global audio offset, from lazer's game.ini under the path storage.ini points at. Read at
+# both ends, since lazer writes game.ini on exit, so a change during the session shows as
+# start != end. Recorded hit error includes this offset.
+offset() {
+    local dir
+    dir=$(sed -n 's/^FullPath *= *//p' ~/.local/share/osu/storage.ini 2>/dev/null)
+    sed -n 's/^AudioOffset *= *//p' "${dir:-$HOME/.local/share/osu}/game.ini" 2>/dev/null
+}
 pw() { pw-metadata -n settings 0 2>/dev/null | grep -oE "clock\.force-(quantum|rate)' value:'[0-9]+" | tr -d "'" | sed 's/ value:/=/' | paste -sd';'; }
 
 case "$1" in
 start)
     date -Iseconds
-    printf '%s\t%s\t%s\n' "$(ddc)" "$(pw)" "$(display)" > build/.session-start
+    # Unit separator, not tab: tab is IFS whitespace, so read would collapse an empty field.
+    printf '%s\x1f%s\x1f%s\x1f%s\n' "$(ddc)" "$(pw)" "$(display)" "$(offset)" > build/.session-start
     ;;
 end)
     started=$2
-    IFS=$'\t' read -r ddc_state pw_state display_state < build/.session-start 2>/dev/null
+    IFS=$'\x1f' read -r ddc_state pw_state display_state offset_start < build/.session-start 2>/dev/null
     # Wait for an answer for up to ten minutes; ignoring it records "unanswered".
     output=$(timeout 600 notify-send -a "osu! session" -u normal \
         -A headphones=Headphones -A speakers=Speakers \
         "What did you listen on?" "For the replay corpus. Ignore to skip." 2>/dev/null)
     [ -z "$output" ] && output=unanswered
-    python3 - "$started" "$(date -Iseconds)" "$output" "$ddc_state" "$pw_state" "$display_state" >> "$log" <<'PY'
+    python3 - "$started" "$(date -Iseconds)" "$output" "$ddc_state" "$pw_state" "$display_state" "$offset_start" "$(offset)" >> "$log" <<'PY'
 import csv, json, sys
-start, end, output, ddc, pw, display = sys.argv[1:]
+start, end, output, ddc, pw, display, offset_start, offset_end = sys.argv[1:]
 import re
 # The preset code names the profile; brightness is the fallback for one not seen yet.
 preset = re.search(r"VCP 14 SNC (x[0-9a-f]+)", ddc)
@@ -49,20 +58,38 @@ profile = {"x0c": "game1", "x05": "standard"}.get(preset.group(1) if preset else
 # A setup-timeline row only when the mode played at differs from the last session that
 # recorded one (read before this session's line is written); switching back to the
 # desktop mode between sessions is not a setup change.
-last = None
+last = last_offset = None
 for line in open("build/sessions.jsonl"):
     try:
-        last = json.loads(line).get("display") or last
+        prev = json.loads(line)
     except ValueError:
-        pass
-print(json.dumps({"start": start, "end": end, "output": output, "monitor": profile, "ddc": ddc,
-                  "pipewire": pw, "display": display}))
+        continue
+    last = prev.get("display") or last
+    last_offset = prev.get("audio_offset_end") or last_offset
+row = {"start": start, "end": end, "output": output, "monitor": profile, "ddc": ddc,
+       "pipewire": pw, "display": display}
+if offset_start or offset_end:
+    row["audio_offset_start"], row["audio_offset_end"] = offset_start, offset_end
+print(json.dumps(row))
+# The same for the global offset: a row when it moved during this session, or since the last
+# session that recorded it.
+offset_rows = []
+if last_offset and offset_start and offset_start != last_offset:
+    offset_rows.append(f"Global audio offset (game.ini AudioOffset) {last_offset} -> {offset_start} "
+                       f"between sessions, before the one starting {start[11:16]}")
+if offset_start and offset_end and offset_start != offset_end:
+    offset_rows.append(f"Global audio offset (game.ini AudioOffset) {offset_start} -> {offset_end} "
+                       f"during the session {start[11:16]}-{end[11:16]}; timing within it is not comparable")
 if display and last and display != last:
     with open("setup-timeline.csv", "a", newline="") as f:
         csv.writer(f).writerow([start[:10], "", "display",
             f"Game played at {display} (was {last}) from the session starting {start[11:16]}",
             "build/sessions.jsonl (session-log, hyprctl)", "measured"])
-PY
+if offset_rows:
+    with open("setup-timeline.csv", "a", newline="") as f:
+        for text in offset_rows:
+            csv.writer(f).writerow([start[:10], "", "audio", text,
+                "build/sessions.jsonl (session-log, game.ini)", "measured"])
 PY
     ;;
 esac
