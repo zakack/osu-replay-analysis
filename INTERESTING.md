@@ -619,3 +619,16 @@ key, and any finding phrased as "you miss X" is resting on a partition that does
 separate misses. Crossing in run position recovers a little and costs aim error, so the two
 targets may simply want different axes -- the same conclusion the band-edge search reached
 and then compromised on.
+
+## 2026-10-12 — correction: the findings cell's miss signal is weak, not absent
+
+`tools/analysis/patternpredict.py` docstring (training-floor sweep)
+
+The entry above claims `snap x spacing x |angle|` has negative held-out miss R^2 and so "no
+miss signal whatsoever". That was measured at one training floor, 50 rows per group, where a
+miss rate near 5% is estimated far too noisily. Raising the floor to 200 and 500 moves it to
++0.0004 and +0.0007, so the sign was noise. The finding that survives is the ratio: run
+position reaches 0.0033-0.0046 on misses at every floor while the |angle| cell reaches
+0.0007, about five times weaker, and the |angle| cell is simultaneously the *better* of the
+two on aim error. Two targets wanting different axes is the real content, and it is the same
+conclusion the band-edge search reached before compromising on one shared axis.

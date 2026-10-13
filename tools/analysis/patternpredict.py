@@ -36,59 +36,67 @@ baseline plus a refinement on the objects it claims, so the difference in R^2 is
 to the claim and nothing else.
 
 **Measured 2026-10-12** on 1,462,778 circles from 5,720 server-side replays over 1,454
-beatmaps, R^2 on held-out beatmaps:
+beatmaps, R^2 on held-out beatmaps, at three training floors:
 
-    scheme                        groups   used  claimed   aim R^2  miss R^2
-    cell |angle|                     462    187     97%    0.0277   -0.0009
-    cell run position                397    175     96%    0.0297    0.0045   <- best, both
-    cell |angle| x run position     1375    487     92%    0.0253    0.0014
-    schema4 x5                     11580   1223     31%    0.0255   -0.0019
-    whole schema4 x5                5260   1417     37%    0.0254   -0.0029
-    schema4 x25                     2678    784     29%    0.0263   -0.0018
-    whole schema4 x25                948    921     34%    0.0259   -0.0021
-    schema4+flow x5                11756   1027     15%    0.0259   -0.0015
-    whole schema4+flow x5           4976   1146     19%    0.0256   -0.0018
-    schema4+flow x25                1313    395     13%    0.0266   -0.0016
-    whole schema4+flow x25           446    439     16%    0.0267   -0.0019
-    naming x5                      10916   1035     21%    0.0271   -0.0008
-    whole naming x5                 4754   1233     25%    0.0267   -0.0017
-    naming x25                      1526    477     19%    0.0275   -0.0012
-    whole naming x25                 522    616     22%    0.0272   -0.0014
-    naming+flow x5                  7771    644     11%    0.0272   -0.0013
-    whole naming+flow x5            3082    684     14%    0.0271   -0.0019
-    naming+flow x25                  743    224      9%    0.0270   -0.0013
-    whole naming+flow x25            249    226     12%    0.0269   -0.0020
+                                         floor 50          floor 200         floor 500
+    scheme                    groups  claim   aim    miss  claim   aim    miss  claim   aim    miss
+    cell |angle|                 462    97% .0277 -.0009    95% .0280  .0004    93% .0282  .0007
+    cell run position            397    96% .0297  .0045    94% .0287  .0046    92% .0272  .0033
+    cell |angle| x run position 1375    92% .0253  .0014    88% .0228  .0013    81% .0195  .0012
+    schema4 x5                 11580    31% .0255 -.0019    22% .0275  .0004    17% .0282  .0009
+    whole schema4 x5            5260    37% .0254 -.0029    31% .0264 -.0005    24% .0273  .0003
+    schema4+flow x25            1313    13% .0266 -.0016     9% .0280  .0002     5% .0282  .0007
+    naming x25                  1526    19% .0275 -.0012    14% .0282  .0004    11% .0287  .0009
+    naming+flow x25              743     9% .0270 -.0013     8% .0280  .0002     5% .0282  .0007
 
-Three readings.
+(Eleven more pattern rows in the full output; they sit between these and change nothing.)
 
-* **The pattern is not a diagnostic unit.** Every spelling, at both support thresholds, on
-  both keys, scores at or below the cell it falls back to -- on aim error and on misses.
-  The coarse key is the control that rules out the obvious excuse: ``whole`` drops the
-  position inside the figure, which cuts the groups by half and raises the share of objects
-  whose group cleared the training minimum, and it does not help. It is marginally worse on
-  misses. So the figures are not mis-cut, they are uninformative about error, and no amount
-  of re-banding the turn changes that -- the naming bands, the schema bands and the flow bit
-  all land in the same place.
+Four readings.
 
-  This does not retire `patterns.py`. Coverage was never the claim being tested, and a unit
-  that names something a player recognises is worth having in the viewer whether or not it
-  predicts. What it retires is the idea that pattern membership should *replace* the cell as
-  the thing findings are computed over.
+* **The pattern adds nothing the cell did not already have.** At the floor where groups are
+  too small to estimate, every pattern scheme sits a touch below the cell it falls back to;
+  as the floor rises that deficit closes monotonically and by 500 the schemes are *on* the
+  cell's numbers -- `naming x25` reaches .0287 aim and .0009 miss against the cell's .0282
+  and .0007. So the figures are not harmful and not helpful: they tie, while claiming 5-24%
+  of the objects, which means the tie is the fallback doing the work. The first version of
+  this measurement ran at floor 50 only and read the deficit as evidence that patterns were
+  *worse*. That was estimation noise -- a miss rate near 5% estimated from 50 rows has a
+  standard error the size of the between-group spread -- and the sweep is here so the same
+  mistake is not available next time.
 
-* **Run position beats the turn again, on a different corpus and different targets.**
-  `unitsize.py` found this on one player's squared hit error. Here it is 4,978 players, aim
-  error and miss rate, and the same answer with fewer groups: 0.0297 against 0.0277, and
-  0.0045 against -0.0009. Two corpora that share no replays and two targets that share no
-  observations agree, which is about as much corroboration as this project can produce.
+* **Run position beats the turn on misses at every floor, and both halves agree.** .0045,
+  .0046, .0033 against the |angle| cell's -.0009, .0004, .0007; split by half it is .0032
+  and .0056, best of all schemes on each. On aim error it wins at the two lower floors and
+  loses at 500, where it has fewer usable groups than the cell. `unitsize.py` found the same
+  ordering on one player's squared hit error; this is 4,978 players and two different
+  targets, on a corpus sharing no replays. That is as much corroboration as this project can
+  produce for anything.
 
-* **The findings table's own cell does not predict misses at all.** `snap x spacing x
-  |angle|` is the key `cells.py` uses, it is the best of the three on nothing, and its miss
-  R^2 is *negative* -- held-out groups predict misses slightly worse than the grand mean.
-  It is a good aim-error key and an empty miss key. Crossing it with run position recovers
-  a little (0.0014) and costs aim error. Worth knowing before any finding phrased as "you
-  miss wide-angle jumps" is shipped.
+* **Misses are an order of magnitude harder to predict than aim error, for everything.**
+  Best aim R^2 .0297, best miss R^2 .0046. The |angle| cell in particular -- the key
+  `cells.py` actually bins on -- reaches .0007 on misses against run position's .0033, five
+  times weaker, while being the better of the two on aim error. Both numbers are real and
+  both are small; the point is the ratio, not the absolute.
 
+* **``whole`` is not the control it looks like.** Dropping the position inside the figure
+  pools objects that sit in different cells, so it cuts across the cell rather than
+  coarsening it, and losing to the cell is what that should do if the cell carries anything.
+  The floor sweep is the control for "cut too fine"; this row only shows that position
+  inside the figure is not where the missing information was either.
+
+Spelling needs the rhythm pass, and the collected side did not have one. It is a map
+property -- `Rhythm.Build` walks the playable beatmap, so a run that ended early still
+writes a row for every object and only the judgement columns differ -- so one replay per
+beatmap is enough, and 1,456 is a twentieth of the work of 6,232. To rebuild from scratch:
+
+    python3 tools/analysis/patternpredict.py --prepare
+    dotnet run --project src/Cli -c Release -- rhythm \
+        --corpus build/corpus-collected-onepermap.json --out build/rhythm-collected.csv
     PYTHONPATH=tools python3 tools/analysis/patternpredict.py
+
+The middle step takes about ten minutes and must report 0 failed. Check the row count too:
+a short CSV that still parses is how the delta geometry run came back a third light while
+exiting 0.
 """
 from __future__ import annotations
 
@@ -111,6 +119,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 GEOMETRY = os.path.join(ROOT, "build", "geometry-collected.csv")
 RHYTHM = os.path.join(ROOT, "build", "rhythm-collected.csv")
 CORPUS = os.path.join(ROOT, "build", "corpus-collected.json")
+ONE_PER_MAP = os.path.join(ROOT, "build", "corpus-collected-onepermap.json")
 TOLERANCE = "0.02"
 DEG = 180.0 / math.pi
 MIN_TRAIN = 50
@@ -320,7 +329,31 @@ def main() -> int:
     parser.add_argument("--cache", help="parsed map shapes, so re-runs skip the first pass")
     parser.add_argument("--max-maps", type=int, default=0,
                         help="cap the beatmap count, for a cheap smoke run")
+    parser.add_argument("--prepare", action="store_true",
+                        help="write the one-replay-per-beatmap corpus the rhythm pass needs")
+    parser.add_argument("--min-train", type=int, nargs="*", default=[50, 200, 500],
+                        help="training-set floors below which a group is not used. Swept "
+                             "rather than fixed because a scheme with many small groups "
+                             "and one with few large ones are not otherwise comparable: a "
+                             "deficit that closes as the floor rises was estimation noise")
     args = parser.parse_args()
+
+    if args.prepare:
+        # Any paired record would do; the most accurate run is chosen so nothing hinges on
+        # an abandoned one, and the choice is deterministic for a rerun.
+        best: dict[str, tuple] = {}
+        for record in json.load(open(CORPUS)):
+            if not record.get("Paired"):
+                continue
+            md5 = record["BeatmapMd5"]
+            # Not named `score`: `report` closes over the module-level `score()` and a
+            # local of that name in `main` shadows it for the whole function.
+            rank = (record.get("Accuracy") or 0, os.path.basename(record["Path"]))
+            if md5 not in best or rank > best[md5][0]:
+                best[md5] = (rank, record)
+        json.dump([r for _, r in best.values()], open(ONE_PER_MAP, "w"))
+        print(f"{len(best):,} beatmaps written to {os.path.relpath(ONE_PER_MAP, ROOT)}")
+        return 0
 
     if args.cache and os.path.exists(args.cache):
         shapes = json.load(open(args.cache))
@@ -435,13 +468,18 @@ def main() -> int:
 
     print(f"\n{rows:,} geometry rows, {kept:,} scored\n")
 
-    def report(train_groups, test_groups, fallback):
-        """Pooled R^2 over both directions, per target, plus how much the groups covered."""
+    def report(train_groups, test_groups, fallback, min_train, only=None):
+        """R^2 per target, plus how much of the test set the groups actually claimed.
+
+        ``only`` restricts to one direction, so the two halves can be read separately;
+        without it the two are pooled, which is what the table reports.
+        """
         out = []
         for target in (0, 1):
             num = den = 0.0
             used = covered = seen = 0
-            for d in (0, 1):
+            directions = (0, 1) if only is None else (only,)
+            for d in directions:
                 g = grand[d][target]
                 mean = g[1] / g[0] if g[0] else 0.0
                 for key, s in test_groups[d].items():
@@ -452,49 +490,65 @@ def main() -> int:
                     group, cell = key if fallback else (key, None)
                     train = train_groups[d].get(group)
                     t = train[target] if train else None
-                    if t and t[0] >= MIN_TRAIN:
+                    if t and t[0] >= min_train:
                         pred = t[1] / t[0]
                         used += 1
                         covered += stat[0]
                     elif fallback:
                         back = fallback[d].get(cell)
                         b = back[target] if back else None
-                        pred = b[1] / b[0] if b and b[0] >= MIN_TRAIN else mean
+                        pred = b[1] / b[0] if b and b[0] >= min_train else mean
                     else:
                         pred = mean
                     num += score(stat[0], stat[1], stat[2], pred)
                     den += score(stat[0], stat[1], stat[2], mean)
-            out.append((1 - num / den if den else 0.0, covered / max(seen, 1), used // 2))
+            out.append((1 - num / den if den else 0.0, covered / max(seen, 1),
+                        used // len(directions)))
         return out
+
+    # Every scheme as (name, train accumulator, test accumulator, fallback or None), so the
+    # sweep and the per-direction table iterate one list instead of two special cases.
+    arms = [(name, [cell_test[1 - d][name] for d in range(2)],
+             [cell_test[d][name] for d in range(2)], None) for name in CELLS]
+    arms += [(scheme, [pat_train[d][scheme] for d in range(2)],
+              [pat_test[d][scheme] for d in range(2)], cell_train) for scheme in keyed]
+
+    def group_count(name, train, fallback):
+        if fallback is None:
+            # Cell keys mean the same thing in both directions, so the union is the count.
+            return len(set(train[0]) | set(train[1]))
+        # Pattern ids are private to each direction's vocabulary, so the two key sets are
+        # not comparable and their union is not a group count. The mean is.
+        return (len(train[0]) + len(train[1])) // 2
 
     print(f"{len(shapes):,} beatmaps, {kept:,} scored objects, train and test on disjoint "
           f"beatmaps.\nAim error is over hits only -- a miss has no cursor error at hit "
-          f"time. Pattern schemes\nfall back to the |angle| cell where no pattern claims "
-          f"the object, so the difference is\nattributable to the claim and not to "
-          f"coverage.\n")
-    print(f"{'scheme':<28}{'groups':>8}{'used':>7}{'claimed':>9}"
-          f"{'aim R^2':>10}{'miss R^2':>10}")
+          f"time. Pattern schemes fall\nback to the |angle| cell where no pattern claims "
+          f"the object, so the difference is\nattributable to the grouping and not to "
+          f"coverage. 'claimed' is the share of scored\nobjects whose own group cleared "
+          f"the floor, which is narrower than pattern coverage:\ncircles not following a "
+          f"slider, and only where the group had enough training rows.")
 
-    for name in CELLS:
-        # A cell scheme needs no separate training accumulator: every row is a test
-        # observation for exactly one direction, so the rows that train direction d are
-        # the ones the other direction tested on, under the same key.
-        test = [cell_test[d][name] for d in range(2)]
-        train = [cell_test[1 - d][name] for d in range(2)]
-        aim, miss = report(train, test, None)
-        groups = len(set(test[0]) | set(test[1]))
-        print(f"{name:<28}{groups:>8}{miss[2]:>7}{miss[1]:>8.0%}"
-              f"{aim[0]:>10.4f}{miss[0]:>10.4f}")
+    for min_train in args.min_train:
+        print(f"\ntraining floor {min_train}\n")
+        print(f"{'scheme':<28}{'groups':>8}{'used':>7}{'claimed':>9}"
+              f"{'aim R^2':>10}{'miss R^2':>10}")
+        for name, train, test, fallback in arms:
+            aim, miss = report(train, test, fallback, min_train)
+            print(f"{name:<28}{group_count(name, train, fallback):>8}{miss[2]:>7}"
+                  f"{miss[1]:>8.0%}{aim[0]:>10.4f}{miss[0]:>10.4f}")
 
-    for scheme in keyed:
-        aim, miss = report([pat_train[d][scheme] for d in range(2)],
-                           [pat_test[d][scheme] for d in range(2)],
-                           cell_train)
-        # The ids are private to each direction's vocabulary, so the two key sets are not
-        # comparable and their union is not a group count. The mean is.
-        groups = (len(pat_train[0][scheme]) + len(pat_train[1][scheme])) // 2
-        print(f"{scheme:<28}{groups:>8}{miss[2]:>7}{miss[1]:>8.0%}"
-              f"{aim[0]:>10.4f}{miss[0]:>10.4f}")
+    # The two halves separately, at the first floor. Pooling can hide a scheme that wins on
+    # one half and loses on the other, which is a different claim from winning overall.
+    floor = args.min_train[0]
+    print(f"\neach half on its own, training floor {floor}. The halves are disjoint sets "
+          f"of beatmaps,\nso agreement between them is the robustness statement the "
+          f"pooled number cannot make.\n")
+    print(f"{'scheme':<28}{'aim A':>9}{'aim B':>9}{'miss A':>9}{'miss B':>9}")
+    for name, train, test, fallback in arms:
+        a = report(train, test, fallback, floor, only=0)
+        b = report(train, test, fallback, floor, only=1)
+        print(f"{name:<28}{a[0][0]:>9.4f}{b[0][0]:>9.4f}{a[1][0]:>9.4f}{b[1][0]:>9.4f}")
     return 0
 
 
