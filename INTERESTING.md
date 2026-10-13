@@ -886,3 +886,33 @@ one arriving too fast to turn tightly does.
 Nothing here was late: hit error on those bands is +1.0 to -2.4 ms. "Rushing" is the cursor,
 not the hand on the keys, and the two must not be collapsed. Settling it needs the trajectory
 between presses.
+
+## 2026-10-13 — the dominant miss on acute wide jumps: cursor arrives, leaves, then the button falls
+
+`PYTHONPATH=tools python3 tools/analysis/arrival.py --source player [--by-bpm]`
+
+The player watched this in replays -- cursor to the centre, a fraction of a second still, then
+away, with the press marker landing half a radius to a radius outside the circle, a miss with
+no timing judgement -- and it measures exactly as described. On jumps of 3.5+ radii with a turn
+under 50 degrees: 3.2% of them end with the cursor having reached 0.49 radii from the centre,
+been deepest 22 ms *before* the beat, left, and the button falling 1.70 radii out. That is
+nearly twice as common as the cursor simply failing to arrive (1.7%), and it is the largest
+single miss mechanism at every tempo -- 40% of all misses on these jumps below 140 BPM, 58%
+above 220.
+
+Three corrections it forces. The agent's recollection that it is absent below ~160 BPM does not
+hold: it runs 2.6-3.5% everywhere below 200, and the 140-160 band is *higher* than 160-180. The
+rate does rise steeply, but above 200 (5.7%) and 220 (10.4%), not at 160. And tempo there is
+confounded with required cursor velocity and with map population, so the axis may not be tempo.
+
+Nothing about it is a button-hand timing failure: these objects carry no judgement at all, so
+hit error never sees them, which is why watching replays reads it as lateness. The milder form
+does exist among the *hits* -- the button falls at 0.53 of the cursor's stay inside the circle
+rather than at its deepest point -- but the top 50 press *later* in the visit (0.57) and 4 ms
+after their deepest point against the player's 0, so phasing is not where he differs. Precision
+is: 0.297 radii deep against 0.245, 0.45 radii out at the press against 0.35.
+
+And the lesson that cost three revisions of streamfail.py: Clicks.cs has written enterTime,
+exitTime, closestTime, closestDist, turnDist and the stray press with its cursor position since
+the clicks pass existed. The mechanisms were being argued from press samples while the columns
+that separate them sat in build/clicks.csv. Check what the corpus already carries.
