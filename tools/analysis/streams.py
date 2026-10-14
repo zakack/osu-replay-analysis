@@ -125,9 +125,17 @@ FRACTION_NAMES = {0.125: "1/8", 1 / 6: "1/6", 0.25: "1/4", 1 / 3: "1/3", 0.5: "1
 # Core: pure functions over times, so the tests can drive them without files
 # ------------------------------------------------------------------------------------------
 
-def align(objects: list[float], presses: list[float], interval: float) -> list[tuple[int | None, int | None]]:
+COSTS = ("EXTRA", "DROP", "EXTRA_FAR", "DROP_FAR", "BOUNCE", "HOLE", "MAX_MATCH")
+
+
+def align(objects: list[float], presses: list[float], interval: float,
+          costs: dict | None = None) -> list[tuple[int | None, int | None]]:
     """Monotonic alignment. Returns pairs (object index or None, press index or None) in
-    time order: a match, a dropped circle (press None) or an extra press (object None)."""
+    time order: a match, a dropped circle (press None) or an extra press (object None).
+    ``costs`` overrides any of COSTS by name, for sensitivity runs (drift.py sensitivity)."""
+    c_ = {k: globals()[k] for k in COSTS} | (costs or {})
+    EXTRA, DROP, EXTRA_FAR, DROP_FAR = c_["EXTRA"], c_["DROP"], c_["EXTRA_FAR"], c_["DROP_FAR"]
+    BOUNCE, HOLE, MAX_MATCH = c_["BOUNCE"], c_["HOLE"], c_["MAX_MATCH"]
     n, m = len(objects), len(presses)
     inf = float("inf")
 
@@ -207,7 +215,8 @@ def rate_check(presses: list[float], snap: float, beat: float) -> tuple[str, flo
 
 
 def classify(objects: list[float], results: list[str], errors: list[float | None],
-             presses: list[tuple[float, str, float | None]], snap: float, beat: float) -> dict:
+             presses: list[tuple[float, str, float | None]], snap: float, beat: float,
+             costs: dict | None = None) -> dict:
     """One run. ``presses`` are (time, outcome, target start time) in the run's window.
 
     Two facts per circle, kept apart because a cascade needs both:
@@ -225,7 +234,7 @@ def classify(objects: list[float], results: list[str], errors: list[float | None
     double = [False] * n
 
     if verdict == "ok":
-        pairs = align(objects, times, interval)
+        pairs = align(objects, times, interval, costs)
         intent = {j: i for i, j in pairs if i is not None and j is not None}
         index_of = {round(t, 1): k for k, t in enumerate(objects)}
         for i, j in pairs:

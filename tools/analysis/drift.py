@@ -40,6 +40,25 @@ CIs are 95% percentile bootstraps over beatmaps (md5), seed fixed, so a rerun pr
     python3 tools/analysis/drift.py report [--out build/drift.txt]
     python3 tools/analysis/drift.py latest [--sessions N] [--days D]
                                                        # after a session: the last N sessions vs the D days before
+    python3 tools/analysis/drift.py sensitivity [--out build/drift-sensitivity.txt]
+                                                       # every number above under other stream labellings
+
+Label sensitivity (`sensitivity`, measured 2026-10-14). Which circles are kept rests on the
+stream alignment's labels, so every number is recomputed under the first, flat-cost alignment,
+seven one-at-a-time nudges to the current costs, and two labellings with no alignment at all
+(keep every circle; drop lazer's Mehs). What held:
+  headline       slope +0.49..+0.57 and growth +0.10..+0.13 ms/tap under every alignment variant,
+                 +0.41 and +0.13..+0.15 with none. Label-free.
+  months         the sign flips between alignments (2025-01, -03, -05) are all months whose CI
+                 includes zero under every variant: noise around zero, not a label effect.
+  step 5         own-tap SD slope by position: current +0.69/+0.80/+0.56 (runs 5-8/9-12/13+),
+                 dropping Mehs with no alignment +0.72/+0.86/+0.60, the flat-cost alignment
+                 +0.22/+0.43/+0.28. The current reading is backed by a label-free check; runs
+                 of 13+ move +0.45..+0.66 with the gap wall (FAR 4..16).
+  latest         a single session rarely reaches MIN_FLAG_MAPS, so it rarely flags at all.
+                 Pooled by week over 30 weeks, the current costs flag 9; a one-parameter nudge
+                 changes the verdict in 4, the flat-cost alignment in 5. A lone weekly flag sits
+                 near its CI edge: a prompt to look, not a verdict.
 
 ``report`` and ``latest`` first extend the cache with any of the player's replays in
 build/corpus.json it lacks, by running ``ora rhythm/presses/onset`` on just those (seconds a
@@ -68,7 +87,8 @@ CACHE = "build/drift.pickle"
 NEW = "build/drift-new"
 ORA = "src/Cli/bin/Release/net10.0/ora"
 PLAYER = "zaksynack playing"
-VERSION = 2            # 2: judge labels from the evidence-gated stream alignment (streams.py)
+VERSION = 3            # 2: judge labels from the evidence-gated stream alignment (streams.py)
+                       # 3: each run keeps its press window, so `sensitivity` can relabel it
 
 SNAP = 0.25
 CLIP = 50.0          # ms; a residual beyond this is a 50 or a stray, not drift
@@ -163,7 +183,8 @@ def _classify_replay(name: str, rows: list[tuple], presses: list[tuple], aim: di
         lo = bisect.bisect_left(presses, (objects[0] - interval,))
         hi = bisect.bisect_right(presses, (objects[-1] + interval, "~"))
         res = classify(objects, [e[3] for e in events], [e[4] for e in events], presses[lo:hi], snap, beat)
-        out.append({"beat": beat, "verdict": res["verdict"], "times": objects, "kinds": kinds,
+        out.append({"beat": beat, "snap": snap, "presses": presses[lo:hi],
+                    "verdict": res["verdict"], "times": objects, "kinds": kinds,
                     "results": [e[3] for e in events], "errors": [e[4] for e in events],
                     "judge": res["judge"], "aim": [aim.get((name, round(t, 1))) for t in objects]})
     return out
@@ -676,11 +697,145 @@ def latest(days: int = 30, pool: int = 1) -> None:
         p(f)
 
 
+# ------------------------------------------------------------------------------------------
+# Label sensitivity
+# ------------------------------------------------------------------------------------------
+
+# Cost overrides for streams.align (None: no alignment, see _relabel). The flat-cost entry
+# reproduces the first alignment exactly: every gap 0.6, matches up to one interval.
+VARIANTS = [
+    ("current", {}),
+    ("flat costs (first)", {"EXTRA_FAR": 0.6, "DROP_FAR": 0.6, "MAX_MATCH": 1.0}),
+    ("HOLE 1.6", {"HOLE": 1.6}), ("HOLE 2.0", {"HOLE": 2.0}),
+    ("BOUNCE 0.2", {"BOUNCE": 0.2}), ("BOUNCE 0.4", {"BOUNCE": 0.4}),
+    ("FAR 4", {"EXTRA_FAR": 4.0, "DROP_FAR": 4.0}), ("FAR 16", {"EXTRA_FAR": 16.0, "DROP_FAR": 16.0}),
+    ("MAX_MATCH 1.25", {"MAX_MATCH": 1.25}),
+    ("no alignment: every circle", None), ("no alignment: drop Mehs", None),
+]
+ALIGNED = sum(1 for _, c in VARIANTS if c is not None)
+
+
+def _relabel(store: dict, label: str, costs: dict | None) -> dict:
+    replays = {}
+    for name, v in store["replays"].items():
+        runs = []
+        for r in v["runs"]:
+            if costs is not None:
+                res = classify(r["times"], r["results"], r["errors"], r["presses"], r["snap"], r["beat"], costs)
+                verdict, judge = res["verdict"], res["judge"]
+            elif label.endswith("every circle"):
+                verdict, judge = "ok", ["self"] * len(r["times"])
+            else:
+                verdict, judge = "ok", ["self" if x != "Meh" else "next" for x in r["results"]]
+            runs.append(r | {"verdict": verdict, "judge": judge})
+        replays[name] = v | {"runs": runs}
+    return {"version": VERSION, "replays": replays}
+
+
+def _step5_own(tab) -> list[float]:
+    kept = tab["reason"] == 0
+    out = []
+    for lo, hi, limit in ((5, 8, 8), (9, 12, 12), (13, 10 ** 6, 17)):
+        band = (tab["len"] >= lo) & (tab["len"] <= hi) & (tab["reason"] != 7) & (tab["reason"] != 6)
+        rows = [(i, np.std(tab["err"][band & (tab["pos"] == i) & kept])) for i in range(1, limit + 1)
+                if (band & (tab["pos"] == i)).sum() >= MIN_N and (band & (tab["pos"] == i) & kept).sum() >= MIN_N]
+        out.append(np.polyfit([q[0] for q in rows], [q[1] for q in rows], 1)[0] if len(rows) >= 2 else float("nan"))
+    return out
+
+
+def _weekly_flags(tab, weeks: int, days: int = 30) -> dict[str, str]:
+    """`latest`'s verdict with sessions pooled by ISO week, for the last ``weeks`` weeks."""
+    kept = tab["reason"] == 0
+    week = np.asarray([dt.datetime.fromtimestamp(x, EDT).strftime("%G-W%V") for x in tab["t"]])
+    out = {}
+    for w in sorted(set(week[kept]))[-weeks:]:
+        inside = week == w
+        sess = kept & inside
+        t0 = tab["t"][inside].min()
+        base = kept & ~inside & (tab["t"] < t0) & (tab["t"] >= t0 - days * 86400)
+        maps = len(np.unique(tab["md5"][sess]))
+        if maps < MIN_FLAG_MAPS:
+            out[w] = "few maps"
+            continue
+        mt = matched(tab, sess, base, boot=500)
+        flags = []
+        for key, worse in (("slope", "abs"), ("growth", "up"), ("within", "up")):
+            if key in mt:
+                sv, bv, d, (lo, hi) = mt[key]
+                if lo > 0 or hi < 0:
+                    bad = abs(sv) > abs(bv) if worse == "abs" else d > 0
+                    flags.append(f"{key}{'+' if bad else '-'}")
+        out[w] = " ".join(flags) or "-"
+    return out
+
+
+def sensitivity(out_path: str | None, weeks: int = 30) -> None:
+    store = update()
+    results = []
+    for label, costs in VARIANTS:
+        tab = table(_relabel(store, label, costs))
+        kept = tab["reason"] == 0
+        era = tab["era"] == CURRENT_ERA
+        r = {"label": label, "kept": kept.mean(),
+             "all": Fit(tab, kept, boot=500), "analog": Fit(tab, kept & era, boot=500),
+             "months": {mo: Fit(tab, kept & (tab["month"] == mo), boot=500)
+                        for mo in sorted(set(tab["month"])) if (kept & (tab["month"] == mo)).sum() >= 500},
+             "step5": _step5_own(tab), "weeks": _weekly_flags(tab, weeks)}
+        results.append(r)
+        print(f"  {label}: kept {r['kept']:.1%}", file=sys.stderr, flush=True)
+
+    lines = []
+    p = lines.append
+    p("drift numbers under other stream labellings. The first row is what `report` prints; the next "
+      f"{ALIGNED - 1} vary the alignment's costs\n(streams.py), the last two use no alignment at all. "
+      "Fits bootstrap 500 draws here, so CIs differ slightly from `report`.\n")
+    p(f"  {'labelling':<28}{'kept':>7}{'slope all':>24}{'growth all':>24}{'slope analog':>24}"
+      f"{'growth analog':>24}{'within':>8}   step 5 own-tap SD slope, runs 5-8/9-12/13+")
+    for r in results:
+        a, g = r["all"], r["analog"]
+        p(f"  {r['label']:<28}{r['kept']:>7.1%}{a.fmt('slope', 24)}{a.fmt('growth', 24)}{g.fmt('slope', 24)}"
+          f"{g.fmt('growth', 24)}{a.within:>8.1f}   " + "/".join(f"{x:+.2f}" for x in r["step5"]))
+
+    sig = lambda f, k: int(f.ci[k][0] > 0) - int(f.ci[k][1] < 0)
+    months = sorted(set().union(*(r["months"] for r in results)))
+    for key, title in (("slope", "slope ms/tap"), ("growth", "spread growth ms/tap")):
+        p(f"\nmonthly {title}; * = CI excludes zero. SIGN / SIG: the aligned variants disagree on the "
+          f"sign / on whether it is significant")
+        p(f"  {'month':<9}" + "".join(f"{r['label'][:10]:>11}" for r in results))
+        for mo in months:
+            fits = [r["months"].get(mo) for r in results]
+            cells = "".join((f"{getattr(f, key):+.3f}{'*' if sig(f, key) else ' '}".rjust(11) if f else f"{'--':>11}")
+                            for f in fits)
+            al = [f for f in fits[:ALIGNED] if f]
+            tag = ("  SIGN" if len({getattr(f, key) > 0 for f in al}) > 1 else "") + \
+                  ("  SIG" if len({sig(f, key) for f in al}) > 1 else "")
+            p(f"  {mo:<9}{cells}{tag}")
+
+    p(f"\n`latest`'s verdict pooled by ISO week (30 days before as the baseline); + is a regression, "
+      f"- an improvement, - alone no change")
+    p(f"  {'week':<10}" + "".join(f"{r['label'][:10]:>11}" for r in results))
+    differ = [0, 0]
+    for w in sorted(results[0]["weeks"]):
+        v = [r["weeks"].get(w, "--") for r in results]
+        differ[0] += len(set(v[:ALIGNED])) > 1
+        differ[1] += len(set(v)) > 1
+        p(f"  {w:<10}" + "".join(f"{x:>11}" for x in v))
+    p(f"  weeks whose verdict differs: {differ[0]} among the aligned variants, {differ[1]} with the "
+      f"label-free ones, of {len(results[0]['weeks'])}")
+
+    text = "\n".join(lines) + "\n"
+    if out_path:
+        open(out_path, "w").write(text)
+    print(text)
+
+
 if __name__ == "__main__":
     os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
     cmd = sys.argv[1] if len(sys.argv) > 1 else "report"
     if cmd == "cache":
         cache()
+    elif cmd == "sensitivity":
+        sensitivity(sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else "build/drift-sensitivity.txt")
     elif cmd == "latest":
         arg = lambda k, d: int(sys.argv[sys.argv.index(k) + 1]) if k in sys.argv else d
         latest(days=arg("--days", 30), pool=arg("--sessions", 1))
