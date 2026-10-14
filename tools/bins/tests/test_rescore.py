@@ -62,3 +62,15 @@ def test_no_table_named_loads_lazers_values():
     with tempfile.TemporaryDirectory() as directory:
         synthetic.corpus(directory)
         assert not any(o.rescored for o in load.observations(_player(directory, None)))
+
+
+def test_without_rescore_switches_both_sides_together():
+    player, reference, collected = load.PLAYER, load.REFERENCE_NM, load.COLLECTED
+    try:
+        load.without_rescore()
+        assert load.PLAYER.rescore is None and load.REFERENCE_NM.rescore is None
+        assert load.PLAYER.geometry == player.geometry
+        assert load.REFERENCE_NM.geometry == reference.geometry
+        assert load.COLLECTED.rescore is None
+    finally:
+        load.PLAYER, load.REFERENCE_NM, load.COLLECTED = player, reference, collected

@@ -20,7 +20,7 @@ import os
 import re
 import sys
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .schema import DEG, ERAS, Observation
 
@@ -50,6 +50,9 @@ class Source:
     manifest: str | None = None   # reference side only
     presses: str | None = None    # path to a presses CSV (`ora presses`), for rescore.py
     rescore: str | None = None    # path to rescore.py's table; applied when set
+    # The rhythm CSV holds one replay per beatmap (run structure is the map's), and its runs
+    # stand for every replay of that map. Its result and error columns are that one replay's.
+    rhythm_per_map: bool = False
 
 
 PLAYER = Source("player", "build/geometry.csv", "build/rhythm.csv", "build/corpus.json",
@@ -59,6 +62,25 @@ REFERENCE_NM = Source("reference", "build/geometry-reference-nm.csv",
                       "build/reference/manifest.json",
                       presses="build/presses-reference-nm.csv",
                       rescore="build/rescore-reference-nm.csv")
+
+# The collected corpus: server-side replays by thousands of players, the one patternpredict.py
+# scores misses on. Not a side of the findings comparison; rescore.py writes it a table.
+COLLECTED = Source("collected", "build/geometry-collected.csv", "build/rhythm-collected.csv",
+                   "build/corpus-collected.json", presses="build/presses-collected.csv",
+                   rescore="build/rescore-collected.csv", rhythm_per_map=True)
+
+
+def without_rescore() -> None:
+    """Load lazer's own hit and aim errors on both sides, ignoring rescore.py's tables.
+
+    The re-score is an inference (which press a stroke was meant for, by stroke order), not a
+    measurement, so every finding it moves should be readable both ways. Both sides switch
+    together for the same reason the tables are required together.
+    """
+    global PLAYER, REFERENCE_NM, COLLECTED
+    PLAYER = replace(PLAYER, rescore=None)
+    REFERENCE_NM = replace(REFERENCE_NM, rescore=None)
+    COLLECTED = replace(COLLECTED, rescore=None)
 
 
 def _rescored(source: Source) -> dict[tuple[str, float], tuple[float | None, float | None]]:

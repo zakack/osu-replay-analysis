@@ -7,6 +7,8 @@ The commands, and the ordering between them matters:
     scheme     the bin edges in force, for reading alongside a findings file
     rescore    the cursor-shift correction both sides load (rescore.py); rerun after sync
 
+`--no-rescore`, before the command, loads lazer's own errors on both sides instead.
+
 `findings --detrend` consumes what `map-bias` produces. Run it that way by default,
 because an undetrended finding cannot tell a player who is late through a section from
 a section that everybody is late through.
@@ -134,7 +136,8 @@ def findings(args) -> int:
         for reason, count in sorted(skipped.items(), key=lambda kv: -kv[1]):
             print(f"  {count:>7}  {reason}")
 
-    print(f"\nschema {SCHEMA_VERSION}, {len(rows)} rows, detrended={bool(bias)}")
+    print(f"\nschema {SCHEMA_VERSION}, {len(rows)} rows, detrended={bool(bias)}, "
+          f"rescored={load.PLAYER.rescore is not None}")
     print(f"written: {args.out}")
     return 0
 
@@ -195,7 +198,9 @@ def scheme(args) -> int:
 
 def rescore_tables(args) -> int:
     from . import rescore
-    for source in (load.PLAYER, load.REFERENCE_NM):
+    if args.no_rescore:
+        raise SystemExit("--no-rescore and rescore contradict each other")
+    for source in ((load.COLLECTED,) if args.collected else (load.PLAYER, load.REFERENCE_NM)):
         rescore.build(source)
     return 0
 
@@ -205,6 +210,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--player", default="zaksynack",
                         help="the subject; the local corpus also holds other people's "
                              "imported replays and they are not you")
+    parser.add_argument("--no-rescore", action="store_true",
+                        help="load lazer's own hit and aim errors, without rescore.py's "
+                             "correction of cursor-shifted stream circles (both sides)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     b = sub.add_parser("map-bias", help="per-object reference hit error")
@@ -240,9 +248,13 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(run=scheme)
 
     r = sub.add_parser("rescore", help="re-measure cursor-shifted stream circles, both sides")
+    r.add_argument("--collected", action="store_true",
+                   help="the collected corpus instead (patternpredict.py's), not the two sides")
     r.set_defaults(run=rescore_tables)
 
     args = parser.parse_args(argv)
+    if args.no_rescore:
+        load.without_rescore()
     return args.run(args)
 
 

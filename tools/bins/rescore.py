@@ -23,7 +23,9 @@ The table is built per side, and both sides of a comparison must have one: corre
 player and not the reference would move every player-versus-reference finding by the size
 of the correction.
 
-    python3 -m bins rescore        # both sides; needs build/presses-reference-nm.csv
+    python3 -m bins rescore              # both sides; needs build/presses-reference-nm.csv
+    python3 -m bins rescore --collected  # the collected corpus, for patternpredict.py;
+                                         # needs build/presses-collected.csv
 """
 from __future__ import annotations
 
@@ -63,6 +65,14 @@ def intended(source: load.Source) -> tuple[dict[tuple[str, float], tuple], colle
     md5s, _, _ = load._identify(source)
     wanted = set(md5s)
     runs = S.build_runs(source.rhythm, lambda name: name in wanted)
+    if source.rhythm_per_map:
+        # One replay per beatmap carries the map's runs; every replay of the map gets them.
+        # The result and error columns belong to that one replay, so they are not used to
+        # skip here; build() skips misses and unmeasured objects from each replay's own row.
+        by_map = collections.defaultdict(list)
+        for replay, events in runs:
+            by_map[md5s[replay]].append(events)
+        runs = [(replay, events) for replay, md5 in md5s.items() for events in by_map.get(md5, ())]
     presses = _presses(source.presses, {r for r, _ in runs})
     marked: dict[tuple[str, float], tuple] = {}
     counts: collections.Counter = collections.Counter()
@@ -86,7 +96,7 @@ def intended(source: load.Source) -> tuple[dict[tuple[str, float], tuple], colle
             if origin not in S.CURSOR:
                 continue
             for i in idx:
-                if events[i][3] == "Miss" or events[i][4] is None:
+                if not source.rhythm_per_map and (events[i][3] == "Miss" or events[i][4] is None):
                     continue
                 j = meant.get(i)
                 marked[(replay, round(objects[i], 3))] = (origin, window[j] if j is not None else None)
@@ -113,7 +123,7 @@ def build(source: load.Source) -> None:
                 continue
             start = float(row["startTime"])
             key = (replay, round(start, 3))
-            if key in marked:
+            if key in marked and row["result"] != "Miss" and row["hitError"]:
                 rows[key] = row
             if row.get("cursorSource") != "press" or not row["aimErrorRadii"] or not row["hitError"]:
                 continue
@@ -137,6 +147,7 @@ def build(source: load.Source) -> None:
 
     out_path = source.rescore
     written = empty = 0
+    counted: collections.Counter = collections.Counter()
     with open(out_path, "w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(COLUMNS)
@@ -144,6 +155,7 @@ def build(source: load.Source) -> None:
             row = rows.get(key)
             if row is None or key[0] not in radius:
                 continue
+            counted[marked[key][0]] += 1
             origin, press = marked[key]
             if press is None:
                 hit = aim = ""
@@ -159,7 +171,7 @@ def build(source: load.Source) -> None:
     spread.sort()
     print(f"{source.name}: {written} objects re-scored ({empty} with no press meant for them) "
           f"in {len(replays)} replays -> {out_path}", file=sys.stderr)
-    print(f"  by origin: " + ", ".join(f"{o} {n}" for o, n in counts.most_common()), file=sys.stderr)
+    print(f"  by origin: " + ", ".join(f"{o} {n}" for o, n in counted.most_common()), file=sys.stderr)
     if xy_diff:
         print(f"  check, press log vs geometry cursor at {len(xy_diff)} ordinary presses: "
               f"median {xy_diff[len(xy_diff) // 2]:.4f}, max {xy_diff[-1]:.4f} playfield units", file=sys.stderr)

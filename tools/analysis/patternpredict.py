@@ -67,39 +67,45 @@ Four readings.
 * **Run position beats the turn on misses at every floor, and both halves agree.** .0045,
   .0046, .0033 against the |angle| cell's -.0009, .0004, .0007; split by half it is .0032
   and .0056, best of all schemes on each. On aim error it wins at the two lower floors and
-  loses at 500 -- but see the next reading: that win does not survive cleaning up press
-  attribution, and the miss win does. `unitsize.py` found the same
+  loses at 500 -- see the next reading for how that depends on press attribution; the
+  miss win does not depend on it at all. `unitsize.py` found the same
   ordering on one player's squared hit error; this is 4,978 players and two different
   targets, on a corpus sharing no replays. That is as much corroboration as this project can
   produce for anything.
+* **Run position's aim-error edge is small, and attribution decides its size, not its sign.**
+  `aimErrorRadii` is measured at whichever press lazer judged the object with, so a stream
+  the cursor shifted reports the cursor at a tap meant for a neighbour. This reading first
+  used a proxy, `--own-tap 0.4`, dropping any aim error whose hit error exceeded 0.4 of the
+  gap to the previous object; it removed 8.7% of the scored set and read the aim ordering
+  as inverting (|angle| .0304 against run position .0302 at floor 200). The proxy was wrong
+  for the job: in streams an ordinary Ok already sits about half an interval off, so it
+  discarded real own taps, mostly deep in runs. Replaced 2026-10-14 by the stream
+  alignment's cursor-shifted circles (`python3 -m bins rescore --collected`, from the
+  repository root with tools/ on the path), which are far fewer and far more concentrated:
 
-* **Run position's aim-error edge was stream shifting, and the miss edge was not.**
-  `aimErrorRadii` is measured at whichever press the simulator attributed to the object, so
-  a stream that shifted reports a real number taken from a tap meant for a neighbour. The
-  displacement is about one tap interval, so `--own-tap 0.4` drops a press whose hit error
-  exceeds 0.4 of the gap to the previous object. 126,554 presses go, 8.7% of the scored set,
-  and they are not spread evenly:
+      run position       presses     proxy   rate   re-scored   rate
+      0:2                482,345    41,058   8.5%         117   0.0%
+      2:5                414,124    32,894   7.9%       1,218   0.3%
+      5:9                207,132    16,398   7.9%       2,147   1.0%
+      9:14               105,358     9,279   8.8%       1,839   1.7%
+      14:inf             168,826    27,004  16.0%       7,437   4.4%
 
-      run position       presses   shifted    rate  mean aim
-      0:2                482,345    41,058    8.5%    0.3631
-      2:5                414,124    32,894    7.9%    0.3780
-      5:9                207,132    16,398    7.9%    0.3884
-      9:14               105,358     9,279    8.8%    0.3994
-      14:inf             168,826    27,004   16.0%    0.4121
+  Aim R^2, |angle| cell against run-position cell, three ways of treating those 12,758
+  circles (0.9% of the scored set):
 
-  Flat to position 14 and double beyond it, against a mean aim error that climbs the whole
-  way -- so the deepest run positions, which is where the axis earns its score, are twice as
-  likely to be scored from the wrong tap. Remove them and the aim ordering inverts: at floor
-  200 the |angle| cell goes .0280 -> .0304 and run position .0287 -> .0302, so |angle| is
-  the better aim key once the attribution is clean. The miss column does not move at all
-  (.0004 and .0046), by construction: the filter drops only the aim contribution, a miss has
-  no press to misattribute, and the rows and denominator are identical either way.
+                                 floor 50          floor 200         floor 500
+      lazer's press           .0277  .0297      .0280  .0287      .0282  .0272
+      left unmeasured         .0260  .0279      .0263  .0269      .0266  .0254
+      re-scored (default)     .0330  .0401      .0333  .0394      .0333  .0378
 
-  Caveat on the instrument. This is a proxy, not `drift.py`'s self/next/prev/far/extra
-  classification, and it also discards taps that were genuinely late but the object's own.
-  The proper filter needs a clicks pass over the collected corpus, which does not exist yet.
-  What the proxy establishes is the *direction*: part of the aim-error result was
-  attribution, and none of the miss result was.
+  Leaving them out keeps the same small edge lazer's values give (+.0006 at floor 200
+  against +.0007), so the edge was never stream shifting. Re-scoring multiplies it tenfold
+  and flips floor 500, but that is 0.9% of objects carrying aim errors around a radius --
+  an inferred press, and squared error weights it heavily. Read the re-scored margin as
+  "cursor-caused stream failures are deep in runs" (the table above says so directly), not
+  as run position being a ten-times-better aim key. `--no-rescore` gives lazer's values.
+  The miss column is identical under all three: a miss has no press to misattribute.
+
 
 * **Misses are an order of magnitude harder to predict than aim error, for everything.**
   Best aim R^2 .0297, best miss R^2 .0046. The |angle| cell in particular -- the key
@@ -196,6 +202,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from analysis.patterns import ANGLE_BANDS, angle_symbol, flow, repeats, vocabulary  # noqa: E402
+from bins import load  # noqa: E402
 from bins.schema import ANGLE, RUN_POSITION, SPACING  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -210,6 +217,21 @@ MISSED = ("Miss", "LargeTickMiss")
 # Run lengths at which every run-position band is reachable, so depth can be compared
 # without run length varying alongside it.
 LONG = (14, 20)
+
+
+def corrections(args) -> dict:
+    """(replay, start) -> (hit error, aim error) at the press the stream alignment says was
+    meant for the object, for cursor-shifted stream circles (bins/rescore.py). Empty with
+    --no-rescore. The table is required otherwise: scoring aim error with it missing would
+    silently be the uncorrected measurement."""
+    if args.no_rescore:
+        return {}
+    path = load.COLLECTED.rescore
+    if not os.path.exists(os.path.join(ROOT, path)):
+        raise SystemExit(f"{path} is missing; build it with `python3 -m bins rescore --collected` "
+                         f"(from tools/), or pass --no-rescore")
+    from bins.rescore import read
+    return read(os.path.join(ROOT, path))
 
 # Mods that make a replay incomparable, for two separate reasons.
 #
@@ -439,7 +461,8 @@ def gradient(shapes, position, args) -> int:
     corpus = {os.path.basename(r["Path"]): r["BeatmapMd5"]
               for r in json.load(open(CORPUS)) if not (EXCLUDE & set(r.get("Mods") or ()))}
 
-    shift = collections.defaultdict(lambda: [0, 0, 0.0])        # bin -> n, shifted, sum aim
+    corrected = corrections(args)
+    shift = collections.defaultdict(lambda: [0, 0, 0, 0.0])     # bin -> n, proxy, re-scored, sum aim
     cell = collections.defaultdict(lambda: [0, 0])              # (snap, md5, bin) -> miss, n
     per_map = collections.defaultdict(lambda: [0, 0])           # (snap, md5) -> miss, n
     # Keyed on run length as well, so positions can be compared inside runs long enough to
@@ -467,13 +490,18 @@ def gradient(shapes, position, args) -> int:
             miss = 1 if r["result"] in EXCLUDED else 0
 
             aim = _num(r["aimErrorRadii"])
+            fixed = corrected.get((r["replay"], round(float(r["startTime"]), 3)))
             if aim is not None:
                 error, gap = _num(r["hitError"]), _num(r["deltaTime"])
                 s = shift[band]
                 s[0] += 1
-                s[2] += aim
                 if error is None or gap is None or abs(error) > 0.4 * gap:
                     s[1] += 1
+                if fixed is not None:
+                    s[2] += 1
+                    aim = fixed[1]
+                if aim is not None:
+                    s[3] += aim
 
             cell[(row["snap"], md5, band)][0] += miss
             cell[(row["snap"], md5, band)][1] += 1
@@ -490,15 +518,16 @@ def gradient(shapes, position, args) -> int:
 
     order = [b for b in RUN_POSITION.labels if b in {k[2] for k in cell}]
 
-    print("\npresses attributed to a neighbour, by depth into the run. A shift displaces a "
-          "press by about\none tap interval, so a hit error over 0.4 of the gap to the "
-          "previous object is one.\n")
-    print(f"{'run position':<14}{'presses':>11}{'shifted':>10}{'rate':>8}{'mean aim':>10}")
+    print("\npresses attributed to a neighbour, by depth into the run. `proxy` is the old "
+          "test, a hit error\nover 0.4 of the gap to the previous object; `re-scored` is the "
+          "stream alignment's\ncursor-shifted circles (bins/rescore.py). Mean aim is after "
+          "re-scoring, unless --no-rescore.\n")
+    print(f"{'run position':<14}{'presses':>11}{'proxy':>9}{'rate':>7}{'re-scored':>11}{'rate':>7}{'mean aim':>10}")
     for band in order:
-        n, bad, total = shift[band]
+        n, proxy, fixed, total = shift[band]
         if not n:
             continue
-        print(f"{band:<14}{n:>11,}{bad:>10,}{bad / n:>8.1%}{total / n:>10.4f}")
+        print(f"{band:<14}{n:>11,}{proxy:>9,}{proxy / n:>7.1%}{fixed:>11,}{fixed / n:>7.1%}{total / n:>10.4f}")
 
     def excess(snap, band):
         """Miss rate above the same beatmap's own, weighted by objects."""
@@ -615,14 +644,10 @@ def main() -> int:
     parser.add_argument("--cache", help="parsed map shapes, so re-runs skip the first pass")
     parser.add_argument("--max-maps", type=int, default=0,
                         help="cap the beatmap count, for a cheap smoke run")
-    parser.add_argument("--own-tap", type=float, default=0.0, metavar="FRACTION",
-                        help="keep only objects whose attributed press is plausibly their "
-                             "own: |hit error| within this fraction of the gap to the "
-                             "previous object. A shifted press in a stream is displaced by "
-                             "about one whole tap interval, so 0.4 excludes it. Guards the "
-                             "aim-error numbers against stream shifting, which inflates aim "
-                             "error and does so deeper into runs -- exactly where it would "
-                             "manufacture the run-position result")
+    parser.add_argument("--no-rescore", action="store_true",
+                        help="score aim error at the press lazer judged each object with, "
+                             "instead of re-scoring cursor-shifted stream circles at the "
+                             "press meant for them (bins/rescore.py)")
     parser.add_argument("--gradient", action="store_true",
                         help="instead of the R^2 table, ask whether run position's win is "
                              "an artifact of how streams work: how often a press is "
@@ -713,7 +738,8 @@ def main() -> int:
     print(f"{len(corpus):,} of {len(records):,} replays kept; "
           f"{len(records) - len(corpus):,} dropped for {'/'.join(sorted(EXCLUDE))}\n",
           flush=True)
-    rows = kept = dropped = 0
+    corrected = corrections(args)
+    rows = kept = fixed_n = unmeasured = 0
     with open(GEOMETRY) as f:
         for r in csv.DictReader(f):
             rows += 1
@@ -735,20 +761,16 @@ def main() -> int:
             y_aim = _num(r["aimErrorRadii"])
             miss = 1.0 if r["result"] in MISSED else 0.0
 
-            if args.own_tap:
-                # Aim error is measured at whichever press the simulator attributed to this
-                # object, so a stream that shifted reports a real number taken from a tap
-                # meant for a neighbour. The displacement is about one tap interval, which
-                # `deltaTime` is, so a hit error well inside that interval is its own tap.
-                # A miss has no press and nothing to misattribute, so it is kept.
-                error, gap = _num(r["hitError"]), _num(r["deltaTime"])
-                if y_aim is not None and (error is None or gap is None
-                                          or abs(error) > args.own_tap * gap):
-                    # Only the aim contribution goes: the row still counts for the miss
-                    # target, which has no press to misattribute, so that column stays
-                    # comparable with the unfiltered run instead of changing denominator.
-                    dropped += 1
-                    y_aim = None
+            fixed = corrected.get((r["replay"], round(float(r["startTime"]), 3)))
+            if fixed is not None and y_aim is not None:
+                # Aim error is measured at whichever press lazer judged the object with, so
+                # a stream the cursor shifted reports the cursor at a tap meant for a
+                # neighbour. The re-score measures it at the press meant for this object, or
+                # leaves it unmeasured when no press was. Only the aim contribution changes:
+                # a miss has no press to misattribute, so that column keeps its denominator.
+                y_aim = fixed[1]
+                fixed_n += 1
+                unmeasured += y_aim is None
             kept += 1
 
             base = (shape["snap"], spacing, turn)
@@ -785,8 +807,9 @@ def main() -> int:
                 print(f"  {kept:,} scored", flush=True)
 
     print(f"\n{rows:,} geometry rows, {kept:,} scored"
-          + (f", {dropped:,} presses excluded as not their object's own "
-             f"(|hit error| over {args.own_tap:g} x the gap)" if args.own_tap else "") + "\n")
+          + (f", {fixed_n:,} aim errors re-scored at the press meant for them "
+             f"({unmeasured:,} with none, left unmeasured)" if corrected else
+             ", aim error as lazer judged it (--no-rescore)") + "\n")
 
     def report(train_groups, test_groups, fallback, min_train, only=None):
         """R^2 per target, plus how much of the test set the groups actually claimed.
