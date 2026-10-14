@@ -1125,3 +1125,13 @@ opposite errors into a clean-looking table. Fitted and tested on 2026 alone (a t
 data): top-tenth capture 21.9% -> 26.0%, AUC 0.641 -> 0.683, map r 0.23 -> 0.43, section
 rate r 0.33 -> 0.47, observed/predicted 1.00. Also: a 2x2 screen quadrant adds nothing to
 miss prediction (21.5% vs 21.9%).
+
+## 2026-10-13 — the daily challenge runs two difficulty ramps a week
+
+`python3 tools/analysis/dailies.py --weeks` over build/daily-maps.json, 250 rooms 2026-02-06..10-13
+
+Median star rating by weekday: Mon 5.32, Tue 5.83, Wed 6.39, then Thu 3.24, Fri 3.76,
+Sat 4.36, Sun 4.87 — a hard ramp Monday to Wednesday and a reset-and-climb Thursday to
+Sunday, every week. Any evaluation on dailies should stratify by weekday or star rating, or
+a run of Wednesdays will look like a slump. Themes, where there are any, are not published
+anywhere reachable (not the API, not in-game, not the wiki).

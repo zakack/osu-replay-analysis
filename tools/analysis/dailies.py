@@ -128,7 +128,9 @@ def main() -> int:
         for d in days:
             print(f"{d['md5']}\tDaily challenges")
         for d in days:
-            print(f"{d['md5']}\tDaily {d['week_label']}")
+            # The ISO week first, so the collections sort by date wherever lazer sorts by
+            # name; the player renames the ones whose theme they work out.
+            print(f"{d['md5']}\tDaily {d['week']} \u00b7 {d['week_label']}")
         return 0
 
     if args.weeks:
