@@ -1,10 +1,11 @@
 """The binning layer's command line.
 
-Three commands, and the ordering between them matters:
+The commands, and the ordering between them matters:
 
     map-bias   what the reference corpus itself does at each object of each beatmap
     findings   the table: every cell, every metric, player against reference
     scheme     the bin edges in force, for reading alongside a findings file
+    rescore    the cursor-shift correction both sides load (rescore.py); rerun after sync
 
 `findings --detrend` consumes what `map-bias` produces. Run it that way by default,
 because an undetrended finding cannot tell a player who is late through a section from
@@ -192,6 +193,13 @@ def scheme(args) -> int:
     return 0
 
 
+def rescore_tables(args) -> int:
+    from . import rescore
+    for source in (load.PLAYER, load.REFERENCE_NM):
+        rescore.build(source)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bins", description=__doc__)
     parser.add_argument("--player", default="zaksynack",
@@ -230,6 +238,9 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("scheme", help="the bin edges in force")
     s.set_defaults(run=scheme)
+
+    r = sub.add_parser("rescore", help="re-measure cursor-shifted stream circles, both sides")
+    r.set_defaults(run=rescore_tables)
 
     args = parser.parse_args(argv)
     return args.run(args)

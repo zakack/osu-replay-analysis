@@ -45,52 +45,8 @@ from acur import spearman, ur       # noqa: E402
 from recovery import input_regime   # noqa: E402
 
 VARIANTS = ("raw", "drop-cursor", "drop-stray", "realign-cur", "drop-all", "trim-k", "add-miss", "both")
-CURSOR = ("stray-nothing", "notelock", "cursor left early")
-BUTTON = ("dropped", "double", "stray-window")
+CURSOR, BUTTON, chains = S.CURSOR, S.BUTTON, S.chains
 MIN_N = 200
-
-
-def chains(objects, window, r):
-    """Yield (origin, [circle indices]) per anchored shifted chain in an aligned run, with
-    stray split by whether the press hovered nothing or a circle outside its window."""
-    judge, tap, double = r["judge"], r["tap"], r["double"]
-    times = [p[0] for p in window]
-    pairs = r["pairs"]
-    meant_press = {i: j for i, j in pairs if i is not None and j is not None}
-
-    def cause(i):
-        t = tap[i]
-        if t == "stray":
-            return "stray-window" if window[meant_press[i]][1] == "window" else "stray-nothing"
-        return t if t in S.CAUSES else None
-
-    n = len(objects)
-    k = 0
-    while k < n:
-        d = judge[k]
-        if d not in ("next", "prev") or "self" not in judge[:k]:
-            k += 1
-            continue
-        q = k
-        while k < n and judge[k] == d:
-            k += 1
-        origin = "other"
-        if d == "prev":
-            if judge[q - 1] == "extra" or double[q - 1] or double[q]:
-                origin = "double"
-            elif cause(q - 1):
-                origin = cause(q - 1)
-            elif judge[q - 1] == "none":
-                origin = "cursor left early"
-        else:
-            for x in (q, q - 1):
-                if cause(x):
-                    origin = cause(x)
-                    break
-                if double[x]:
-                    origin = "double"
-                    break
-        yield origin, list(range(q, k))
 
 
 def main(out_path):

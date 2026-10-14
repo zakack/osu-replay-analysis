@@ -38,7 +38,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 import streams as S                                         # noqa: E402
-from acur_whole import chains                               # noqa: E402
+chains = S.chains
 from attribution_check import ANCHOR, load_presses          # noqa: E402
 
 MATCH = 4.0         # ms between a riding press and its floor crossing

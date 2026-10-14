@@ -250,6 +250,9 @@ class Observation:
     target_x: float | None     # playfield units, 0..512
     target_y: float | None     # playfield units, 0..384, y down
     heading: float | None      # degrees, direction of the jump into the object
+    # True when hit_error and aim_error were re-measured at the press the stream alignment says
+    # was meant for this object, in place of lazer's (a cursor-caused shift; see rescore.py).
+    rescored: bool = False
 
     @property
     def turn(self) -> float | None:

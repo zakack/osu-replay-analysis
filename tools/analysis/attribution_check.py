@@ -40,7 +40,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 import streams as S                 # noqa: E402
-from acur_whole import chains       # noqa: E402
+chains = S.chains
 
 ANCHOR = 4
 

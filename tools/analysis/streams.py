@@ -335,16 +335,71 @@ def _explain(start, end, tap, judge, double, errors, verdict, fraction) -> dict:
     return {"start": start, "end": end, "class": cls, "fraction": None, "origin": origin}
 
 
+# Chain origins by which hand started them. The cursor class is validated against the
+# player's fingers (attribution_check.py, attribution_riding.py: 93-97% where they alternate);
+# the button class, after the evidence-gated alignment, still mostly is not (about 90% of its
+# remaining chains side with lazer's reading), so a correction should touch the cursor class
+# only.
+CURSOR = ("stray-nothing", "notelock", "cursor left early")
+BUTTON = ("dropped", "double", "stray-window")
+
+
+def chains(objects, window, r):
+    """Yield (origin, [circle indices]) per anchored shifted chain in an aligned run, with
+    stray split by whether the press hovered nothing or a circle outside its window."""
+    judge, tap, double = r["judge"], r["tap"], r["double"]
+    times = [p[0] for p in window]
+    pairs = r["pairs"]
+    meant_press = {i: j for i, j in pairs if i is not None and j is not None}
+
+    def cause(i):
+        t = tap[i]
+        if t == "stray":
+            return "stray-window" if window[meant_press[i]][1] == "window" else "stray-nothing"
+        return t if t in CAUSES else None
+
+    n = len(objects)
+    k = 0
+    while k < n:
+        d = judge[k]
+        if d not in ("next", "prev") or "self" not in judge[:k]:
+            k += 1
+            continue
+        q = k
+        while k < n and judge[k] == d:
+            k += 1
+        origin = "other"
+        if d == "prev":
+            if judge[q - 1] == "extra" or double[q - 1] or double[q]:
+                origin = "double"
+            elif cause(q - 1):
+                origin = cause(q - 1)
+            elif judge[q - 1] == "none":
+                origin = "cursor left early"
+        else:
+            for x in (q, q - 1):
+                if cause(x):
+                    origin = cause(x)
+                    break
+                if double[x]:
+                    origin = "double"
+                    break
+        yield origin, list(range(q, k))
+
+
 # ------------------------------------------------------------------------------------------
 # Corpus
 # ------------------------------------------------------------------------------------------
 
-def cache() -> None:
-    """Tapped stream runs from rhythm.csv, the player's only. One pass over ~6GB."""
+def build_runs(rhythm_path: str, keep) -> list[tuple[str, list]]:
+    """Tapped stream runs from a rhythm CSV, for the replays ``keep(name)`` accepts: maximal
+    stretches of tapped objects (circles, slider heads) exactly one snap apart, snap of a third
+    of a beat or finer, MIN_RUN or longer. Each event is (time, beatLength, snap, result,
+    error)."""
     runs: dict[tuple[str, str], list] = collections.defaultdict(list)
-    with open(RHYTHM, newline="") as fh:
+    with open(rhythm_path, newline="") as fh:
         for r in csv.DictReader(fh):
-            if r["tolerance"] != TOLERANCE or not r["replay"].startswith(PLAYER):
+            if r["tolerance"] != TOLERANCE or not keep(r["replay"]):
                 continue
             if not r["snap"] or float(r["snap"]) > MAX_SNAP or r["kind"] not in ("circle", "sliderHead"):
                 continue
@@ -368,6 +423,12 @@ def cache() -> None:
                 cur = [ev]
         if len(cur) >= MIN_RUN:
             out.append((replay, cur))
+    return out
+
+
+def cache() -> None:
+    """Tapped stream runs from rhythm.csv, the player's only. One pass over ~6GB."""
+    out = build_runs(RHYTHM, lambda name: name.startswith(PLAYER))
     with open(CACHE, "wb") as fh:
         pickle.dump(out, fh)
     print(f"{len(out)} tapped stream runs across {len({r for r, _ in out})} replays")

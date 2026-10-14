@@ -48,12 +48,35 @@ class Source:
     rhythm: str        # path to a rhythm CSV
     corpus: str        # path to a corpus JSON
     manifest: str | None = None   # reference side only
+    presses: str | None = None    # path to a presses CSV (`ora presses`), for rescore.py
+    rescore: str | None = None    # path to rescore.py's table; applied when set
 
 
-PLAYER = Source("player", "build/geometry.csv", "build/rhythm.csv", "build/corpus.json")
+PLAYER = Source("player", "build/geometry.csv", "build/rhythm.csv", "build/corpus.json",
+                presses="build/presses.csv", rescore="build/rescore.csv")
 REFERENCE_NM = Source("reference", "build/geometry-reference-nm.csv",
                       "build/rhythm-reference-nm.csv", "build/corpus-nm.json",
-                      "build/reference/manifest.json")
+                      "build/reference/manifest.json",
+                      presses="build/presses-reference-nm.csv",
+                      rescore="build/rescore-reference-nm.csv")
+
+
+def _rescored(source: Source) -> dict[tuple[str, float], tuple[float | None, float | None]]:
+    """The re-scored hit and aim errors for this side, keyed like the geometry rows.
+
+    Required when the source names a table, not optional: a comparison where one side was
+    corrected and the other was not moves every finding by the size of the correction, and
+    quietly loading uncorrected data would be that comparison.
+    """
+    if source.rescore is None:
+        return {}
+    if not os.path.exists(source.rescore):
+        raise SystemExit(f"{source.rescore} is missing; build it with `python3 -m bins rescore`")
+    if os.path.getmtime(source.geometry) > os.path.getmtime(source.rescore):
+        print(f"note: {source.geometry} is newer than {source.rescore}; replays added since "
+              f"are not re-scored until `python3 -m bins rescore` runs again", file=sys.stderr)
+    from .rescore import read
+    return read(source.rescore)
 
 
 def _heading(raw: str) -> float | None:
@@ -169,6 +192,7 @@ def observations(source: Source, *, maps: set[str] | None = None,
         return
 
     runs = _runs(source, wanted)
+    corrected = _rescored(source)
 
     with open(source.geometry) as f:
         for row in csv.DictReader(f):
@@ -178,6 +202,11 @@ def observations(source: Source, *, maps: set[str] | None = None,
 
             start = float(row["startTime"])
             snap, run_index, run_size = runs.get((replay, round(start, 3)), (None, None, None))
+
+            hit_error, aim_error = _num(row["hitError"]), _num(row["aimErrorRadii"])
+            fixed = corrected.get((replay, round(start, 3)))
+            if fixed is not None:
+                hit_error, aim_error = fixed
 
             angle = _num(row["signedAngle"])
             if angle is not None:
@@ -209,14 +238,15 @@ def observations(source: Source, *, maps: set[str] | None = None,
                 snap=snap,
                 run_index=run_index,
                 run_size=run_size,
-                hit_error=_num(row["hitError"]),
-                aim_error=_num(row["aimErrorRadii"]),
+                hit_error=hit_error,
+                aim_error=aim_error,
                 result=sys.intern(row["result"]),
                 # Tolerated as absent: geometry CSVs written before the shim emitted these
                 # still load, they just cannot key a scheme that needs them.
                 target_x=_num(row.get("targetX", "")),
                 target_y=_num(row.get("targetY", "")),
                 heading=_heading(row.get("heading", "")),
+                rescored=fixed is not None,
             )
 
 
