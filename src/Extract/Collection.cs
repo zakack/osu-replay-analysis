@@ -34,7 +34,15 @@ public static partial class Collection
     /// Replace <paramref name="root"/>'s <c>collection.db</c> with one collection, and make
     /// sure the folder qualifies as a stable install. Returns the path of the database.
     /// </summary>
-    public static string Write(string root, string name, IReadOnlyList<string> md5s)
+    public static string Write(string root, string name, IReadOnlyList<string> md5s) =>
+        Write(root, [(name, md5s)]);
+
+    /// <summary>
+    /// Replace <paramref name="root"/>'s <c>collection.db</c> with several collections at
+    /// once. The format carries a count of collections, so a week-by-week split is still one
+    /// import rather than one trip through the setup wizard per week.
+    /// </summary>
+    public static string Write(string root, IReadOnlyList<(string Name, IReadOnlyList<string> Md5s)> collections)
     {
         Directory.CreateDirectory(Path.Combine(root, "Songs"));
         string path = Path.Combine(root, "collection.db");
@@ -44,14 +52,51 @@ public static partial class Collection
         {
             // The mirror of LegacyCollectionImporter.readCollections.
             writer.Write(version);
-            writer.Write(1);
-            writer.Write(name);
-            writer.Write(md5s.Count);
+            writer.Write(collections.Count);
 
-            foreach (string md5 in md5s)
-                writer.Write(md5);
+            foreach (var (name, md5s) in collections)
+            {
+                writer.Write(name);
+                writer.Write(md5s.Count);
+
+                foreach (string md5 in md5s)
+                    writer.Write(md5);
+            }
         }
 
         return path;
+    }
+
+    /// <summary>
+    /// Collections from lines of <c>md5 TAB name</c>, in order of each name's first line and
+    /// each MD5's first appearance within it. Lines without a tab or an MD5 are skipped.
+    /// </summary>
+    public static IReadOnlyList<(string Name, IReadOnlyList<string> Md5s)> GroupsIn(string text)
+    {
+        var order = new List<string>();
+        var groups = new Dictionary<string, List<string>>();
+
+        foreach (string line in text.Split('\n'))
+        {
+            int tab = line.IndexOf('\t');
+            if (tab < 0)
+                continue;
+
+            var md5 = Md5sIn(line[..tab]);
+            string name = line[(tab + 1)..].Trim();
+            if (md5.Count == 0 || name.Length == 0)
+                continue;
+
+            if (!groups.TryGetValue(name, out var list))
+            {
+                groups[name] = list = [];
+                order.Add(name);
+            }
+
+            if (!list.Contains(md5[0]))
+                list.Add(md5[0]);
+        }
+
+        return order.Select(n => (n, (IReadOnlyList<string>)groups[n])).ToList();
     }
 }

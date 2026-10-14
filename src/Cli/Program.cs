@@ -48,6 +48,7 @@ if (args.Length == 0)
     Console.Error.WriteLine("  clip <md5> <first> <last> [label]  cut objects first..last into a practice .osz in build/clips");
     Console.Error.WriteLine("    --lead-in-from <index> also writes objects index..first-1 as a lead-in, recorded apart from the clip");
     Console.Error.WriteLine("  collection --name <n> [--maps md5...] [--out dir]  a stable collection.db for lazer to import");
+    Console.Error.WriteLine("    --groups instead of --name: stdin lines of md5 TAB name, many collections in one file");
     Console.Error.WriteLine("    without --maps, takes every MD5 in stdin, so any command that prints MD5s can be piped in");
     return 2;
 }
@@ -162,7 +163,7 @@ switch (args[0])
         string? name = null;
         string root = Path.Combine("build", "collection");
         var maps = new List<string>();
-        bool fromArgs = false;
+        bool fromArgs = false, grouped = false;
 
         for (int i = 1; i < args.Length; i++)
         {
@@ -171,6 +172,7 @@ switch (args[0])
                 case "--name" when i + 1 < args.Length: name = args[++i]; break;
                 case "--out" when i + 1 < args.Length: root = args[++i]; break;
                 case "--maps": fromArgs = true; break;
+                case "--groups": grouped = true; break;
                 default:
                     if (!fromArgs)
                     {
@@ -183,32 +185,47 @@ switch (args[0])
             }
         }
 
-        if (string.IsNullOrWhiteSpace(name))
+        // --groups: several collections in one file, from stdin lines of "md5 TAB name", so a
+        // split into many named collections is still one import.
+        IReadOnlyList<(string Name, IReadOnlyList<string> Md5s)> collections;
+        if (grouped)
         {
-            Console.Error.WriteLine("collection: expected --name <name>");
-            return 2;
+            if (name != null || fromArgs)
+            {
+                Console.Error.WriteLine("collection: --groups takes its names and maps from stdin, not --name or --maps");
+                return 2;
+            }
+
+            collections = Collection.GroupsIn(Console.In.ReadToEnd());
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                Console.Error.WriteLine("collection: expected --name <name>, or --groups");
+                return 2;
+            }
+
+            collections = [(name, Collection.Md5sIn(fromArgs ? string.Join('\n', maps) : Console.In.ReadToEnd()))];
         }
 
-        var md5s = Collection.Md5sIn(fromArgs ? string.Join('\n', maps) : Console.In.ReadToEnd());
-
-        if (md5s.Count == 0)
+        if (collections.Count == 0 || collections.All(c => c.Md5s.Count == 0))
         {
             Console.Error.WriteLine("collection: no beatmap MD5s given");
             return 1;
         }
 
-        string db = Collection.Write(root, name, md5s);
-        Console.WriteLine($"{md5s.Count} map(s) in \"{name}\"");
+        string db = Collection.Write(root, collections);
 
         // Absent maps are inert in lazer, but a set drawn from another player's corpus can be
         // mostly absent, and a playlist of nothing should be said before it is imported.
         string indexPath = Path.Combine("build", "beatmap-index.json");
-        if (File.Exists(indexPath))
+        var index = File.Exists(indexPath) ? BeatmapIndex.Read(indexPath) : null;
+        foreach (var (n, md5s) in collections)
         {
-            var index = BeatmapIndex.Read(indexPath);
-            int missing = md5s.Count(m => !index.ContainsKey(m));
-            if (missing > 0)
-                Console.WriteLine($"{missing} of them not in {indexPath}; lazer keeps them in the collection but has nothing to show for them");
+            int missing = index == null ? 0 : md5s.Count(m => !index.ContainsKey(m));
+            Console.WriteLine($"{md5s.Count} map(s) in \"{n}\"" +
+                              (missing > 0 ? $", {missing} not in your library yet (lazer keeps them in the collection; they show once downloaded)" : ""));
         }
 
         Console.WriteLine(db);

@@ -49,6 +49,32 @@ public class CollectionTests
     }
 
     [Test]
+    public void LazerReadsSeveralCollectionsFromOneFile()
+    {
+        // One import for a week-by-week split, rather than one trip through the wizard each.
+        var groups = Collection.GroupsIn(
+            "27d9765612170a9517f0a5e8b4613f06\tWeek 1: tech\n"
+            + "0123456789abcdef0123456789abcdef\tWeek 2\n"
+            + "no tab here 89abcdef0123456789abcdef01234567\n"
+            + "27D9765612170A9517F0A5E8B4613F06\tWeek 1: tech\n"
+            + "fedcba9876543210fedcba9876543210\tWeek 1: tech\n");
+        Collection.Write(root, groups);
+
+        var importer = new LegacyCollectionImporter(null!);
+        var storage = new NativeStorage(root);
+        var read = typeof(LegacyCollectionImporter).GetMethod("readCollections", BindingFlags.Instance | BindingFlags.NonPublic)
+                   ?? throw new MissingMethodException("LegacyCollectionImporter.readCollections moved; find lazer's reader again");
+
+        using var stream = storage.GetStream("collection.db");
+        var collections = (List<BeatmapCollection>)read.Invoke(importer, [stream, null])!;
+
+        Assert.That(collections.Select(c => c.Name), Is.EqualTo(new[] { "Week 1: tech", "Week 2" }));
+        Assert.That(collections[0].BeatmapMD5Hashes,
+            Is.EqualTo(new[] { "27d9765612170a9517f0a5e8b4613f06", "fedcba9876543210fedcba9876543210" }));
+        Assert.That(collections[1].BeatmapMD5Hashes, Is.EqualTo(new[] { "0123456789abcdef0123456789abcdef" }));
+    }
+
+    [Test]
     public void FolderQualifiesAsAStableInstall()
     {
         // LegacyImportManager.IsUsableForStableImport accepts a Songs or Skins folder.
