@@ -1183,3 +1183,10 @@ Across a "dropped" slot, the two presses either side are 1.0-1.5 intervals apart
 `/home/zak/.claude/jobs/490e3c54/tmp/stray.py`, `adjud.py` (throwaway); tools/viewer/build.py `sy` <- clicks.csv strayPressTime
 
 On misses, Clicks.cs's cursor-based stray attribution and timing (nearest object, within meh) agree on only 35%. Where they pick different presses, the plain-era buttons back the timing pick 91.4% (baseline 92.1%) and the cursor pick 15%. Timing also finds an on-time tap for 29% of misses that get no tick today, 32k of them where the cursor never came within a radius (undershoots); those are on the predicted button 93.7%.
+
+## 2026-10-13 — analog era: the index finger never takes two 1/2 jumps in a row
+
+`python3 tools/analysis/fingering.py` (build/fingering.txt)
+
+After a k2 (index) press the next 1/2 jump is k1 99.3% of the time, from 2026-09-06 (the day after analog + key pool merged) onward; after k1 it is k1 again 54.5%. Plain era was symmetric (13% repeat each way). On stacks (<0.5 radii) the index repeats 40% — so the one-shot rule is about moving the cursor, not the finger. k1-after-k1 presses are ~1.2–1.9 pp more non-Great than alternated ones in the same tempo x spacing x run-position cell.
+
