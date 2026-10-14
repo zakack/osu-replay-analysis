@@ -55,7 +55,7 @@ def chains(objects, window, r):
     stray split by whether the press hovered nothing or a circle outside its window."""
     judge, tap, double = r["judge"], r["tap"], r["double"]
     times = [p[0] for p in window]
-    pairs = S.align(objects, times, r["interval"])
+    pairs = r["pairs"]
     meant_press = {i: j for i, j in pairs if i is not None and j is not None}
 
     def cause(i):
@@ -116,7 +116,7 @@ def main(out_path):
             continue
         r["interval"] = interval
         times = [p[0] for p in window]
-        meant = {i: times[j] - objects[i] for i, j in S.align(objects, times, interval)
+        meant = {i: times[j] - objects[i] for i, j in r["pairs"]
                  if i is not None and j is not None}
         for origin, idx in chains(objects, window, r):
             cls = "cursor" if origin in CURSOR else "button" if origin in BUTTON else "other"

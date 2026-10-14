@@ -48,12 +48,14 @@ def test_pushback_after_dropped_tap():
 
 
 def test_ahead_after_extra_tap():
-    # An extra tap between circles 2 and 3 lands on circle 3 early; from then on every tap
-    # meets the circle after the one it was meant for, a whole interval early.
-    presses = [(t, "hit", t) for t in OBJ[:3]] + [(OBJ[2] + 40, "hit", OBJ[3])]
+    # A bounce 20 ms after circle 2's tap lands on circle 3 early; from then on every tap
+    # meets the circle after the one it was meant for, a whole interval early. (A spare press
+    # further from its neighbour than BOUNCE is not taken as a double without other evidence:
+    # graded by the player's fingers, presses 0.3-0.5 I apart were more often both real taps.)
+    presses = [(t, "hit", t) for t in OBJ[:3]] + [(OBJ[2] + 20, "hit", OBJ[3])]
     presses += [(OBJ[k], "hit", OBJ[k + 1]) for k in range(3, 9)]
     results = ["Great"] * 3 + ["Meh"] * 7
-    errors = [0.0] * 3 + [-60.0] + [-STEP] * 6
+    errors = [0.0] * 3 + [-80.0] + [-STEP] * 6
     r = run(presses, results, errors)
     s = r["strings"][0]
     assert s["class"] == "ahead" and s["origin"] == "double", (s, r["judge"], r["double"])
@@ -75,6 +77,55 @@ def test_own_late():
     presses = [(t + 70, "hit", t) for t in OBJ]
     r = run(presses, ["Great"] * 2 + ["Meh"] * 5 + ["Great"] * 3, [70.0] * 10)
     assert r["strings"][0]["class"] == "own-late", r["strings"]
+
+
+def test_drift_is_own_taps_not_a_shift():
+    # Each tap later than the last, up to 0.9 of an interval: one stroke per circle the whole
+    # way, every one judged by lazer on its own circle. Flat gap costs read the back half as a
+    # dropped tap and a pushback chain; the fingers and the spacing say it never was one.
+    presses = [(t + 10 * k * STEP / 100, "hit", t) for k, t in enumerate(OBJ)]
+    r = run(presses, ["Great"] * 4 + ["Ok"] * 3 + ["Meh"] * 3)
+    assert r["tap"] == ["own"] * 10 and r["judge"] == ["self"] * 10, (r["tap"], r["judge"])
+
+
+def test_rushed_stream_is_own_taps_not_an_extra():
+    # The mirror: each tap earlier than the last, nothing doubled.
+    presses = [(t - 10 * k * STEP / 100, "hit", t) for k, t in enumerate(OBJ)]
+    r = run(presses, ["Great"] * 10)
+    assert r["tap"] == ["own"] * 10 and not any(r["double"]), (r["tap"], r["double"])
+
+
+def test_a_real_hole_is_still_a_drop():
+    # Two intervals of silence and a tap on time for circle 5: one stroke really is missing.
+    presses = [(OBJ[k], "hit", OBJ[k]) for k in range(10) if k != 4]
+    r = run(presses, ["Great"] * 4 + ["Miss"] + ["Great"] * 5)
+    assert r["tap"][4] == "dropped" and r["tap"][5:] == ["own"] * 5, r["tap"]
+
+
+def test_overtapping_past_the_end_is_spare_strokes_not_a_shift():
+    # A rushed stream: every tap earlier than the last, and two more strokes after the final
+    # circle. Lazer gives each circle its own tap; the spare strokes are at the end.
+    presses = [(t - 8 * k * STEP / 100, "hit", t) for k, t in enumerate(OBJ)]
+    presses += [(OBJ[-1] - 10, "nothing", None), (OBJ[-1] + 60, "nothing", None)]
+    r = run(sorted(presses), ["Great"] * 10)
+    assert r["tap"] == ["own"] * 10 and r["judge"] == ["self"] * 10, (r["tap"], r["judge"])
+
+
+def test_a_run_is_not_phase_shifted_through_its_front():
+    # On-grid taps except one spare press mid-run that is not a bounce. The front keeps its
+    # phase: the first circles keep the first taps, with no leading gap to shift them.
+    presses = sorted([(t, "hit", t) for t in OBJ] + [(OBJ[4] + 45, "nothing", None)])
+    r = run(presses, ["Great"] * 10)
+    assert r["tap"][:5] == ["own"] * 5 and r["judge"][:5] == ["self"] * 5, r["tap"]
+
+
+def test_known_limit_a_mid_run_spare_stroke_can_shift_the_tail():
+    # Same run. The spare press is taken as circle 5's (stray) tap and the tail shifts, with
+    # the last stroke left as overtapping past the end. Pinned so that a change to it is seen:
+    # the player's fingers preferred these costs to every variant that read this as a double.
+    presses = sorted([(t, "hit", t) for t in OBJ] + [(OBJ[4] + 45, "nothing", None)])
+    r = run(presses, ["Great"] * 10)
+    assert r["tap"][5] == "stray" and r["tap"][6:] == ["elsewhere"] * 4, r["tap"]
 
 
 def test_notelock():

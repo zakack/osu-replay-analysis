@@ -136,7 +136,7 @@ def main(out_path):
         r["interval"] = interval
         judge, tap = r["judge"], r["tap"]
         times = [p[0] for p in window]
-        pairs = S.align(objects, times, interval)
+        pairs = r["pairs"]
         meant = {i: j for i, j in pairs if i is not None and j is not None}
         n = len(objects)
         btn = lambda j: window[j][3]

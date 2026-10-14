@@ -85,7 +85,7 @@ def main(out_path):
         meant = {}
         if r["verdict"] == "ok":
             times = [p[0] for p in window]
-            meant = {i: times[j] - objects[i] for i, j in S.align(objects, times, interval)
+            meant = {i: times[j] - objects[i] for i, j in r["pairs"]
                      if i is not None and j is not None}
             # How the shift chains end, for the miss-vs-Meh consistency argument.
             j = r["judge"]

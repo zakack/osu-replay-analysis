@@ -20,14 +20,49 @@ settled on), snap of a third of a beat or finer, split into maximal stretches of
 objects (circles and slider heads) exactly one snap apart, kept when five or longer. A run
 of kick sliders whose heads sit two ticks apart is not tapped as a stream and drops out.
 
-Alignment costs, fixed and in units of the run's tap interval I (ms between circles):
-  match a press to a circle      |press - circle| / I, allowed only up to 1.0
-  leave a press unmatched        EXTRA = 0.6    (a double tap, or a stray)
-  leave a circle unmatched       DROP  = 0.6    (a tap that never came)
-A press half an interval off still matches (0.5 < 0.6 + 0.6 for the extra-plus-drop that
-would replace it), one a full interval off never does. On a tie, matches go as early as
-possible and gaps last: a press exactly between two circles is the earlier circle's late tap,
-two presses on one circle make the second the extra. The result is a function of the times.
+Alignment costs, in units of the run's tap interval I (ms between circles). The model is one
+stroke per circle, in order: a gap in the alignment is a claim that a stroke is missing or
+spare, and it is cheap only where the press times themselves show one.
+  match a press to a circle      |press - circle| / I, allowed up to MAX_MATCH = 1.5
+  leave a press unmatched        EXTRA = 0.6 when it is within BOUNCE = 0.3 I of a neighbouring
+                                 press (a bounce), after the last circle is matched
+                                 (overtapping past the stream's end), or more than I/2 before
+                                 the first circle; otherwise EXTRA_FAR = 8
+  leave a circle unmatched       DROP = 0.6 when the presses either side of it are at least
+                                 HOLE = 1.8 I apart, after the last press, or before a first
+                                 press that comes more than I/2 late; otherwise DROP_FAR = 8
+The FAR costs are soft walls, not bans: a run whose press count cannot fit its circles without
+a gap still aligns, with the gap where it costs least. Higher walls score marginally better
+against the fingers but start escaping through the edges -- unmatching whole stretches as
+leading extras and trailing drops -- which the finger score cannot see, since it only grades
+presses that were matched.
+
+Why not flat costs. With EXTRA = DROP = 0.6 everywhere (the first version), a stream tapped
+progressively late was cheaper to read as a dropped tap followed by every circle taking its
+successor's tap than as each circle taking its own late one, and a rushed stream that
+overtapped at its end was cheaper to read as a double tap in the middle. Where the player
+alternates by hand the button follows the circle slot, and it is an independent grade of the
+alignment, kept out of the costs for that reason: every press matched within 16 slots of a
+4-tap alternating anchor, on the button its slot predicts. Flat costs scored 86.4% (plain
+buttons era), 86.5% (glidepad), 92.1% (exclusive); these costs 96.2%, 94.6%, 96.7%.
+
+That grade cannot see a whole run shifted by one slot, since a constant shift keeps every
+press on its parity, and an edge exemption on both ends buys exactly that for two cheap
+gaps. It scored higher (98%) by doing it. Hence the guards at the front: a leading extra or
+a leading drop needs the press times to show one. The tail keeps its exemption, because
+overtapping past a stream's end is real, and so a spare stroke mid-run can still be taken as
+the next circle's tap with the tail shifted, leaving the last stroke as overtapping
+(test_streams.py pins this as a known limit).
+
+Tried and rejected against the same grade, kept here so they are not tried again: charging
+for matching a press anywhere but the circle lazer judged it on (every penalty above 0 scored
+lower: it erases real cursor-caused shifts with the false ones); a match cost steeper past
+half an interval (lower at every knee and slope tried); a "split" rule taking any press that divides one interval between
+its neighbours as an inserted stroke (flat to lower). BOUNCE 0.3 edged 0.5; FAR 8 beat 4.
+
+On a tie, matches go as early as possible and gaps last: a press exactly between two circles
+is the earlier circle's late tap, two presses on one circle make the second the extra. The
+result is a function of the times.
 
 Run checks before any of that is trusted. The median gap between successive presses in the
 run window, in beats, against the run's snap:
@@ -75,7 +110,11 @@ MAX_SNAP = 1 / 3 + 0.01
 MIN_RUN = 5
 EXTRA = 0.6
 DROP = 0.6
-MAX_MATCH = 1.0
+EXTRA_FAR = 8.0
+DROP_FAR = 8.0
+BOUNCE = 0.3
+HOLE = 1.8
+MAX_MATCH = 1.5
 RATE_OK = 0.12
 RATE_SNAP = 0.06
 LATTICE = (0.125, 1 / 6, 0.25, 1 / 3, 0.5)
@@ -91,6 +130,27 @@ def align(objects: list[float], presses: list[float], interval: float) -> list[t
     time order: a match, a dropped circle (press None) or an extra press (object None)."""
     n, m = len(objects), len(presses)
     inf = float("inf")
+
+    def extra_cost(j):
+        t = presses[j]
+        near = min((abs(t - presses[k]) for k in (j - 1, j + 1) if 0 <= k < m), default=inf)
+        return EXTRA if near < BOUNCE * interval else EXTRA_FAR
+
+    def drop_cost(j):
+        # Circle dropped between press j-1 and press j (the next one not yet consumed). Past
+        # the last press it is free to stop (a stream abandoned, or dragged so far that the
+        # strokes ran out before the circles did). Before the first press it is a late entry,
+        # but only if that press really is late: otherwise a leading drop plus an overtapped
+        # trailing extra would phase-shift a whole run, which nothing grading the alignment
+        # by alternation could see (a constant shift keeps every press on its parity).
+        if j == m:
+            return DROP
+        if j == 0:
+            return DROP if not objects or presses[0] > objects[0] + interval / 2 else DROP_FAR
+        return DROP if presses[j] - presses[j - 1] >= HOLE * interval else DROP_FAR
+
+    extras = [extra_cost(j) for j in range(m)]
+    drops = [drop_cost(j) for j in range(m + 1)]
     cost = [[inf] * (m + 1) for _ in range(n + 1)]
     step = [[0] * (m + 1) for _ in range(n + 1)]
     cost[0][0] = 0.0
@@ -104,10 +164,17 @@ def align(objects: list[float], presses: list[float], interval: float) -> list[t
                 if d <= MAX_MATCH and c + d < cost[i + 1][j + 1]:
                     cost[i + 1][j + 1], step[i + 1][j + 1] = c + d, 1
             # <= on the gap moves: on a tie, match as early as possible and put gaps last.
-            if j < m and c + EXTRA <= cost[i][j + 1]:
-                cost[i][j + 1], step[i][j + 1] = c + EXTRA, 2
-            if i < n and c + DROP <= cost[i + 1][j]:
-                cost[i + 1][j], step[i + 1][j] = c + DROP, 3
+            # Overtapping past a stream's end is the cheap kind of spare stroke, anywhere after
+            # the last circle is matched. At the front only a press that really is before the
+            # run counts: with both ends cheap, a leading "extra" plus a trailing drop would
+            # phase-shift a whole run for the price of two edge gaps.
+            if j < m:
+                lead = i == 0 and presses[j] < objects[0] - interval / 2
+                e = EXTRA if i == n or lead else extras[j]
+                if c + e <= cost[i][j + 1]:
+                    cost[i][j + 1], step[i][j + 1] = c + e, 2
+            if i < n and c + drops[j] <= cost[i + 1][j]:
+                cost[i + 1][j], step[i + 1][j] = c + drops[j], 3
     pairs = []
     i, j = n, m
     while i or j:
@@ -196,7 +263,7 @@ def classify(objects: list[float], results: list[str], errors: list[float | None
             strings.append(_explain(k, e, tap, judge, double, errors, verdict, fraction))
         k = e
     return {"verdict": verdict, "fraction": fraction, "tap": tap, "judge": judge,
-            "double": double, "strings": strings}
+            "double": double, "strings": strings, "pairs": pairs if verdict == "ok" else []}
 
 
 CAUSES = ("dropped", "notelock", "stray")

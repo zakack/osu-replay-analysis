@@ -1190,3 +1190,8 @@ On misses, Clicks.cs's cursor-based stray attribution and timing (nearest object
 
 After a k2 (index) press the next 1/2 jump is k1 99.3% of the time, from 2026-09-06 (the day after analog + key pool merged) onward; after k1 it is k1 again 54.5%. Plain era was symmetric (13% repeat each way). On stacks (<0.5 radii) the index repeats 40% — so the one-shot rule is about moving the cursor, not the finger. k1-after-k1 presses are ~1.2–1.9 pp more non-Great than alternated ones in the same tempo x spacing x run-position cell.
 
+## 2026-10-13 — riding "double" chains stay 100% contradicted after the alignment fix
+
+`python3 tools/analysis/attribution_riding.py` → build/attribution-riding.txt, "riding double" row
+
+260 shifted circles in 11 traced replays, all on the riding cycle's slot for the circle lazer judged. Every other class improved under the new costs; this one didn't move. The plant note from arming the latch for a double or quad is the obvious suspect, since `deep,1` timestamps could exclude it.

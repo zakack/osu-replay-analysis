@@ -95,7 +95,7 @@ def shifts(objects, presses, snap, beat):
         return
     judge, tap = r["judge"], r["tap"]
     times = [p[0] for p in presses]
-    meant = {i: times[j] for i, j in S.align(objects, times, interval) if i is not None and j is not None}
+    meant = {i: times[j] for i, j in r["pairs"] if i is not None and j is not None}
     by_target = {}
     for t, outcome, target in presses:
         if outcome == "hit" and target is not None:
