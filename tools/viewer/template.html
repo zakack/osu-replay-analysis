@@ -632,6 +632,8 @@
         <div class="inspect-body" id="x-one">
           <span class="k sub-k">Button</span>
           <div class="readout"><span>press</span><span id="x-press"></span></div>
+          <div class="readout" id="x-meant-row" hidden><span>meant for it</span><span id="x-meant"></span></div>
+          <div class="readout" id="x-shift-row" hidden><span>stream shift</span><span id="x-shift"></span></div>
           <span class="k sub-k">Cursor</span>
           <div class="readout"><span>deepest</span><span id="x-deep"></span></div>
           <div class="readout"><span>how deep</span><span id="x-dist"></span></div>
@@ -914,6 +916,12 @@
     (o.sz || []).forEach(function (z) {
       var when = o.t + z[0];
       presses.push({ t: when, x: z[1], y: z[2], b: pressedButton(when), o: o, stray: true });
+    });
+    // Presses that judged nothing mid-play: a stray onto nothing, a notelocked tap. They
+    // are filed with the nearest object only to be found; they belong to none.
+    (o.lp || []).forEach(function (z) {
+      var when = o.t + z[0];
+      presses.push({ t: when, x: z[1], y: z[2], b: pressedButton(when), o: o, stray: true, loose: true });
     });
   });
   presses.sort(function (a, b) { return a.t - b.t; });
@@ -1202,7 +1210,8 @@
         sx.stroke();
       }
       previous = [q[0], q[1], p.t, fade];
-      if (!inSel(p.o)) drawMarker(p, fade, r);
+      // A loose press belongs to no object, so selecting its neighbour must not hide it.
+      if (!inSel(p.o) || p.loose) drawMarker(p, fade, r);
     }
   }
 
@@ -1311,6 +1320,22 @@
       sx.fill();
     }
 
+    // In a shifted stream, the press the alignment says was meant for this circle, once the
+    // playhead has passed it: a dashed thread from the circle to it, and a square marker.
+    if (o.og && o.mx != null && o.t + o.mt <= t) {
+      var qx = px(o.mx), qy = py(o.my);
+      sx.setLineDash([2, 3]);
+      sx.beginPath();
+      sx.moveTo(px(o.x), py(o.y));
+      sx.lineTo(qx, qy);
+      sx.strokeStyle = rgba(ACCENT, .8);
+      sx.lineWidth = 1.2;
+      sx.stroke();
+      sx.setLineDash([]);
+      var h = Math.max(3, r * .2);
+      sx.strokeRect(qx - h, qy - h, 2 * h, 2 * h);
+    }
+
     // The object, ringed. Lighter for a pattern's members, which are many.
     sx.beginPath();
     sx.arc(px(o.x), py(o.y), r * (single ? 1.32 : 1.18), 0, 6.2832);
@@ -1322,7 +1347,7 @@
     // the two lanes of the bar, put back on the field.
     // Each only once the playhead has passed it, so selecting an object ahead of the
     // playhead and then playing into it shows it happen rather than giving it away.
-    var press = presses.filter(function (p) { return p.o === o && p.t <= t; })[0] || null;
+    var press = presses.filter(function (p) { return p.o === o && !p.loose && p.t <= t; })[0] || null;
     var deep = o.cl != null && o.t + o.cl <= t ? you.at(o.t + o.cl) : null;
     if (deep) {
       var dx = px(deep.x), dy = py(deep.y);
@@ -2229,7 +2254,30 @@
       "ora clip " + SCENE.beatmapMd5 + " " + sel.lo + " " + sel.hi;
   }
 
+  // The stream alignment's reading (streams.py, at build time): in a shifted stream the press
+  // lazer judged this circle with was meant for a neighbour, and this is the one meant for it.
+  var SHIFT_WORDS = {
+    "stray-nothing": "a tap landed on nothing",
+    "notelock": "a tap was notelocked",
+    "cursor left early": "the cursor left a circle before its tap",
+    "dropped": "read as a dropped tap",
+    "double": "read as a double tap",
+    "stray-window": "a tap landed outside its window",
+    "other": "cause unclear"
+  };
+
+  function fillShift(o) {
+    var meantRow = document.getElementById("x-meant-row"), shiftRow = document.getElementById("x-shift-row");
+    meantRow.hidden = shiftRow.hidden = !o.og;
+    if (!o.og) return;
+    setText("x-meant", o.mt != null ? ms(o.mt) + " · " + when(o.mt, "button") : "no press meant for it",
+            o.mt != null ? errorColour(o.mt) : MISS);
+    setText("x-shift", "began where " + (SHIFT_WORDS[o.og] || o.og) +
+            (o.ok === "c" ? " · fingers agree" : " · fingers mostly disagree"));
+  }
+
   function fillOne(o) {
+    fillShift(o);
     if (o.error != null) setText("x-press", ms(o.error) + " · " + when(o.error, "button"), errorColour(o.error));
     else if (o.sy != null) setText("x-press", ms(o.sy) + " · judged nothing" +
       (o.sc ? " · attributed by cursor" : "") +
@@ -2333,6 +2381,7 @@
       case "misses": return p.missed + " of " + p.members.length;
       case "count": return String(p.members.length);
       case "span": return (p.span / 1000).toFixed(2) + " s";
+      case "shifted": return p.members.filter(function (m) { return m.og; }).length + " of " + p.members.length;
     }
     return null;
   }
@@ -2354,6 +2403,8 @@
       case "spacing": return o.sp != null ? o.sp.toFixed(2) + " r" : null;
       case "heading": return o.hd != null ? deg(o.hd).toFixed(0) + "°" : null;
       case "turn": return o.tn != null ? turnWords(o.tn) : null;
+      case "meant": return o.mt != null ? ms(o.mt) : null;
+      case "shift": return o.og ? (SHIFT_WORDS[o.og] || o.og) : null;
     }
     return null;
   }

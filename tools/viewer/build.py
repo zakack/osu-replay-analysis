@@ -42,6 +42,7 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "tools", "analysis"))
 from streamfail import corner  # noqa: E402
+import streams  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import notes as annotations  # noqa: E402
@@ -97,6 +98,47 @@ def attribute_misses(objects: list[tuple[float, float, bool]],
         start, meh, missed = objects[near]
         if missed and abs(time - start) <= meh:
             out.setdefault(near, []).append((time, x, y))
+    return out
+
+
+def stream_attribution(rhythm: str, presses: str) -> dict[int, dict]:
+    """Which press each stream circle was meant to receive, by `streams.classify`.
+
+    Lazer gives a press to whatever circle the cursor is on; in a stream that has shifted,
+    that is a neighbour, and the press's hit error is a whole tap interval off. The stream
+    alignment reads the press times as a sequence instead -- one stroke per circle -- and
+    names the chain and where it started. Only circles in a chain get fields, keyed like
+    `inspect`: `mt` the meant press's offset from the circle, `mx`/`my` where it landed,
+    `og` the chain's origin, and `ok` "c" when the cursor started it (the finger witness
+    backs these, and the bins re-score them) or "b" when a stroke supposedly went missing
+    or doubled (the fingers mostly disagree, and the bins leave them as lazer read them).
+    """
+    rows = []
+    with open(presses, newline="") as handle:
+        for r in csv.DictReader(handle):
+            rows.append((float(r["time"]), r["outcome"], float(r["target"]) if r["target"] else None,
+                         float(r["x"]), float(r["y"])))
+    rows.sort()
+    out: dict[int, dict] = {}
+    for _, events in streams.build_runs(rhythm, lambda name: True):
+        objects = [e[0] for e in events]
+        beat, snap = events[0][1], events[0][2]
+        interval = snap * beat
+        lo = bisect.bisect_left(rows, (objects[0] - interval,))
+        hi = bisect.bisect_right(rows, (objects[-1] + interval, "~"))
+        window = rows[lo:hi]
+        w3 = [w[:3] for w in window]
+        r = streams.classify(objects, [e[3] for e in events], [e[4] for e in events], w3, snap, beat)
+        if r["verdict"] != "ok":
+            continue
+        meant = {i: j for i, j in r["pairs"] if i is not None and j is not None}
+        for origin, idx in streams.chains(objects, w3, r):
+            for i in idx:
+                field = {"og": origin, "ok": "c" if origin in streams.CURSOR else "b"}
+                if i in meant:
+                    t, _, _, x, y = window[meant[i]]
+                    field.update({"mt": t - objects[i], "mx": x, "my": y})
+                out[round(objects[i])] = field
     return out
 
 
@@ -187,6 +229,20 @@ def inspect(replay: str, work: str) -> tuple[dict[int, dict], list[dict] | None]
                           "zy": num(r["strayY"]),
                           "sc": 1 if r["result"] == "Miss" and r["strayPressTime"] else None})
         out.setdefault(round(start), {}).update(visit)
+    # Presses that judged nothing and are not a miss's attempt: mid-stream strays onto
+    # nothing, notelocked taps. Without them a shifted stream's first cause is invisible.
+    # Each goes with the object nearest it in time, as an offset like `sz`.
+    used = {round(t, 1) for v in attempts.values() for t, _, _ in v}
+    starts = [float(r["startTime"]) for r in rows]
+    for t, outcome, x, y in pressed:
+        if outcome == "hit" or round(t, 1) in used or not starts:
+            continue
+        k = bisect.bisect_left(starts, t)
+        k = min((q for q in (k - 1, k) if 0 <= q < len(starts)), key=lambda q: abs(starts[q] - t))
+        out.setdefault(round(starts[k]), {}).setdefault("lp", []).append(
+            [t - starts[k], x, y, 1 if outcome == "notelock" else 0])
+    for start, field in stream_attribution(rhythm, presses).items():
+        out.setdefault(start, {}).update(field)
     missed = sum(r["result"] == "Miss" for r in rows)
     fallback = sum(1 for k, r in enumerate(rows)
                    if k not in attempts and r["result"] == "Miss" and r["strayPressTime"])
@@ -246,12 +302,17 @@ def attach(document: dict, numbers: dict[int, dict]) -> int:
             "cl": (row.get("cl"), 1), "cd": (row.get("cd"), 3),
             "en": (row.get("en"), 1), "ex": (row.get("ex"), 1), "sy": (row.get("sy"), 1),
             "zx": (row.get("zx"), 2), "zy": (row.get("zy"), 2), "sc": (row.get("sc"), 0),
+            "mt": (row.get("mt"), 1), "mx": (row.get("mx"), 2), "my": (row.get("my"), 2),
         }
         for key, (value, places) in fields.items():
             if value is not None:
                 o[key] = round(value, places)
         if row.get("sz"):
             o["sz"] = [[round(e, 1), round(x, 2), round(y, 2)] for e, x, y in row["sz"]]
+        if row.get("lp"):
+            o["lp"] = [[round(e, 1), round(x, 2), round(y, 2), n] for e, x, y, n in row["lp"]]
+        if row.get("og"):
+            o["og"], o["ok"] = row["og"], row["ok"]
     return matched
 
 

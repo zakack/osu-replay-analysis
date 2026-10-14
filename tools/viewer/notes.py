@@ -89,6 +89,15 @@ OBJECT_FIELDS = {
     "spacing": "the jump into the object, in radii",
     "heading": "the direction of the jump into it",
     "turn": "the turn at the object",
+    "meant": "in a shifted stream, the press meant for it against its beat (streams.py)",
+    "shift": "in a shifted stream, where the shift began",
+}
+# Where a stream shift began, in words: the viewer's inspector says the same (SHIFT_WORDS).
+SHIFT_WORDS = {
+    "stray-nothing": "a tap landed on nothing", "notelock": "a tap was notelocked",
+    "cursor left early": "the cursor left a circle before its tap",
+    "dropped": "read as a dropped tap", "double": "read as a double tap",
+    "stray-window": "a tap landed outside its window", "other": "cause unclear",
 }
 PATTERN_FIELDS = {
     "press": "button timing, mean and spread",
@@ -100,6 +109,7 @@ PATTERN_FIELDS = {
     "misses": "misses, as n of m",
     "count": "how many objects",
     "span": "how long the pattern lasts",
+    "shifted": "circles judged by a neighbour's tap in a shifted stream, as n of m",
 }
 
 
@@ -151,6 +161,10 @@ def object_field(o: dict, name: str):
         "spacing": (o.get("sp") is not None, [o["t"]], "the first object has no jump into it"),
         "heading": (o.get("hd") is not None, [o["t"]], "nothing jumps into it"),
         "turn": (o.get("tn") is not None, [o["t"]], "there is no turn at it"),
+        "meant": (o.get("mt") is not None, [o["t"] + (o.get("mt") or 0), press],
+                  "it is not in a shifted stream, or no press was meant for it; try {N.press}"),
+        "shift": (o.get("og") is not None, [press if press is not None else o["t"]],
+                  "it is not in a shifted stream"),
     }
     present, events, why = table[name]
     return present, [e for e in events if e is not None], why
@@ -178,6 +192,7 @@ def pattern_field(members: list[dict], name: str):
         "misses": (True, every, ""),
         "count": (True, [members[0]["t"]], ""),
         "span": (True, [members[0]["t"]], ""),
+        "shifted": (True, every, ""),
     }
     return table[name]
 
@@ -540,6 +555,8 @@ def values(text: str, document: dict) -> list[str]:
                 "inside": (o.get("ri"), "r"), "spacing": (o.get("sp"), "r"),
                 "heading": (math.degrees(o["hd"]) if o.get("hd") is not None else None, "deg"),
                 "turn": (math.degrees(o["tn"]) if o.get("tn") is not None else None, "deg"),
+                "meant": (o.get("mt"), "ms"),
+                "shift": (f"{o.get('og')} ({'cursor' if o.get('ok') == 'c' else 'button'} class)", ""),
             }[name]
             value = raw[0] if isinstance(raw[0], str) else f"{raw[0]:.2f}"
             out.append(f"{match.group(1)} = {value} {raw[1]}".rstrip())
@@ -562,6 +579,8 @@ def values(text: str, document: dict) -> list[str]:
                 value = f"{cov / (sx * sy):.2f} over {len(both)}" if sx and sy else "0"
             elif name == "misses":
                 value = f"{sum(1 for m in members if m['result'] == 'Miss')} of {len(members)}"
+            elif name == "shifted":
+                value = f"{sum(1 for m in members if m.get('og'))} of {len(members)}"
             elif name == "count":
                 value = str(len(members))
             elif name == "span":
@@ -601,7 +620,7 @@ def describe(document: dict, lo: int | None = None, hi: int | None = None) -> st
                 f"when it closed")
     rows.append("# a blank cell is a value that does not exist, and citing it is an error")
     columns = ["i", "t", "type", "result", "press", "deepest", "depth", "gap", "entered",
-               "left", "aim", "reach", "inside", "spacing", "heading", "turn"]
+               "left", "aim", "reach", "inside", "spacing", "heading", "turn", "meant", "shift"]
     rows.append("\t".join(columns))
 
     def f(v, places=1):
@@ -615,6 +634,6 @@ def describe(document: dict, lo: int | None = None, hi: int | None = None) -> st
             str(o["i"]), f"{o['t']:.0f}", o["type"], o["result"].lower(),
             f(press), f(o.get("cl")), f(o.get("cd"), 3), f(gap), f(o.get("en")), f(o.get("ex")),
             f(o.get("ae"), 3), f(o.get("rr"), 3), f(o.get("ri"), 3), f(o.get("sp"), 3),
-            f(deg(o.get("hd")), 0), f(deg(o.get("tn")), 0),
+            f(deg(o.get("hd")), 0), f(deg(o.get("tn")), 0), f(o.get("mt")), o.get("og") or "",
         ]))
     return "\n".join(rows)
