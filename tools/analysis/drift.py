@@ -68,7 +68,7 @@ CACHE = "build/drift.pickle"
 NEW = "build/drift-new"
 ORA = "src/Cli/bin/Release/net10.0/ora"
 PLAYER = "zaksynack playing"
-VERSION = 1
+VERSION = 2            # 2: judge labels from the evidence-gated stream alignment (streams.py)
 
 SNAP = 0.25
 CLIP = 50.0          # ms; a residual beyond this is a 50 or a stray, not drift
