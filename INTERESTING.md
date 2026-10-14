@@ -1135,3 +1135,51 @@ Sat 4.36, Sun 4.87 — a hard ramp Monday to Wednesday and a reset-and-climb Thu
 Sunday, every week. Any evaluation on dailies should stratify by weekday or star rating, or
 a run of Wednesdays will look like a slump. Themes, where there are any, are not published
 anywhere reachable (not the API, not in-game, not the wiki).
+
+## 2026-10-13 — stream slip rate is a stable trait, separate from timing
+
+`python3 tools/analysis/acur.py` → build/acur.txt, build/acur-anchored.txt
+
+12-14% of judged stream circles are taken by a neighbour's tap; that share correlates 0.66-0.68 between consecutive same-day plays of one map, while dropping those circles leaves UR's own play-to-play reliability unchanged (0.73). Two traits sharing one number.
+
+## 2026-10-13 — correction to the slip-rate entry above
+
+`tools/analysis/acur.py` section (4a)
+
+The 0.66-0.68 pairs are plays of the *same beatmap*, so the map's stream density and BPM are in that correlation too; it doesn't show slipping is a player trait. Also, the combined error/interval marginal decays smoothly with no bump near ±1, so the "shifted" cut does not sit at a natural gap in the data.
+
+## 2026-10-13 — cursor-caused stream shifts peak in the EXCLUSIVE input era
+
+`python3 tools/analysis/acur_whole.py` → build/acur-whole.txt, "input regime" block
+
+Cursor-origin shifted circles are 0.99% of judged objects in OVERLAP-1, 2.53% in EXCLUSIVE and 1.29% in OVERLAP-2. Exclusive presses shouldn't change the cursor, so either the maps played changed or the regime changes how a stray tap plays out. Shift share between consecutive plays: rho 0.77 on the same map vs 0.26 across different maps, so it is mostly the map.
+
+## 2026-10-13 — taps on cursor misses skew late
+
+`python3 tools/analysis/acur_whole.py` → "misses added back" block
+
+Presses recovered by time for 66% of misses are clearly taps (SD/meh 0.26 vs hits 0.22, flat would be 0.58) but run +6 ms late against hits' +0.3, with twice the hits' share at +0.25..0.5 meh. The button hand is late on the very objects the cursor misses. Possibly the same thing lateclick.py chases.
+
+## 2026-10-13 — the fingers contradict streams.py's dropped and double shifts
+
+`python3 tools/analysis/attribution_check.py` → build/attribution-check.txt
+
+Hand-alternated buttons follow the circle slot 98.5-99.8% of the time, so they independently show which circle each tap was for. Chains that streams.py starts at a stray press or "cursor left early" agree with the timing attribution 92-94%. Chains it starts at a dropped or double tap agree with lazer's reading instead, 90-94%, and across a "dropped" gap the buttons alternate cleanly 99.2% of the time, so no stroke was missing. Those are a player drifting off-tempo that the fixed-cost alignment explains as a drop plus a shift. This affects recovery.py's "dropped tap" endings, combocue and the origin tables.
+
+## 2026-10-13 — correction to the dropped/double entry above
+
+`build/attribution-check.txt`, plus the error-size split by origin class
+
+"No stroke was missing" goes too far. Clean alternation across the gap means the fingers kept their slot: either nothing was dropped, or a stroke was dropped and the player re-phased onto the other finger. Only the key traces in build/traces can tell those apart. Error size points the same way, but weakly: the median |error|/interval of shifted circles is 0.70 for button-origin chains and 0.78 for cursor-origin ones.
+
+## 2026-10-13 — the alignment's drops and extras are mostly tempo drift, by press spacing alone
+
+`/home/zak/.claude/jobs/490e3c54/tmp/gaps.py` (throwaway; plain and exclusive eras), `tools/analysis/attribution_riding.py`
+
+Across a "dropped" slot, the two presses either side are 1.0-1.5 intervals apart 77% of the time; a real hole would be ~2, and only ~11% reach 1.75. Of the "extra" presses, 83% sit 0.5-1.0 interval from their nearest neighbour; a bounce would be under 0.2, and 8% are. The button and riding-cycle witnesses really only test whether strokes are continuous, so this timing check is the one that separates drift from a real drop. Riding: 7,941 presses matched to floor crossings, AABB cycle 99.7-100%. Of 85 unmatched tapping-mode presses, 25 came within 200 ms before the latch armed: the plant note from riding doubles and quads.
+
+## 2026-10-13 — the viewer's red miss tick uses the attribution the fingers reject
+
+`/home/zak/.claude/jobs/490e3c54/tmp/stray.py`, `adjud.py` (throwaway); tools/viewer/build.py `sy` <- clicks.csv strayPressTime
+
+On misses, Clicks.cs's cursor-based stray attribution and timing (nearest object, within meh) agree on only 35%. Where they pick different presses, the plain-era buttons back the timing pick 91.4% (baseline 92.1%) and the cursor pick 15%. Timing also finds an on-time tap for 29% of misses that get no tick today, 32k of them where the cursor never came within a radius (undershoots); those are on the predicted button 93.7%.

@@ -29,6 +29,7 @@ beatmap, so index *i* is the same object for everybody.
 from __future__ import annotations
 
 import argparse
+import bisect
 import csv
 import json
 import os
@@ -68,14 +69,46 @@ def scene(replay: str, destination: str) -> dict:
         return json.load(handle)
 
 
+def attribute_misses(objects: list[tuple[float, float, bool]],
+                     presses: list[tuple[float, str, float, float]]) -> dict[int, list[tuple[float, float, float]]]:
+    """The presses each missed object was meant to receive, by time, first one first.
+
+    ``objects`` are every circle and slider head as (start, meh window, missed), in start
+    order; ``presses`` every button-down as (time, outcome, x, y), outcome as presses.csv
+    gives it. A press that judged nothing belongs to the object nearest it in time, and is
+    kept when that object missed and the press is inside its meh window, so a miss's tick
+    always lands where the judgement would have been. Time, not cursor: clicks.csv's stray
+    attribution follows the last circle the cursor was inside, which the replay's own buttons
+    contradict wherever the two disagree (91% for timing against 15%, plain-buttons era), and
+    which cannot attribute anything to a circle the cursor never reached.
+
+    Two or more on one miss: the first is the attempt, measured by the same buttons (69% on
+    the predicted finger against 61% for the nearest and 36% for the last). The rest are
+    returned after it so they can still be drawn, as presses that were not the attempt.
+    """
+    starts = [o[0] for o in objects]
+    out: dict[int, list[tuple[float, float, float]]] = {}
+    for time, outcome, x, y in sorted(presses):
+        if outcome == "hit" or not objects:
+            continue
+        k = bisect.bisect_left(starts, time)
+        near = min((q for q in (k - 1, k) if 0 <= q < len(objects)),
+                   key=lambda q: (abs(starts[q] - time), q))
+        start, meh, missed = objects[near]
+        if missed and abs(time - start) <= meh:
+            out.setdefault(near, []).append((time, x, y))
+    return out
+
+
 def inspect(replay: str, work: str) -> tuple[dict[int, dict], list[dict] | None]:
     """Per-object numbers the analysis already has, for the viewer's object inspector.
 
     The viewer draws nothing it computed itself, and that holds for the inspector too:
     heading, spacing, turn and aim error come from `ora geometry`, and the cursor's visit to
-    each circle -- when it was deepest, how deep, when it entered and left, any press that
-    judged nothing -- from `ora clicks`. Both take a corpus, so the replay is surveyed on its
-    own through a one-file folder first. Keyed by start time rounded to the millisecond,
+    each circle -- when it was deepest, how deep, when it entered and left -- from `ora
+    clicks`, and the presses a miss was meant to receive from `ora presses`, attributed by
+    time (`attribute_misses`). All take a corpus, so the replay is surveyed on its own
+    through a one-file folder first. Keyed by start time rounded to the millisecond,
     which is how the two CSVs and the scene document agree on an object.
 
     Returns (numbers, runs): the runs are the rhythm pass's constant-snap stretches, which
@@ -90,11 +123,13 @@ def inspect(replay: str, work: str) -> tuple[dict[int, dict], list[dict] | None]
     geometry = os.path.join(work, "inspect-geometry.csv")
     clicks = os.path.join(work, "inspect-clicks.csv")
     rhythm = os.path.join(work, "inspect-rhythm.csv")
+    presses = os.path.join(work, "inspect-presses.csv")
 
     for command in (["survey", "--out", corpus, folder],
                     ["geometry", "--corpus", corpus, "--out", geometry],
                     ["clicks", "--corpus", corpus, "--out", clicks],
-                    ["rhythm", "--corpus", corpus, "--out", rhythm]):
+                    ["rhythm", "--corpus", corpus, "--out", rhythm],
+                    ["presses", "--corpus", corpus, "--out", presses]):
         result = subprocess.run(["dotnet", ORA, *command], capture_output=True, text=True,
                                 cwd=ROOT)
         if result.returncode != 0 or (command[0] != "survey"
@@ -121,22 +156,42 @@ def inspect(replay: str, work: str) -> tuple[dict[int, dict], list[dict] | None]
                 "cx": num(r["cursorX"]), "cy": num(r["cursorY"]),
             })
     with open(clicks, newline="") as handle:
-        for r in csv.DictReader(handle):
-            start = float(r["startTime"])
+        rows = sorted(csv.DictReader(handle), key=lambda r: float(r["startTime"]))
+    with open(presses, newline="") as handle:
+        pressed = [(float(r["time"]), r["outcome"], float(r["x"]), float(r["y"]))
+                   for r in csv.DictReader(handle)]
+    attempts = attribute_misses(
+        [(float(r["startTime"]), float(r["meh"]), r["result"] == "Miss") for r in rows], pressed)
+    for k, r in enumerate(rows):
+        start = float(r["startTime"])
 
-            def offset(column):
-                value = num(r[column])
-                return None if value is None else value - start
+        def offset(column):
+            value = num(r[column])
+            return None if value is None else value - start
 
-            out.setdefault(round(start), {}).update({
-                "cl": offset("closestTime"),
-                "cd": num(r["closestDist"]),
-                "en": offset("enterTime"),
-                "ex": offset("exitTime"),
-                "sy": offset("strayPressTime"),
-                "zx": num(r["strayX"]),
-                "zy": num(r["strayY"]),
-            })
+        visit = {
+            "cl": offset("closestTime"),
+            "cd": num(r["closestDist"]),
+            "en": offset("enterTime"),
+            "ex": offset("exitTime"),
+        }
+        if k in attempts:
+            (t, x, y), *rest = attempts[k]
+            visit.update({"sy": t - start, "zx": x, "zy": y,
+                          "sz": [[t2 - start, x2, y2] for t2, x2, y2 in rest] or None})
+        else:
+            # No press in the window: fall back to the cursor's attribution, which reaches
+            # later presses (up to meh + 100 ms) and is right less often (74-84% on the
+            # predicted finger). Coverage first; `sc` marks the tick as the weaker kind.
+            visit.update({"sy": offset("strayPressTime"), "zx": num(r["strayX"]),
+                          "zy": num(r["strayY"]),
+                          "sc": 1 if r["result"] == "Miss" and r["strayPressTime"] else None})
+        out.setdefault(round(start), {}).update(visit)
+    missed = sum(r["result"] == "Miss" for r in rows)
+    fallback = sum(1 for k, r in enumerate(rows)
+                   if k not in attempts and r["result"] == "Miss" and r["strayPressTime"])
+    print(f"  misses: {missed}; a press by time on {len(attempts)}, by cursor on {fallback}, "
+          f"{sum(len(v) > 1 for v in attempts.values())} with more than one press")
     # The runs a selector picks from: constant-snap stretches, from the same rhythm pass the
     # analysis uses, at its default gap and tolerance.
     runs, skipped = annotations.read_runs(rhythm)
@@ -190,11 +245,13 @@ def attach(document: dict, numbers: dict[int, dict]) -> int:
             "tn": (following.get("an") if following else None, 4),
             "cl": (row.get("cl"), 1), "cd": (row.get("cd"), 3),
             "en": (row.get("en"), 1), "ex": (row.get("ex"), 1), "sy": (row.get("sy"), 1),
-            "zx": (row.get("zx"), 2), "zy": (row.get("zy"), 2),
+            "zx": (row.get("zx"), 2), "zy": (row.get("zy"), 2), "sc": (row.get("sc"), 0),
         }
         for key, (value, places) in fields.items():
             if value is not None:
                 o[key] = round(value, places)
+        if row.get("sz"):
+            o["sz"] = [[round(e, 1), round(x, 2), round(y, 2)] for e, x, y in row["sz"]]
     return matched
 
 

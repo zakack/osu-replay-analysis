@@ -899,9 +899,10 @@
   });
 
   // The player's presses in time order, for the same walk: every judged press, and every
-  // press the shim attributed to a miss without it judging anything. The second kind is the
-  // marker a missed object leaves -- the press that landed outside the circle -- and the
-  // field showed nothing for it before.
+  // press attributed to a miss without it judging anything (`sy`, by time; `sz`, any further
+  // presses inside the same miss's window). The second kind is the marker a missed object
+  // leaves -- the press that landed outside the circle -- and the field showed nothing for
+  // it before.
   var presses = [];
   OBJ.forEach(function (o) {
     if (o.hx != null && o.hitTime != null) {
@@ -910,21 +911,29 @@
       var at = o.t + o.sy;
       presses.push({ t: at, x: o.zx, y: o.zy, b: pressedButton(at), o: o, stray: true });
     }
+    (o.sz || []).forEach(function (z) {
+      var when = o.t + z[0];
+      presses.push({ t: when, x: z[1], y: z[2], b: pressedButton(when), o: o, stray: true });
+    });
   });
   presses.sort(function (a, b) { return a.t - b.t; });
 
   // The hit error bar's two lanes, each a list of {t, e, o} in time order: when the tick
   // drops, where it sits against the beat, and whose it is. A miss has no judged press, but
   // a press that judged nothing is attributed to it when there was one (`sy`, from the
-  // shim's clicks pass), and that press is the one the miss was meant to be -- so it gets a
-  // tick, in the miss colour, rather than the lane going silent on the very object that
-  // matters. The cursor lane is when the cursor was deepest in the circle, against the same
+  // build's timing attribution), and that press is the one the miss was meant to be -- so it
+  // gets a tick, in the miss colour, rather than the lane going silent on the very object
+  // that matters. Further presses inside the same miss's window (`sz`) are hollow: they
+  // happened, but they were not the attempt. The cursor lane is when the cursor was deepest in the circle, against the same
   // beat, so one object's two ticks standing one over the other is the two hands together.
   var buttonTicks = [], cursorTicks = [];
   OBJ.forEach(function (o) {
     if (o.type === "spinner") return;
     if (o.error != null && o.hitTime != null) buttonTicks.push({ t: o.hitTime, e: o.error, o: o });
     else if (o.sy != null) buttonTicks.push({ t: o.t + o.sy, e: o.sy, o: o, stray: true });
+    (o.sz || []).forEach(function (z) {
+      buttonTicks.push({ t: o.t + z[0], e: z[0], o: o, stray: true, extra: true });
+    });
     if (o.cl != null) cursorTicks.push({ t: o.t + o.cl, e: o.cl, o: o });
   });
   buttonTicks.sort(function (a, b) { return a.t - b.t; });
@@ -1797,6 +1806,12 @@
       bx.fillStyle = rgba(ACCENT, 1);
       bx.fillRect(x - 2.5, Math.min(from, to) - 1, 5, Math.abs(to - from) + 2);
     }
+    if (k.extra) {
+      bx.strokeStyle = rgba(colour, lit ? 1 : .85 * a);
+      bx.lineWidth = 1;
+      bx.strokeRect(x - 1.5, Math.min(from, to) + .5, 3, Math.abs(to - from) - 1);
+      return;
+    }
     bx.fillStyle = rgba(colour, lit ? 1 : .85 * a);
     bx.fillRect(x - 1, Math.min(from, to), 2, Math.abs(to - from));
   }
@@ -2216,7 +2231,9 @@
 
   function fillOne(o) {
     if (o.error != null) setText("x-press", ms(o.error) + " · " + when(o.error, "button"), errorColour(o.error));
-    else if (o.sy != null) setText("x-press", ms(o.sy) + " · judged nothing", MISS);
+    else if (o.sy != null) setText("x-press", ms(o.sy) + " · judged nothing" +
+      (o.sc ? " · attributed by cursor" : "") +
+      (o.sz ? " · +" + o.sz.length + " more press" + (o.sz.length > 1 ? "es" : "") : ""), MISS);
     else setText("x-press", "no press", o.result === "Miss" ? MISS : null);
 
     if (o.cl != null) {
