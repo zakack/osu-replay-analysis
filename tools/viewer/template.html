@@ -25,6 +25,14 @@
     --miss: #E2504E;
     --accent: #7A6BE0;
 
+    /* Judgement words, in the colours players know them by from osu!: green ok, yellow
+       meh. Great has no settled colour, so it takes a cyan, kept clear of the early blue;
+       meh is yellow rather than orange, which already means late. These colour words
+       only, never marks, so they never compete with the error ramp. */
+    --great: #1A95AD;
+    --ok: #4C9A2A;
+    --meh: #A87F00;
+
     --shadow: 0 1px 2px rgba(16, 24, 30, .10), 0 8px 24px rgba(16, 24, 30, .06);
   }
 
@@ -38,6 +46,9 @@
       --dim: #8293A0;
       --faint: #5E6E79;
       --accent: #9B8DF0;
+      --great: #6FD3E8;
+      --ok: #8FD16A;
+      --meh: #EAC54A;
       --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .35);
     }
   }
@@ -51,6 +62,9 @@
     --dim: #8293A0;
     --faint: #5E6E79;
     --accent: #9B8DF0;
+    --great: #6FD3E8;
+    --ok: #8FD16A;
+    --meh: #EAC54A;
     --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .35);
   }
 
@@ -245,6 +259,11 @@
 
   #j-error { font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
   #j-word { font-size: 12px; color: var(--dim); }
+
+  .jw-great { color: var(--great); }
+  .jw-ok { color: var(--ok); }
+  .jw-meh { color: var(--meh); }
+  .jw-miss { color: var(--miss); }
 
   /* How the reference field did on the same object: one glyph each, sorted early to
      late, so the row reads as a tiny distribution rather than a list of names. */
@@ -2193,7 +2212,9 @@
     if (best.k === "spin") {
       elError.textContent = "spin";
       elError.style.color = rgba(hex(tok("--dim", "#8293A0")), 1);
-      elWord.textContent = best.r.toLowerCase() + " · no timing";
+      elWord.textContent = "";
+      elWord.appendChild(judgementWord(best.r));
+      elWord.appendChild(document.createTextNode(" · no timing"));
       elGlyphs.textContent = "";
       elRef.textContent = "a spinner has no hit error";
       return;
@@ -2202,13 +2223,14 @@
     if (best.e == null) {
       elError.textContent = "miss";
       elError.style.color = rgba(MISS, 1);
-      elWord.textContent = best.r.toLowerCase();
+      elWord.textContent = "";
+      elWord.appendChild(judgementWord(best.r));
       return;
     }
     elError.textContent = (best.e > 0 ? "+" : "") + best.e.toFixed(0) + " ms";
     elError.style.color = rgba(errorColour(best.e), 1);
-    elWord.textContent = (Math.abs(best.e) < 1 ? "dead on" : best.e < 0 ? "early" : "late") +
-      " · " + best.r.toLowerCase();
+    elWord.textContent = (Math.abs(best.e) < 1 ? "dead on" : best.e < 0 ? "early" : "late") + " · ";
+    elWord.appendChild(judgementWord(best.r));
   }
 
   // ---- transport ----------------------------------------------------------
@@ -2470,6 +2492,15 @@
     return hand + (v < 0 ? " early" : " late");
   }
 
+  // A judgement's name as a coloured word, for the two places that name one in text.
+  function judgementWord(result) {
+    var span = document.createElement("span");
+    var word = result.toLowerCase();
+    span.textContent = word;
+    if (/^(great|ok|meh|miss)$/.test(word)) span.className = "jw-" + word;
+    return span;
+  }
+
   function setText(id, text, colour) {
     var el = document.getElementById(id);
     el.textContent = text;
@@ -2496,7 +2527,8 @@
     if (single) {
       var o = OBJ[sel.lo];
       title.appendChild(document.createTextNode("object " + o.i + " "));
-      dim.textContent = o.type + " · " + o.result.toLowerCase();
+      dim.textContent = o.type + " · ";
+      dim.appendChild(judgementWord(o.result));
       fillOne(o);
     } else {
       var members = OBJ.slice(sel.lo, sel.hi + 1).filter(function (m) { return m.type !== "spinner"; });
