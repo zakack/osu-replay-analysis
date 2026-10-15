@@ -561,7 +561,7 @@
 
       <div class="transport">
         <canvas id="strip" tabindex="0" aria-label="Hit error over time. Click or drag to seek."></canvas>
-        <canvas id="timeline" aria-label="Timeline around the playhead: each button's presses, the objects, and the cursor's visit to each circle, in time. Click a mark to inspect its object, click elsewhere to seek, drag to scrub, scroll to zoom."></canvas>
+        <canvas id="timeline" aria-label="Timeline around the playhead: each button's presses, the objects, and the cursor's visit to each circle, in time. Click a mark to inspect its object, click elsewhere to seek, drag or scroll to move through time, shift-scroll to zoom."></canvas>
         <div class="controls">
           <button id="play" aria-pressed="false">Play</button>
           <button data-step="-1" title="Previous frame">&#9664;&#9664;</button>
@@ -688,7 +688,7 @@
     &middot; <kbd>M</kbd> stop on miss &middot; <kbd>K</kbd> hit markers &middot;
     <kbd>F</kbd> fade &middot; click an object, or a mark on the timeline, to inspect it, <kbd>Shift</kbd>-click
     another to make a pattern of everything between, <kbd>Shift</kbd>-drag on the seek bar to
-    loop a stretch, drag the timeline to scrub and scroll on it to zoom, <kbd>Esc</kbd> to let go
+    loop a stretch, drag or scroll the timeline to move through time and shift-scroll to zoom, <kbd>Esc</kbd> to let go
   </p>
 </div>
 
@@ -1743,7 +1743,7 @@
     lx.textBaseline = "bottom";
     lx.fillText(bar + " ms", w - 12 - bw, h - 2);
     lx.textAlign = "left";
-    lx.fillText((ZOOMS[zoom] / 1000) + " s shown · wheel to zoom", 3, h - 2);
+    lx.fillText((ZOOMS[zoom] / 1000) + " s shown · wheel to move, shift-wheel to zoom", 3, h - 2);
 
     // The selected object's hit windows, behind everything: where its press could have
     // judged it, and how well.
@@ -2589,9 +2589,22 @@
     t = Math.max(START, Math.min(END, t + (x - tlGeom.head) / tlGeom.scale));
     render();
   });
+  // The wheel moves through time, a tenth of the view per notch, so the step is the same
+  // on screen at every zoom; shift-wheel zooms. Some browsers turn shift-wheel into a
+  // sideways scroll, so either axis counts for both.
   timeline.addEventListener("wheel", function (e) {
     e.preventDefault();
-    zoom = Math.max(0, Math.min(ZOOMS.length - 1, zoom + (e.deltaY > 0 ? 1 : -1)));
+    var d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    if (!d) return;
+    if (e.shiftKey) {
+      zoom = Math.max(0, Math.min(ZOOMS.length - 1, zoom + (d > 0 ? 1 : -1)));
+    } else {
+      setPlaying(false);
+      // A notch is about 100 pixels in pixel mode and 3 in line mode; trackpads send
+      // many small deltas, which this scales down to match.
+      var notches = e.deltaMode === 1 ? d / 3 : e.deltaMode === 2 ? d * 10 : d / 100;
+      t = Math.max(START, Math.min(END, t + notches * ZOOMS[zoom] / 10));
+    }
     render();
   }, { passive: false });
 
