@@ -310,26 +310,18 @@
   .who[aria-pressed="false"] { opacity: .42; }
   .who[aria-pressed="false"] .swatch { background: var(--faint) !important; }
 
-  /* ---- error legend ------------------------------------------------------ */
+  /* ---- timeline -------------------------------------------------------- */
 
-  .legend { display: flex; flex-direction: column; gap: 6px; }
-
-  /* The hit error bar: the beat down the middle, the button's ticks above the line and the
-     cursor's below. Height is fixed so the lanes keep their meaning at any width. */
-  #bar {
+  /* The seek bar zoomed in. Height is fixed so the lanes keep their places at any width. */
+  #timeline {
     display: block;
     width: 100%;
-    height: 78px;
-    cursor: pointer;
+    height: 112px;
+    cursor: grab;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
     touch-action: none;
-  }
-
-  .ramp-ends {
-    display: flex;
-    justify-content: space-between;
-    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
-    font-size: 10px;
-    color: var(--faint);
   }
 
   /* ---- notes ------------------------------------------------------------- */
@@ -548,7 +540,8 @@
       <p class="sub">
         <span class="lede" id="map-name">&nbsp;</span><br>
         <span id="blurb"></span> The seek bar below is
-        the play&rsquo;s hit error, one mark per object.
+        the play&rsquo;s hit error, one mark per object; the timeline under it is the same
+        time zoomed in to the playhead.
       </p>
     </div>
     <div class="stamp">
@@ -568,6 +561,7 @@
 
       <div class="transport">
         <canvas id="strip" tabindex="0" aria-label="Hit error over time. Click or drag to seek."></canvas>
+        <canvas id="timeline" aria-label="Timeline around the playhead: each button's presses, the objects, and the cursor's visit to each circle, in time. Click a mark to inspect its object, click elsewhere to seek, drag to scrub, scroll to zoom."></canvas>
         <div class="controls">
           <button id="play" aria-pressed="false">Play</button>
           <button data-step="-1" title="Previous frame">&#9664;&#9664;</button>
@@ -578,11 +572,11 @@
           <button id="brake" aria-pressed="true" title="Ease to a halt on every miss (M)">Stop on miss</button>
           <button id="notes-stop" aria-pressed="false" hidden title="Ease to a halt on every note, and hold until you press play">Stop on notes</button>
           <button id="markers" aria-pressed="true" title="Leave a marker where each press landed (K)">Hit markers</button>
-          <span class="k" title="How long presses and error ticks stay on screen (F)">Fade</span>
-          <button data-persist="0" aria-pressed="false" title="Presses and ticks last one second (F)">1 s</button>
-          <button data-persist="1" aria-pressed="true" title="Presses and ticks last three seconds (F)">3 s</button>
-          <button data-persist="2" aria-pressed="false" title="Presses and ticks last eight seconds (F)">8 s</button>
-          <button data-persist="3" aria-pressed="false" title="Presses and ticks never fade (F)">never</button>
+          <span class="k" title="How long press markers stay on the field (F)">Fade</span>
+          <button data-persist="0" aria-pressed="false" title="Press markers last one second (F)">1 s</button>
+          <button data-persist="1" aria-pressed="true" title="Press markers last three seconds (F)">3 s</button>
+          <button data-persist="2" aria-pressed="false" title="Press markers last eight seconds (F)">8 s</button>
+          <button data-persist="3" aria-pressed="false" title="Press markers never fade (F)">never</button>
           <span class="clock"><b id="t-now">0:00.000</b> / <span id="t-end">0:00</span></span>
         </div>
       </div>
@@ -611,12 +605,6 @@
       <div class="card">
         <span class="k">Cursors</span>
         <div class="roster" id="roster"></div>
-      </div>
-
-      <div class="card legend">
-        <span class="k">Hit error</span>
-        <canvas id="bar" aria-label="Hit error bar. Button presses above the beat line, the cursor's deepest point below. Click a tick to inspect its object."></canvas>
-        <div class="ramp-ends"><span id="bar-lo">early</span><span>beat</span><span id="bar-hi">late</span></div>
       </div>
 
       <div class="card inspect" id="inspect" hidden>
@@ -681,10 +669,14 @@
     written. Cursor samples are the recorded 60&nbsp;Hz frames, interpolated between;
     a button change forces a frame, so every press time and press position is exact.
     <br><br>
-    The hit error bar puts the beat down the middle, in map time across the meh window:
-    each press drops a tick above the line where it landed against the beat, and the
-    cursor drops one below where it was deepest in the circle. When the two hands move
-    together an object&rsquo;s two ticks stand one over the other. Every number in the
+    The timeline is the seek bar zoomed in to a few seconds around the playhead. Objects sit
+    on the middle line at their own times; each button&rsquo;s presses have a row above it,
+    and below it is the stretch the cursor spent inside each circle with a dot where it was
+    deepest. Lines join each object to the press that judged it and to its deepest point,
+    so early and late are slants, and order is left to right. A dashed line goes to the
+    press the stream alignment reads as meant for a shifted circle; red marks are presses a
+    miss was attributed (solid), further presses in its window (hollow) and presses that
+    judged nothing (a cross). Every number in the
     inspector comes from the extraction shim&rsquo;s own <code>geometry</code> and
     <code>clicks</code> passes over this replay; none is computed here. Notes, when the page
     has them, are checked against the same numbers before it is built: every figure in a note
@@ -694,9 +686,9 @@
     <kbd>Space</kbd> play &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> step one frame &middot;
     <kbd>Shift</kbd> + arrows jump a second &middot; <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> speed
     &middot; <kbd>M</kbd> stop on miss &middot; <kbd>K</kbd> hit markers &middot;
-    <kbd>F</kbd> fade &middot; click an object or a tick to inspect it, <kbd>Shift</kbd>-click
+    <kbd>F</kbd> fade &middot; click an object, or a mark on the timeline, to inspect it, <kbd>Shift</kbd>-click
     another to make a pattern of everything between, <kbd>Shift</kbd>-drag on the seek bar to
-    loop a stretch, <kbd>Esc</kbd> to let go
+    loop a stretch, drag the timeline to scrub and scroll on it to zoom, <kbd>Esc</kbd> to let go
   </p>
 </div>
 
@@ -758,9 +750,9 @@
 
   // ---- persistence --------------------------------------------------------
   // How long anything left behind stays: press markers, the lines joining a run of them,
-  // the reference field's presses, and the ticks on the hit error bar. One setting for all
-  // of them, because they are one idea -- a record of the recent past -- and a field where
-  // markers outlive ticks or ticks outlive markers reads as two clocks.
+  // and the reference field's presses. One setting for all of them, because they are one
+  // idea -- a record of the recent past -- and a field where some marks outlive others
+  // reads as two clocks.
   //
   // Measured in map time, never wall time, so what is on screen is a function of the
   // playhead alone: scrubbing back shows exactly what was there, and 0.25x does not leave
@@ -876,16 +868,19 @@
   // Which button judged each object. A button change forces a replay frame, so the press
   // is a recorded sample rather than an interpolated one: the frame at the judgement time
   // exists, and the bit that is newly down in it is the one that was pressed.
+  // Several frames can share the press's millisecond -- the other button still held, then
+  // released, then this one pressed -- so every frame at that time is read, not the first.
   function pressedButton(hitTime) {
-    var f = SCENE.frames;
+    var f = SCENE.frames, held = 0;
     for (var k = 0; k < f.length; k += 4) {
       if (f[k] < hitTime) continue;
       if (f[k] > hitTime) break;
       var now = f[k + 3], before = k >= 4 ? f[k - 1] : 0;
       var fresh = now & ~before;
-      return fresh || now;
+      if (fresh) return fresh;
+      held = now;
     }
-    return 0;
+    return held;
   }
 
   OBJ.forEach(function (o) {
@@ -915,7 +910,7 @@
     }
     (o.sz || []).forEach(function (z) {
       var when = o.t + z[0];
-      presses.push({ t: when, x: z[1], y: z[2], b: pressedButton(when), o: o, stray: true });
+      presses.push({ t: when, x: z[1], y: z[2], b: pressedButton(when), o: o, stray: true, extra: true });
     });
     // Presses that judged nothing mid-play: a stray onto nothing, a notelocked tap. They
     // are filed with the nearest object only to be found; they belong to none.
@@ -926,26 +921,6 @@
   });
   presses.sort(function (a, b) { return a.t - b.t; });
 
-  // The hit error bar's two lanes, each a list of {t, e, o} in time order: when the tick
-  // drops, where it sits against the beat, and whose it is. A miss has no judged press, but
-  // a press that judged nothing is attributed to it when there was one (`sy`, from the
-  // build's timing attribution), and that press is the one the miss was meant to be -- so it
-  // gets a tick, in the miss colour, rather than the lane going silent on the very object
-  // that matters. Further presses inside the same miss's window (`sz`) are hollow: they
-  // happened, but they were not the attempt. The cursor lane is when the cursor was deepest in the circle, against the same
-  // beat, so one object's two ticks standing one over the other is the two hands together.
-  var buttonTicks = [], cursorTicks = [];
-  OBJ.forEach(function (o) {
-    if (o.type === "spinner") return;
-    if (o.error != null && o.hitTime != null) buttonTicks.push({ t: o.hitTime, e: o.error, o: o });
-    else if (o.sy != null) buttonTicks.push({ t: o.t + o.sy, e: o.sy, o: o, stray: true });
-    (o.sz || []).forEach(function (z) {
-      buttonTicks.push({ t: o.t + z[0], e: z[0], o: o, stray: true, extra: true });
-    });
-    if (o.cl != null) cursorTicks.push({ t: o.t + o.cl, e: o.cl, o: o });
-  });
-  buttonTicks.sort(function (a, b) { return a.t - b.t; });
-  cursorTicks.sort(function (a, b) { return a.t - b.t; });
 
   // Every press on the field, by whoever made it, in time order. Drawing the field's
   // marks alongside the player's is what turns a stream into something checkable: taps
@@ -1021,8 +996,8 @@
   var sx = scope.getContext("2d");
   var strip = document.getElementById("strip");
   var tx = strip.getContext("2d");
-  var bar = document.getElementById("bar");
-  var bx = bar.getContext("2d");
+  var timeline = document.getElementById("timeline");
+  var lx = timeline.getContext("2d");
   var view = { s: 1, ox: 0, oy: 0, w: 0, h: 0 };
 
   function fit(canvas, ctx, cssHeight) {
@@ -1048,7 +1023,7 @@
       h: box.h
     };
     fit(strip, tx, strip.clientHeight);
-    fit(bar, bx, bar.clientHeight);
+    fit(timeline, lx, timeline.clientHeight);
   }
 
   function px(x) { return view.ox + x * view.s; }
@@ -1344,7 +1319,7 @@
     sx.stroke();
 
     // Where the cursor was deepest, and a thread from there to where the press landed:
-    // the two lanes of the bar, put back on the field.
+    // the timeline's two hands, put back on the field.
     // Each only once the playhead has passed it, so selecting an object ahead of the
     // playhead and then playing into it shows it happen rather than giving it away.
     var press = presses.filter(function (p) { return p.o === o && !p.loose && p.t <= t; })[0] || null;
@@ -1661,6 +1636,12 @@
     }
     if (sweep) band(Math.min(sweep.a, sweep.b), Math.max(sweep.a, sweep.b), .25);
 
+    // The stretch the timeline shows, so the two read as one axis at two zooms.
+    var wa = ((t - ZOOMS[zoom] * LEAD - START) / (END - START)) * w;
+    var wb = ((t + ZOOMS[zoom] * (1 - LEAD) - START) / (END - START)) * w;
+    tx.fillStyle = rgba(hex(tok("--faint", "#5E6E79")), .14);
+    tx.fillRect(wa, h - 5, Math.max(2, wb - wa), 5);
+
     var hx = ((t - START) / (END - START)) * w;
     // Note marks along the top: where each stop is, and a time note's whole stretch.
     NOTES.forEach(function (n) {
@@ -1696,23 +1677,228 @@
     tx.stroke();
   }
 
-  // ---- the hit error bar ----------------------------------------------------
-  // osu!'s error bar, two-handed. The beat is the vertical line in the middle; the axis is
-  // map time against it, out to the meh window, because that is the span in which a press
-  // can judge an object and the span the shim searched for the cursor's visit. Ticks drop
-  // as their moment passes and fade on the same persistence as the field's markers.
+  // ---- the timeline ---------------------------------------------------------
+  // The seek bar zoomed in to a few seconds around the playhead, with both hands drawn
+  // where they happened in time. Objects sit on the middle line at their own times; each
+  // button's presses sit above it in a row of their own, so order and alternation read
+  // straight off; the cursor's visit to each circle sits below, as the stretch it spent
+  // inside with a dot where it was deepest. A line joins every object to the press that
+  // judged it and to its deepest point, so a press that went to a neighbour's object, or a
+  // cursor that left before the button arrived, is a slant rather than a number.
+  //
+  // Press and cursor marks appear only once the playhead passes them, like the field's;
+  // objects are drawn ahead, because they are the map and not the play.
+
+  // The meh window: the span in which a press can judge an object and in which the shim
+  // looked for the cursor's visit, so "already in" and "still in" are clamped to it.
   var SPAN = SCENE.hitWindows.meh || FULL_SCALE * 2;
-  document.getElementById("bar-lo").textContent = "−" + Math.round(SPAN) + " ms";
-  document.getElementById("bar-hi").textContent = "+" + Math.round(SPAN) + " ms";
 
-  var barGeom = null;
+  var ZOOMS = [500, 1000, 2000, 4000, 8000];
+  var zoom = 2;
+  var LEAD = .72;   // where the playhead sits across the timeline; the rest is lookahead
 
-  function barX(ms) {
-    var g = barGeom;
-    return g.cx + Math.max(-1, Math.min(1, ms / SPAN)) * g.half;
+  var tlGeom = null;
+
+  function tlX(ms) { return tlGeom.head + (ms - t) * tlGeom.scale; }
+
+  // Which press row a button bit belongs in. lazer records only Left1 and Right1.
+  function pressRow(b) { return b & 2 ? tlGeom.right : tlGeom.left; }
+
+  function drawTimeline(t) {
+    var w = timeline.clientWidth, h = timeline.clientHeight;
+    tlGeom = {
+      w: w, h: h, head: Math.round(w * LEAD) + .5, scale: w / ZOOMS[zoom],
+      left: 17, right: 37, beat: 62, cursor: 92
+    };
+    var g = tlGeom;
+    var from = t - ZOOMS[zoom] * LEAD, to = t + ZOOMS[zoom] * (1 - LEAD);
+    lx.clearRect(0, 0, w, h);
+
+    var faint = hex(tok("--faint", "#5E6E79")), line = hex(tok("--line", "#232D34"));
+
+    // Lane rules and names.
+    lx.strokeStyle = rgba(line, 1);
+    lx.lineWidth = 1;
+    [g.left, g.right, g.cursor].forEach(function (y) {
+      lx.beginPath(); lx.moveTo(0, y + .5); lx.lineTo(w, y + .5); lx.stroke();
+    });
+    lx.strokeStyle = rgba(faint, .55);
+    lx.beginPath(); lx.moveTo(0, g.beat + .5); lx.lineTo(w, g.beat + .5); lx.stroke();
+
+    lx.font = "500 8.5px 'IBM Plex Mono', monospace";
+    lx.fillStyle = rgba(faint, 1);
+    lx.textAlign = "left";
+    lx.textBaseline = "bottom";
+    lx.fillText("BUTTON 1", 3, g.left - 3);
+    lx.fillText("BUTTON 2", 3, g.right - 3);
+    lx.fillText("OBJECTS", 3, g.beat - 5);
+    lx.fillText("CURSOR", 3, g.cursor - 8);
+
+    // A scale bar, bottom right, so a gap can be read in milliseconds.
+    var bar = ZOOMS[zoom] <= 1000 ? 50 : ZOOMS[zoom] <= 4000 ? 100 : 500;
+    var bw = bar * g.scale;
+    lx.fillStyle = rgba(faint, .9);
+    lx.fillRect(w - 8 - bw, h - 7, bw, 1.5);
+    lx.textAlign = "right";
+    lx.textBaseline = "bottom";
+    lx.fillText(bar + " ms", w - 12 - bw, h - 2);
+    lx.textAlign = "left";
+    lx.fillText((ZOOMS[zoom] / 1000) + " s shown · wheel to zoom", 3, h - 2);
+
+    // The selected object's hit windows, behind everything: where its press could have
+    // judged it, and how well.
+    if (sel && sel.lo === sel.hi) {
+      var so = OBJ[sel.lo];
+      [[SCENE.hitWindows.meh, .05], [SCENE.hitWindows.ok, .07], [SCENE.hitWindows.great, .1]]
+        .forEach(function (win) {
+          if (!win[0]) return;
+          var a = tlX(so.t - win[0]), b = tlX(so.t + win[0]);
+          lx.fillStyle = rgba(ACCENT, win[1]);
+          lx.fillRect(a, 4, b - a, g.cursor + 10 - 4);
+        });
+    }
+
+    // The objects in view, padded by a window either side so a press or visit that lands
+    // inside the view still finds its object when the object itself has scrolled off.
+    var lo = Math.max(0, lastAt(OBJ, from - SPAN * 2, function (o) { return o.t; }));
+    var hi = lastAt(OBJ, to + SPAN * 2, function (o) { return o.t; });
+
+    for (var i = lo; i <= hi; i++) {
+      var o = OBJ[i];
+      if (o.result === "Unjudged") continue;
+      var x = tlX(o.t), lit = inSel(o), past = o.t <= t;
+
+      if (o.type === "spinner") {
+        var x2 = tlX(o.endTime != null ? o.endTime : o.t);
+        lx.fillStyle = rgba(faint, .16);
+        lx.fillRect(x, g.beat - 6, Math.max(1.5, x2 - x), 12);
+        continue;
+      }
+
+      // A slider's body as a bar along the line, to its end.
+      if (o.type === "slider" && o.endTime != null) {
+        lx.fillStyle = rgba(lit ? ACCENT : faint, lit ? .5 : .3);
+        lx.fillRect(x, g.beat - 2, Math.max(1, tlX(o.endTime) - x), 4);
+      }
+
+      // The cursor's visit: inside the circle from entering to leaving, deepest as a dot.
+      // Clamped at the meh window, as the shim searched no further. Neighbours alternate
+      // between two rows, because in a stream the cursor is inside the next circle before
+      // it has left this one and a single row would run the visits together.
+      var cy = g.cursor + (i % 2 ? 4 : -4);
+      if (o.en != null && o.t + o.en <= t) {
+        var a = tlX(o.t + o.en), b = tlX(o.t + Math.min(o.ex != null ? o.ex : SPAN, t - o.t));
+        lx.fillStyle = rgba(lit ? ACCENT : faint, lit ? .55 : .4);
+        lx.fillRect(a, cy - 2, Math.max(1, b - a), 4);
+      }
+      if (o.cl != null && o.t + o.cl <= t) {
+        var cx = tlX(o.t + o.cl);
+        lx.strokeStyle = rgba(errorColour(o.cl), lit ? 1 : .45);
+        lx.lineWidth = lit ? 1.5 : 1;
+        lx.beginPath(); lx.moveTo(x, g.beat + 4); lx.lineTo(cx, cy - 3); lx.stroke();
+        lx.beginPath();
+        lx.arc(cx, cy, lit ? 4 : 3, 0, 6.2832);
+        lx.fillStyle = rgba(lit ? ACCENT : errorColour(o.cl), 1);
+        lx.fill();
+      }
+
+      // The press that judged it, joined to it.
+      if (o.error != null && o.hitTime != null && o.hitTime <= t) {
+        var px_ = tlX(o.hitTime), row = pressRow(o.button || 1);
+        lx.strokeStyle = rgba(errorColour(o.error), lit ? 1 : .55);
+        lx.lineWidth = lit ? 1.5 : 1;
+        lx.beginPath(); lx.moveTo(x, g.beat - 4); lx.lineTo(px_, row + 6); lx.stroke();
+      }
+
+      // A stream circle the alignment reads as shifted: dashed to the press meant for it.
+      if (o.mt != null && o.t + o.mt <= t) {
+        var mx = tlX(o.t + o.mt), mrow = pressRow(pressedButton(o.t + o.mt) || 1);
+        lx.setLineDash([3, 3]);
+        lx.strokeStyle = rgba(ACCENT, lit ? 1 : .6);
+        lx.lineWidth = lit ? 1.5 : 1;
+        lx.beginPath(); lx.moveTo(x, g.beat - 4); lx.lineTo(mx, mrow + 6); lx.stroke();
+        lx.setLineDash([]);
+      }
+
+      // The object itself: a diamond on the line, red when it was missed.
+      var miss = o.error == null;
+      var colour = miss ? MISS : hex(tok("--text", "#D8DFE4"));
+      lx.beginPath();
+      lx.moveTo(x, g.beat - 5); lx.lineTo(x + 4, g.beat); lx.lineTo(x, g.beat + 5); lx.lineTo(x - 4, g.beat);
+      lx.closePath();
+      lx.fillStyle = rgba(lit ? ACCENT : colour, past || lit ? 1 : .35);
+      lx.fill();
+    }
+
+    // Every press in view, as a tick in its button's row: judged ones in their error's
+    // colour, the rest in the miss colour -- solid for the press a miss was attributed,
+    // hollow for further presses in its window, a cross for a press that judged nothing.
+    var pFirst = Math.max(0, lastAt(presses, from, function (p) { return p.t; }));
+    var pLast = lastAt(presses, Math.min(to, t), function (p) { return p.t; });
+    for (var k = pFirst; k <= pLast; k++) {
+      var p = presses[k];
+      if (p.t < from) continue;
+      var x = tlX(p.t), y = pressRow(p.b || 1), lit = !p.loose && inSel(p.o);
+      var colour = p.stray ? MISS : errorColour(p.o.error);
+      if (lit) {
+        lx.fillStyle = rgba(ACCENT, 1);
+        lx.fillRect(x - 2.5, y - 8, 5, 16);
+      }
+      if (p.loose) {
+        lx.strokeStyle = rgba(MISS, 1);
+        lx.lineWidth = 1.5;
+        lx.beginPath();
+        lx.moveTo(x - 4, y - 4); lx.lineTo(x + 4, y + 4);
+        lx.moveTo(x + 4, y - 4); lx.lineTo(x - 4, y + 4);
+        lx.stroke();
+      } else if (p.extra) {
+        lx.strokeStyle = rgba(colour, 1);
+        lx.lineWidth = 1;
+        lx.strokeRect(x - 1.5, y - 6.5, 3, 13);
+      } else {
+        lx.fillStyle = rgba(colour, 1);
+        lx.fillRect(x - 1, y - 7, 2, 14);
+      }
+    }
+
+    // The playhead.
+    lx.strokeStyle = rgba(hex(tok("--accent", "#9B8DF0")), 1);
+    lx.lineWidth = 1.5;
+    lx.beginPath(); lx.moveTo(g.head, 0); lx.lineTo(g.head, h); lx.stroke();
   }
 
-  // The ticks alive at t in one lane, newest last, each with its opacity.
+  // What is under a point on the timeline: the nearest press, deepest point or object
+  // within a few pixels, in the lane the point is in.
+  function timelineHit(x, y) {
+    var g = tlGeom;
+    if (!g) return null;
+    var best = null, bestD = 7;
+    function consider(when, o) {
+      if (when > t) return;
+      var d = Math.abs(tlX(when) - x);
+      if (d < bestD) { best = o; bestD = d; }
+    }
+    var from = t - ZOOMS[zoom] * LEAD - SPAN, to = t + ZOOMS[zoom];
+    if (y < (g.right + g.beat) / 2) {
+      presses.forEach(function (p) {
+        if (!p.loose && p.t >= from && p.t <= to && Math.abs(pressRow(p.b || 1) - y) < 12) consider(p.t, p.o);
+      });
+    } else if (y < (g.beat + g.cursor) / 2) {
+      OBJ.forEach(function (o) {
+        if (o.type !== "spinner" && o.t >= from && o.t <= to) {
+          var d = Math.abs(tlX(o.t) - x);
+          if (d < bestD) { best = o; bestD = d; }
+        }
+      });
+    } else {
+      OBJ.forEach(function (o) {
+        if (o.cl != null && o.t >= from && o.t <= to) consider(o.t + o.cl, o);
+      });
+    }
+    return best;
+  }
+
+  // The events alive at t in one list, newest last, each with its opacity.
   function alive(list, t) {
     var newest = lastAt(list, t, function (k) { return k.t; });
     var out = [];
@@ -1722,140 +1908,6 @@
       if (a > 0) out.push({ k: list[m], a: a });
     }
     return out;
-  }
-
-  function drawBar(t) {
-    var w = bar.clientWidth, h = bar.clientHeight;
-    var mid = Math.round(h / 2);
-    barGeom = { cx: Math.round(w / 2) + .5, half: w / 2 - 7, mid: mid, top: 12, bottom: h - 12 };
-    var g = barGeom;
-    bx.clearRect(0, 0, w, h);
-
-    // The colour scale through the middle, exactly errorColour's: linear from the true
-    // colour to early or late, saturating at FULL_SCALE ms and flat beyond it.
-    var ramp = bx.createLinearGradient(g.cx - g.half, 0, g.cx + g.half, 0);
-    var sat = Math.min(1, FULL_SCALE / SPAN);
-    ramp.addColorStop(0, rgba(EARLY, 1));
-    ramp.addColorStop(.5 - sat / 2, rgba(EARLY, 1));
-    ramp.addColorStop(.5, rgba(TRUE_, 1));
-    ramp.addColorStop(.5 + sat / 2, rgba(LATE, 1));
-    ramp.addColorStop(1, rgba(LATE, 1));
-    bx.fillStyle = ramp;
-    bx.globalAlpha = .55;
-    bx.fillRect(g.cx - g.half, mid - 2, g.half * 2, 4);
-    bx.globalAlpha = 1;
-
-    // Window edges, faint, and the beat itself.
-    bx.strokeStyle = rgba(hex(tok("--line", "#232D34")), 1);
-    bx.lineWidth = 1;
-    [SCENE.hitWindows.great, SCENE.hitWindows.ok].forEach(function (edge) {
-      if (!edge) return;
-      [-edge, edge].forEach(function (e) {
-        var x = Math.round(barX(e)) + .5;
-        bx.beginPath();
-        bx.moveTo(x, g.top + 4);
-        bx.lineTo(x, g.bottom - 4);
-        bx.stroke();
-      });
-    });
-    bx.strokeStyle = rgba(hex(tok("--dim", "#8293A0")), .9);
-    bx.beginPath();
-    bx.moveTo(g.cx, 2);
-    bx.lineTo(g.cx, h - 2);
-    bx.stroke();
-
-    // Lane names, quietly.
-    bx.font = "500 8.5px 'IBM Plex Mono', monospace";
-    bx.fillStyle = rgba(hex(tok("--faint", "#5E6E79")), 1);
-    bx.textBaseline = "top";
-    bx.textAlign = "left";
-    bx.fillText("BUTTON", 2, 1);
-    bx.textBaseline = "bottom";
-    bx.fillText("CURSOR", 2, h - 1);
-
-    var up = alive(buttonTicks, t), down = alive(cursorTicks, t);
-    up.forEach(function (x) { tickOn(x.k, x.a, -1); });
-    down.forEach(function (x) { tickOn(x.k, x.a, 1); });
-
-    // Running mean of what is on the bar, one arrow per hand, as osu! draws for the button.
-    meanArrow(up, -1);
-    meanArrow(down, 1);
-
-    // The selected object's pair, last and lit, with the slant between them drawn: a
-    // vertical connector is the two hands together; a lean is one hand ahead of the other.
-    // Every member of a pattern the same way, so a run of connectors that all lean one way
-    // is a pattern played with one hand ahead throughout, and a fan is hands that wander.
-    if (sel) {
-      // Pinned against fading, never against time: a tick still in the future stays unshown.
-      var bs = buttonTicks.filter(function (k) { return inSel(k.o) && k.t <= t; });
-      var cs = cursorTicks.filter(function (k) { return inSel(k.o) && k.t <= t; });
-      var partner = {};
-      cs.forEach(function (c) { partner[c.o.i] = c; });
-      var lean = sel.lo === sel.hi ? 1 : .55;
-      bs.forEach(function (b) {
-        var c = partner[b.o.i];
-        if (!c) return;
-        bx.beginPath();
-        bx.moveTo(barX(b.e), mid - 3);
-        bx.lineTo(barX(c.e), mid + 3);
-        bx.strokeStyle = rgba(ACCENT, lean);
-        bx.lineWidth = sel.lo === sel.hi ? 1.5 : 1;
-        bx.stroke();
-      });
-      bs.forEach(function (b) { tickOn(b, 1, -1, true); });
-      cs.forEach(function (c) { tickOn(c, 1, 1, true); });
-    }
-  }
-
-  // One tick: up from the middle for the button, down for the cursor. Past the edge of the
-  // window it becomes a chevron at the edge, so an off-scale press is shown as off-scale
-  // rather than as one that landed exactly on the meh boundary.
-  function tickOn(k, a, dir, lit) {
-    var g = barGeom;
-    var colour = k.stray ? MISS : errorColour(k.e);
-    var x = barX(k.e);
-    var from = g.mid + dir * 3, to = dir < 0 ? g.top : g.bottom;
-
-    if (Math.abs(k.e) > SPAN) {
-      var s = k.e < 0 ? -1 : 1, y = (from + to) / 2;
-      bx.beginPath();
-      bx.moveTo(x - s * 4, y - 5);
-      bx.lineTo(x, y);
-      bx.lineTo(x - s * 4, y + 5);
-      bx.strokeStyle = rgba(lit ? ACCENT : colour, a);
-      bx.lineWidth = 1.6;
-      bx.stroke();
-      return;
-    }
-    if (lit) {
-      bx.fillStyle = rgba(ACCENT, 1);
-      bx.fillRect(x - 2.5, Math.min(from, to) - 1, 5, Math.abs(to - from) + 2);
-    }
-    if (k.extra) {
-      bx.strokeStyle = rgba(colour, lit ? 1 : .85 * a);
-      bx.lineWidth = 1;
-      bx.strokeRect(x - 1.5, Math.min(from, to) + .5, 3, Math.abs(to - from) - 1);
-      return;
-    }
-    bx.fillStyle = rgba(colour, lit ? 1 : .85 * a);
-    bx.fillRect(x - 1, Math.min(from, to), 2, Math.abs(to - from));
-  }
-
-  function meanArrow(list, dir) {
-    var sum = 0, n = 0;
-    list.forEach(function (x) { if (!x.k.stray && Math.abs(x.k.e) <= SPAN) { sum += x.k.e; n++; } });
-    if (n < 3) return;
-    // Outside the lane, pointing in at it.
-    var g = barGeom, x = barX(sum / n);
-    var tip = dir < 0 ? g.top - 1 : g.bottom + 1;
-    var base = dir < 0 ? tip - 6 : tip + 6;
-    bx.beginPath();
-    bx.moveTo(x - 4, base);
-    bx.lineTo(x + 4, base);
-    bx.lineTo(x, tip);
-    bx.closePath();
-    bx.fillStyle = rgba(hex(tok("--text", "#D8DFE4")), .8);
-    bx.fill();
   }
 
   // ---- readouts -----------------------------------------------------------
@@ -2020,7 +2072,7 @@
   function render() {
     draw(t);
     drawStrip(t);
-    drawBar(t);
+    drawTimeline(t);
     readout(t);
     markNotes(t);
   }
@@ -2150,7 +2202,7 @@
     render();
   }
 
-  // Click and shift-click, shared by the field and the bar.
+  // Click and shift-click, shared by the field and the timeline.
   function pick(o, extend) {
     if (!o) {
       if (!extend) choose(null);
@@ -2292,7 +2344,7 @@
       setText("x-dist", "—");
     }
 
-    // The bar's connector, in words: how far apart in time the two hands were on this one
+    // The gap between the timeline's two joins, in words: how far apart in time the two hands were on this one
     // object. Near zero is the press landing at the bottom of the cursor's dip.
     var gap = o.cl == null ? null : o.error != null ? o.error - o.cl : o.sy != null ? o.sy - o.cl : null;
     setText("x-gap", gap == null ? "—" : gapWords(gap));
@@ -2511,21 +2563,37 @@
     pick(best, e.shiftKey);
   });
 
-  // Picking on the bar: the nearest tick in the lane that was clicked. Missing everything
-  // does nothing here, because a near-miss on a 2-pixel tick should not throw the
-  // selection away.
-  bar.addEventListener("pointerdown", function (e) {
-    if (!barGeom) return;
-    var rect = bar.getBoundingClientRect();
-    var x = e.clientX - rect.left, y = e.clientY - rect.top;
-    var lane = y < barGeom.mid ? buttonTicks : cursorTicks;
-    var best = null, bestD = 7;
-    alive(lane, t).forEach(function (a) {
-      var d = Math.abs(barX(a.k.e) - x);
-      if (d < bestD) { best = a.k.o; bestD = d; }
-    });
-    if (best) pick(best, e.shiftKey);
+  // On the timeline a click on a press, a deepest point or an object inspects it, and a
+  // click on nothing seeks there. Dragging scrubs, the tape moving under the pointer.
+  var tlDrag = null;
+  timeline.addEventListener("pointerdown", function (e) {
+    timeline.setPointerCapture(e.pointerId);
+    setPlaying(false);
+    tlDrag = { x: e.clientX, t: t, moved: false };
   });
+  timeline.addEventListener("pointermove", function (e) {
+    if (!tlDrag) return;
+    if (Math.abs(e.clientX - tlDrag.x) > 3) tlDrag.moved = true;
+    if (!tlDrag.moved) return;
+    t = Math.max(START, Math.min(END, tlDrag.t - (e.clientX - tlDrag.x) / tlGeom.scale));
+    render();
+  });
+  timeline.addEventListener("pointerup", function (e) {
+    var d = tlDrag;
+    tlDrag = null;
+    if (!d || d.moved) return;
+    var rect = timeline.getBoundingClientRect();
+    var x = e.clientX - rect.left, y = e.clientY - rect.top;
+    var hit = timelineHit(x, y);
+    if (hit) { pick(hit, e.shiftKey); return; }
+    t = Math.max(START, Math.min(END, t + (x - tlGeom.head) / tlGeom.scale));
+    render();
+  });
+  timeline.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    zoom = Math.max(0, Math.min(ZOOMS.length - 1, zoom + (e.deltaY > 0 ? 1 : -1)));
+    render();
+  }, { passive: false });
 
   var brakeBtn = document.getElementById("brake");
   function setBrake(on) {
@@ -2699,11 +2767,21 @@
     });
   });
 
+  // To the nearest recorded frame strictly before or after the playhead, by time rather than
+  // by index: a button change forces a frame at the same millisecond as the 60 Hz sample
+  // before it, so stepping one index back from a press landed on the same time and never
+  // moved.
   function step(dir) {
     setPlaying(false);
-    var i = you.seek(t);
-    var next = Math.min(Math.max(0, i + dir), you.n - 1);
-    t = you.f[next * 4];
+    var f = you.f, i = you.seek(t);
+    if (dir < 0) {
+      while (i >= 0 && f[i * 4] >= t) i--;
+      if (i >= 0) t = f[i * 4];
+    } else {
+      i++;
+      while (i < you.n && f[i * 4] <= t) i++;
+      if (i < you.n) t = f[i * 4];
+    }
     render();
   }
 
