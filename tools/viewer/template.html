@@ -310,6 +310,28 @@
   .who[aria-pressed="false"] { opacity: .42; }
   .who[aria-pressed="false"] .swatch { background: var(--faint) !important; }
 
+  /* ---- error legend ------------------------------------------------------ */
+
+  .legend { display: flex; flex-direction: column; gap: 6px; }
+
+  /* The hit error bar: the beat down the middle, the button's ticks above the line and the
+     cursor's below. Height is fixed so the lanes keep their meaning at any width. */
+  #bar {
+    display: block;
+    width: 100%;
+    height: 78px;
+    cursor: pointer;
+    touch-action: none;
+  }
+
+  .ramp-ends {
+    display: flex;
+    justify-content: space-between;
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 10px;
+    color: var(--faint);
+  }
+
   /* ---- timeline -------------------------------------------------------- */
 
   /* The seek bar zoomed in. Height is fixed so the lanes keep their places at any width. */
@@ -572,11 +594,11 @@
           <button id="brake" aria-pressed="true" title="Ease to a halt on every miss (M)">Stop on miss</button>
           <button id="notes-stop" aria-pressed="false" hidden title="Ease to a halt on every note, and hold until you press play">Stop on notes</button>
           <button id="markers" aria-pressed="true" title="Leave a marker where each press landed (K)">Hit markers</button>
-          <span class="k" title="How long press markers stay on the field (F)">Fade</span>
-          <button data-persist="0" aria-pressed="false" title="Press markers last one second (F)">1 s</button>
-          <button data-persist="1" aria-pressed="true" title="Press markers last three seconds (F)">3 s</button>
-          <button data-persist="2" aria-pressed="false" title="Press markers last eight seconds (F)">8 s</button>
-          <button data-persist="3" aria-pressed="false" title="Press markers never fade (F)">never</button>
+          <span class="k" title="How long presses and error ticks stay on screen (F)">Fade</span>
+          <button data-persist="0" aria-pressed="false" title="Presses and ticks last one second (F)">1 s</button>
+          <button data-persist="1" aria-pressed="true" title="Presses and ticks last three seconds (F)">3 s</button>
+          <button data-persist="2" aria-pressed="false" title="Presses and ticks last eight seconds (F)">8 s</button>
+          <button data-persist="3" aria-pressed="false" title="Presses and ticks never fade (F)">never</button>
           <span class="clock"><b id="t-now">0:00.000</b> / <span id="t-end">0:00</span></span>
         </div>
       </div>
@@ -605,6 +627,12 @@
       <div class="card">
         <span class="k">Cursors</span>
         <div class="roster" id="roster"></div>
+      </div>
+
+      <div class="card legend">
+        <span class="k">Hit error</span>
+        <canvas id="bar" aria-label="Hit error bar. Button presses above the beat line, the cursor's deepest point below. Click a tick to inspect its object."></canvas>
+        <div class="ramp-ends"><span id="bar-lo">early</span><span>beat</span><span id="bar-hi">late</span></div>
       </div>
 
       <div class="card inspect" id="inspect" hidden>
@@ -676,7 +704,12 @@
     so early and late are slants, and order is left to right. A dashed line goes to the
     press the stream alignment reads as meant for a shifted circle; red marks are presses a
     miss was attributed (solid), further presses in its window (hollow) and presses that
-    judged nothing (a cross). Every number in the
+    judged nothing (a cross).
+    <br><br>
+    The hit error bar is osu!&rsquo;s, two-handed: the beat down the middle, in map time
+    across the meh window. Each press drops a tick above the line where it landed against
+    the beat, and the cursor drops one below where it was deepest in the circle. When the
+    two hands move together an object&rsquo;s two ticks stand one over the other. Every number in the
     inspector comes from the extraction shim&rsquo;s own <code>geometry</code> and
     <code>clicks</code> passes over this replay; none is computed here. Notes, when the page
     has them, are checked against the same numbers before it is built: every figure in a note
@@ -686,7 +719,7 @@
     <kbd>Space</kbd> play &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> step one frame &middot;
     <kbd>Shift</kbd> + arrows jump a second &middot; <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> speed
     &middot; <kbd>M</kbd> stop on miss &middot; <kbd>K</kbd> hit markers &middot;
-    <kbd>F</kbd> fade &middot; click an object, or a mark on the timeline, to inspect it, <kbd>Shift</kbd>-click
+    <kbd>F</kbd> fade &middot; click an object, a tick, or a mark on the timeline to inspect it, <kbd>Shift</kbd>-click
     another to make a pattern of everything between, <kbd>Shift</kbd>-drag on the seek bar to
     loop a stretch, drag or scroll the timeline to move through time and shift-scroll to zoom, <kbd>Esc</kbd> to let go
   </p>
@@ -750,9 +783,10 @@
 
   // ---- persistence --------------------------------------------------------
   // How long anything left behind stays: press markers, the lines joining a run of them,
-  // and the reference field's presses. One setting for all of them, because they are one
-  // idea -- a record of the recent past -- and a field where some marks outlive others
-  // reads as two clocks.
+  // the reference field's presses, and the ticks on the hit error bar. One setting for all
+  // of them, because they are one idea -- a record of the recent past -- and a field where
+  // markers outlive ticks or ticks outlive markers reads as two clocks. The timeline does
+  // not fade: it shows time directly, and things leave it by scrolling off.
   //
   // Measured in map time, never wall time, so what is on screen is a function of the
   // playhead alone: scrubbing back shows exactly what was there, and 0.25x does not leave
@@ -922,6 +956,27 @@
   presses.sort(function (a, b) { return a.t - b.t; });
 
 
+  // The hit error bar's two lanes, each a list of {t, e, o} in time order: when the tick
+  // drops, where it sits against the beat, and whose it is. A miss has no judged press, but
+  // a press that judged nothing is attributed to it when there was one (`sy`, from the
+  // build's timing attribution), and that press is the one the miss was meant to be -- so it
+  // gets a tick, in the miss colour, rather than the lane going silent on the very object
+  // that matters. Further presses inside the same miss's window (`sz`) are hollow: they
+  // happened, but they were not the attempt. The cursor lane is when the cursor was deepest in the circle, against the same
+  // beat, so one object's two ticks standing one over the other is the two hands together.
+  var buttonTicks = [], cursorTicks = [];
+  OBJ.forEach(function (o) {
+    if (o.type === "spinner") return;
+    if (o.error != null && o.hitTime != null) buttonTicks.push({ t: o.hitTime, e: o.error, o: o });
+    else if (o.sy != null) buttonTicks.push({ t: o.t + o.sy, e: o.sy, o: o, stray: true });
+    (o.sz || []).forEach(function (z) {
+      buttonTicks.push({ t: o.t + z[0], e: z[0], o: o, stray: true, extra: true });
+    });
+    if (o.cl != null) cursorTicks.push({ t: o.t + o.cl, e: o.cl, o: o });
+  });
+  buttonTicks.sort(function (a, b) { return a.t - b.t; });
+  cursorTicks.sort(function (a, b) { return a.t - b.t; });
+
   // Every press on the field, by whoever made it, in time order. Drawing the field's
   // marks alongside the player's is what turns a stream into something checkable: taps
   // snapped to one rhythm land at one pitch along the path, and an uneven row is visible
@@ -996,6 +1051,8 @@
   var sx = scope.getContext("2d");
   var strip = document.getElementById("strip");
   var tx = strip.getContext("2d");
+  var bar = document.getElementById("bar");
+  var bx = bar.getContext("2d");
   var timeline = document.getElementById("timeline");
   var lx = timeline.getContext("2d");
   var view = { s: 1, ox: 0, oy: 0, w: 0, h: 0 };
@@ -1023,6 +1080,7 @@
       h: box.h
     };
     fit(strip, tx, strip.clientHeight);
+    fit(bar, bx, bar.clientHeight);
     fit(timeline, lx, timeline.clientHeight);
   }
 
@@ -1735,13 +1793,13 @@
     lx.fillText("CURSOR", 3, g.cursor - 8);
 
     // A scale bar, bottom right, so a gap can be read in milliseconds.
-    var bar = ZOOMS[zoom] <= 1000 ? 50 : ZOOMS[zoom] <= 4000 ? 100 : 500;
-    var bw = bar * g.scale;
+    var unit = ZOOMS[zoom] <= 1000 ? 50 : ZOOMS[zoom] <= 4000 ? 100 : 500;
+    var bw = unit * g.scale;
     lx.fillStyle = rgba(faint, .9);
     lx.fillRect(w - 8 - bw, h - 7, bw, 1.5);
     lx.textAlign = "right";
     lx.textBaseline = "bottom";
-    lx.fillText(bar + " ms", w - 12 - bw, h - 2);
+    lx.fillText(unit + " ms", w - 12 - bw, h - 2);
     lx.textAlign = "left";
     lx.fillText((ZOOMS[zoom] / 1000) + " s shown · wheel to move, shift-wheel to zoom", 3, h - 2);
 
@@ -1910,6 +1968,155 @@
     return out;
   }
 
+  // ---- the hit error bar ----------------------------------------------------
+  // osu!'s error bar, two-handed. The beat is the vertical line in the middle; the axis is
+  // map time against it, out to the meh window, because that is the span in which a press
+  // can judge an object and the span the shim searched for the cursor's visit. Ticks drop
+  // as their moment passes and fade on the same persistence as the field's markers.
+  document.getElementById("bar-lo").textContent = "−" + Math.round(SPAN) + " ms";
+  document.getElementById("bar-hi").textContent = "+" + Math.round(SPAN) + " ms";
+
+  var barGeom = null;
+
+  function barX(ms) {
+    var g = barGeom;
+    return g.cx + Math.max(-1, Math.min(1, ms / SPAN)) * g.half;
+  }
+
+  function drawBar(t) {
+    var w = bar.clientWidth, h = bar.clientHeight;
+    var mid = Math.round(h / 2);
+    barGeom = { cx: Math.round(w / 2) + .5, half: w / 2 - 7, mid: mid, top: 12, bottom: h - 12 };
+    var g = barGeom;
+    bx.clearRect(0, 0, w, h);
+
+    // The colour scale through the middle, exactly errorColour's: linear from the true
+    // colour to early or late, saturating at FULL_SCALE ms and flat beyond it.
+    var ramp = bx.createLinearGradient(g.cx - g.half, 0, g.cx + g.half, 0);
+    var sat = Math.min(1, FULL_SCALE / SPAN);
+    ramp.addColorStop(0, rgba(EARLY, 1));
+    ramp.addColorStop(.5 - sat / 2, rgba(EARLY, 1));
+    ramp.addColorStop(.5, rgba(TRUE_, 1));
+    ramp.addColorStop(.5 + sat / 2, rgba(LATE, 1));
+    ramp.addColorStop(1, rgba(LATE, 1));
+    bx.fillStyle = ramp;
+    bx.globalAlpha = .55;
+    bx.fillRect(g.cx - g.half, mid - 2, g.half * 2, 4);
+    bx.globalAlpha = 1;
+
+    // Window edges, faint, and the beat itself.
+    bx.strokeStyle = rgba(hex(tok("--line", "#232D34")), 1);
+    bx.lineWidth = 1;
+    [SCENE.hitWindows.great, SCENE.hitWindows.ok].forEach(function (edge) {
+      if (!edge) return;
+      [-edge, edge].forEach(function (e) {
+        var x = Math.round(barX(e)) + .5;
+        bx.beginPath();
+        bx.moveTo(x, g.top + 4);
+        bx.lineTo(x, g.bottom - 4);
+        bx.stroke();
+      });
+    });
+    bx.strokeStyle = rgba(hex(tok("--dim", "#8293A0")), .9);
+    bx.beginPath();
+    bx.moveTo(g.cx, 2);
+    bx.lineTo(g.cx, h - 2);
+    bx.stroke();
+
+    // Lane names, quietly.
+    bx.font = "500 8.5px 'IBM Plex Mono', monospace";
+    bx.fillStyle = rgba(hex(tok("--faint", "#5E6E79")), 1);
+    bx.textBaseline = "top";
+    bx.textAlign = "left";
+    bx.fillText("BUTTON", 2, 1);
+    bx.textBaseline = "bottom";
+    bx.fillText("CURSOR", 2, h - 1);
+
+    var up = alive(buttonTicks, t), down = alive(cursorTicks, t);
+    up.forEach(function (x) { tickOn(x.k, x.a, -1); });
+    down.forEach(function (x) { tickOn(x.k, x.a, 1); });
+
+    // Running mean of what is on the bar, one arrow per hand, as osu! draws for the button.
+    meanArrow(up, -1);
+    meanArrow(down, 1);
+
+    // The selected object's pair, last and lit, with the slant between them drawn: a
+    // vertical connector is the two hands together; a lean is one hand ahead of the other.
+    // Every member of a pattern the same way, so a run of connectors that all lean one way
+    // is a pattern played with one hand ahead throughout, and a fan is hands that wander.
+    if (sel) {
+      // Pinned against fading, never against time: a tick still in the future stays unshown.
+      var bs = buttonTicks.filter(function (k) { return inSel(k.o) && k.t <= t; });
+      var cs = cursorTicks.filter(function (k) { return inSel(k.o) && k.t <= t; });
+      var partner = {};
+      cs.forEach(function (c) { partner[c.o.i] = c; });
+      var lean = sel.lo === sel.hi ? 1 : .55;
+      bs.forEach(function (b) {
+        var c = partner[b.o.i];
+        if (!c) return;
+        bx.beginPath();
+        bx.moveTo(barX(b.e), mid - 3);
+        bx.lineTo(barX(c.e), mid + 3);
+        bx.strokeStyle = rgba(ACCENT, lean);
+        bx.lineWidth = sel.lo === sel.hi ? 1.5 : 1;
+        bx.stroke();
+      });
+      bs.forEach(function (b) { tickOn(b, 1, -1, true); });
+      cs.forEach(function (c) { tickOn(c, 1, 1, true); });
+    }
+  }
+
+  // One tick: up from the middle for the button, down for the cursor. Past the edge of the
+  // window it becomes a chevron at the edge, so an off-scale press is shown as off-scale
+  // rather than as one that landed exactly on the meh boundary.
+  function tickOn(k, a, dir, lit) {
+    var g = barGeom;
+    var colour = k.stray ? MISS : errorColour(k.e);
+    var x = barX(k.e);
+    var from = g.mid + dir * 3, to = dir < 0 ? g.top : g.bottom;
+
+    if (Math.abs(k.e) > SPAN) {
+      var s = k.e < 0 ? -1 : 1, y = (from + to) / 2;
+      bx.beginPath();
+      bx.moveTo(x - s * 4, y - 5);
+      bx.lineTo(x, y);
+      bx.lineTo(x - s * 4, y + 5);
+      bx.strokeStyle = rgba(lit ? ACCENT : colour, a);
+      bx.lineWidth = 1.6;
+      bx.stroke();
+      return;
+    }
+    if (lit) {
+      bx.fillStyle = rgba(ACCENT, 1);
+      bx.fillRect(x - 2.5, Math.min(from, to) - 1, 5, Math.abs(to - from) + 2);
+    }
+    if (k.extra) {
+      bx.strokeStyle = rgba(colour, lit ? 1 : .85 * a);
+      bx.lineWidth = 1;
+      bx.strokeRect(x - 1.5, Math.min(from, to) + .5, 3, Math.abs(to - from) - 1);
+      return;
+    }
+    bx.fillStyle = rgba(colour, lit ? 1 : .85 * a);
+    bx.fillRect(x - 1, Math.min(from, to), 2, Math.abs(to - from));
+  }
+
+  function meanArrow(list, dir) {
+    var sum = 0, n = 0;
+    list.forEach(function (x) { if (!x.k.stray && Math.abs(x.k.e) <= SPAN) { sum += x.k.e; n++; } });
+    if (n < 3) return;
+    // Outside the lane, pointing in at it.
+    var g = barGeom, x = barX(sum / n);
+    var tip = dir < 0 ? g.top - 1 : g.bottom + 1;
+    var base = dir < 0 ? tip - 6 : tip + 6;
+    bx.beginPath();
+    bx.moveTo(x - 4, base);
+    bx.lineTo(x + 4, base);
+    bx.lineTo(x, tip);
+    bx.closePath();
+    bx.fillStyle = rgba(hex(tok("--text", "#D8DFE4")), .8);
+    bx.fill();
+  }
+
   // ---- readouts -----------------------------------------------------------
 
   function clock(ms) {
@@ -2072,6 +2279,7 @@
   function render() {
     draw(t);
     drawStrip(t);
+    drawBar(t);
     drawTimeline(t);
     readout(t);
     markNotes(t);
@@ -2202,7 +2410,7 @@
     render();
   }
 
-  // Click and shift-click, shared by the field and the timeline.
+  // Click and shift-click, shared by the field, the bar and the timeline.
   function pick(o, extend) {
     if (!o) {
       if (!extend) choose(null);
@@ -2344,7 +2552,7 @@
       setText("x-dist", "—");
     }
 
-    // The gap between the timeline's two joins, in words: how far apart in time the two hands were on this one
+    // The bar's connector, in words: how far apart in time the two hands were on this one
     // object. Near zero is the press landing at the bottom of the cursor's dip.
     var gap = o.cl == null ? null : o.error != null ? o.error - o.cl : o.sy != null ? o.sy - o.cl : null;
     setText("x-gap", gap == null ? "—" : gapWords(gap));
@@ -2561,6 +2769,22 @@
       });
     }
     pick(best, e.shiftKey);
+  });
+
+  // Picking on the bar: the nearest tick in the lane that was clicked. Missing everything
+  // does nothing here, because a near-miss on a 2-pixel tick should not throw the
+  // selection away.
+  bar.addEventListener("pointerdown", function (e) {
+    if (!barGeom) return;
+    var rect = bar.getBoundingClientRect();
+    var x = e.clientX - rect.left, y = e.clientY - rect.top;
+    var lane = y < barGeom.mid ? buttonTicks : cursorTicks;
+    var best = null, bestD = 7;
+    alive(lane, t).forEach(function (a) {
+      var d = Math.abs(barX(a.k.e) - x);
+      if (d < bestD) { best = a.k.o; bestD = d; }
+    });
+    if (best) pick(best, e.shiftKey);
   });
 
   // On the timeline a click on a press, a deepest point or an object inspects it, and a
