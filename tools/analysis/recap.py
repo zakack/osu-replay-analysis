@@ -33,19 +33,21 @@ def utc(s):
 
 class Api:
     """The osu! API, for the pp the server awarded: realm stores none (Pp is null on every
-    local score). Credentials as for tools/reference/fetch.py, from the environment or
-    ~/.config/osu-api.env. Each score's pp is cached in build/pp-cache.json."""
+    local score). Credentials (OSU_API_CLIENT, OSU_API_KEY) from the environment, else
+    .osu-api.env at the repository root (gitignored), else ~/.config/osu-api.env. Each score's pp is cached in build/pp-cache.json."""
 
     def __init__(self):
         import urllib.parse, urllib.request
         self.u, self.bearer, self.error = urllib, None, None
         env = dict(os.environ)
-        try:
-            for line in open(os.path.expanduser("~/.config/osu-api.env")):
-                k, _, v = line.strip().partition("=")
-                env.setdefault(k, v)
-        except OSError:
-            pass
+        for path in (".osu-api.env", os.path.expanduser("~/.config/osu-api.env")):
+            try:
+                for line in open(path):
+                    k, _, v = line.strip().partition("=")
+                    if k and not k.startswith("#"):
+                        env.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+            except OSError:
+                pass
         try:
             body = urllib.parse.urlencode({"client_id": env["OSU_API_CLIENT"], "client_secret": env["OSU_API_KEY"],
                                            "grant_type": "client_credentials", "scope": "public"}).encode()
@@ -133,6 +135,35 @@ bidx = json.load(open("build/beatmap-index.json"))
 bidx = bidx if isinstance(bidx, dict) else {e["Md5"]: e for e in bidx}
 sr = lambda md5: (bidx.get(md5) or {}).get("StarRating", -1)
 
+# ---- attempts, from lazer's runtime log (times there are UTC) ----
+# Every gameplay screen counts (SoloPlayer, DailyChallengePlayer, PlaylistsPlayer,
+# MultiplayerPlayer, ...) except watching a replay or test-playing in the editor.
+KIND = {"Solo": "", "DailyChallenge": "daily challenge", "Playlists": "playlist", "Multiplayer": "multiplayer"}
+att = []
+for f in sorted(set(glob.glob("build/lazer-logs/*runtime*.log") + glob.glob(os.path.expanduser("~/.config/osu-lazer/logs/*runtime*.log")))):
+    beat, cur = None, None
+    for l in open(f, errors="replace"):
+        m = re.search(r"working beatmap updated to (.*)$", l)
+        if m:
+            beat = m.group(1).strip()
+        m = re.search(r"entered (\w*?)Player#(\d+)", l)
+        if m and m.group(1) not in ("Replay", "Editor", "SoloSpectator", "Spectator", "MultiSpectator"):
+            cur = (l[:19], beat, m.group(1), f"{m.group(1)}Player#{m.group(2)}")
+        elif cur and f"exit from {cur[3]}" in l:
+            a, z = (datetime.fromisoformat(x).replace(tzinfo=timezone.utc) for x in (cur[0], l[:19]))
+            if start - timedelta(minutes=1) <= a <= end:
+                att.append((a, (z - a).total_seconds(), cur[1], KIND.get(cur[2], cur[2].lower())))
+            cur = None
+att = sorted(set(att))
+
+def kind_of(t):
+    """Game mode of the attempt a saved play came from ('' for solo), by time."""
+    for a, secs, _, k in att:
+        if a <= t <= a + timedelta(seconds=secs) + timedelta(minutes=2):
+            return k
+    return ""
+
+
 print(f"\n## Plays ({len(plays)} saved, {sum(p['Rank'] == 'F' for p in plays)} failed)")
 if plays:
     print("time   rank  acc     combo  pp     stars  hit-err  UR    aim(r)  miss  map")
@@ -142,8 +173,8 @@ for p in plays:
     v = pp.get(str(p.get("OnlineId") or -1))
     print(f"{fmt(p['_t'])[11:]}  {p['Rank']:4}  {p['Accuracy'] * 100:5.2f}%  {p['MaxCombo']:5}  {f(v, 5, 0)}  {f(sr(p['BeatmapMd5']) if sr(p['BeatmapMd5']) >= 0 else None, 5, 2)}  "
           f"{f(k['med'], 6, 1)}  {f(k['ur'], 5, 0)}  {f(k['aim'], 5, 2)}  {k['miss']:4}  "
-          f"{p['Beatmap'][:70]}{' +' + p['Mods'] if p['Mods'] else ''}")
-print("stars = lazer's no-mod star rating as stored locally; pp = what the server awarded (- = none: failed, unranked map, or not submitted); hit-err = median ms (+ late); UR = 10 x SD of hit error; aim(r) = median distance from circle centre at the hit, in circle radii")
+          f"{p['Beatmap'][:70]}{' +' + p['Mods'] if p['Mods'] else ''}" + (f"  [{kind_of(p['_t'])}]" if kind_of(p['_t']) else ""))
+print("stars = lazer's no-mod star rating as stored locally; pp = what the server awarded (- = none: failed, unranked map, or not submitted); hit-err = median ms (+ late); UR = 10 x SD of hit error; aim(r) = median distance from circle centre at the hit, in circle radii; [daily challenge]/[playlist]/[multiplayer] = not solo play")
 
 # ---- pp ----
 print("\n## pp")
@@ -213,30 +244,15 @@ for md5 in sorted(md5s, key=lambda m: min(p["_t"] for p in plays if p["BeatmapMd
 if not md5s:
     print("(no plays)")
 
-# ---- attempts, from lazer's runtime log (times there are UTC) ----
+# ---- attempts ----
 print("\n## Attempts (lazer runtime log, includes quick retries and quits)")
-att = []
-for f in sorted(set(glob.glob("build/lazer-logs/*runtime*.log") + glob.glob(os.path.expanduser("~/.config/osu-lazer/logs/*runtime*.log")))):
-    beat, t_in = None, None
-    for l in open(f, errors="replace"):
-        m = re.search(r"working beatmap updated to (.*)$", l)
-        if m:
-            beat = m.group(1).strip()
-        if "entered SoloPlayer#" in l:
-            t_in, b = l[:19], beat
-        elif t_in and "exit from SoloPlayer#" in l:
-            a, z = (datetime.fromisoformat(x).replace(tzinfo=timezone.utc) for x in (t_in, l[:19]))
-            if start - timedelta(minutes=1) <= a <= end:
-                att.append((a, (z - a).total_seconds(), b))
-            t_in = None
-att = sorted(set(att))
 if att:
     per = defaultdict(list)
-    for a, secs, b in att:
-        per[b].append(secs)
-    print(f"{len(att)} attempts, {len(plays)} saved; under 20 s (quick retry or quit early): {sum(v < 20 for _, v, _ in att)}")
-    for b, v in sorted(per.items(), key=lambda kv: -len(kv[1])):
-        print(f"- {len(v):3} attempts, {sum(x < 20 for x in v):3} under 20 s: {b[:70]}")
+    for a, secs, b, k in att:
+        per[(b, k)].append(secs)
+    print(f"{len(att)} attempts, {len(plays)} saved; under 20 s (quick retry or quit early): {sum(v < 20 for _, v, _, _ in att)}")
+    for (b, k), v in sorted(per.items(), key=lambda kv: -len(kv[1])):
+        print(f"- {len(v):3} attempts, {sum(x < 20 for x in v):3} under 20 s: {(b or '?')[:70]}" + (f"  [{k}]" if k else ""))
 else:
     print("(no attempts found; the log archive may not cover this session)")
 

@@ -7,3 +7,6 @@ obj/
 *.user
 __pycache__/
 *.pyc
+
+# osu! API credentials for tools/analysis/recap.py (OSU_API_CLIENT=..., OSU_API_KEY=...)
+.osu-api.env
