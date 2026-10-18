@@ -170,30 +170,6 @@ Four causes account for the local corpus, and only the last is a defect:
   clicks, so membership here is a property of the file, like the three causes above it. Only
   `oracle-diff` convicts, and across the whole corpus it convicted once.
 
-**2. The two-click flam — as a debugging instrument, not a feature.** Immediately after
-extraction works, before any analysis. Two synthesized clicks per object: one at the
-object time from the `.osu`, one at the actual hit time from the `.osr`. A systematic
-offset in hit times is instantly audible and invisible in JSON. Ears beat eyes at exactly
-the error most likely to be introduced here.
-
-  Then it becomes the feature: flam width tracks error magnitude, detune or pan the tap
-  click by error sign so early/late is distinguishable without thinking, 0.5x playback
-  makes stream drift audible as the tap click sliding away from the reference. Auditory
-  temporal resolution is ~an order of magnitude better than visual — a flashing visual
-  metronome is a poor instrument for a 15ms offset. Everything here is synthesized Web
-  Audio from timing points, so it carries no licensing exposure.
-
-**3. The smallest real question with no geometry in it.** Hit error as a function of
-position through the map. Does error mean drift late in long maps; does variance widen
-after the first minute. Two columns, time and error. Ship it, confirm it says something
-true about actual play, and the pipeline shape is validated before the hard part.
-
-**4. Geometry. 5. Bins. 6. Top-50 reference corpus. 7. Viewer — last, always.** The viewer
-is the most fun and the least informative; building it early will eat the project.
-
-Steps 1–5 run entirely on the local Replays folder: no auth, no rate limits, no questions
-about other people's data.
-
 ## Feature design
 
 The *shape* of a pattern is classified without absolute position, which is where rotation
@@ -436,55 +412,3 @@ a skipped one.
 `.gitattributes` sets `merge=union` on the file, because an append-only log is otherwise the
 worst possible shape for parallel worktrees: every branch appends at the end, so every merge
 conflicts on the same line.
-
-## Licensing
-
-**This project is non-commercial only.** That decision settles most of what used to be a
-long section here, because nearly every constraint in it existed to keep a commercial
-option open.
-
-- `ppy/osu` and `osu-framework` are **MIT** — keep the copyright and licence notice.
-- **osu-framework is in the build, unavoidably.** `osu.Game` references it directly, and
-  `PathApproximator` — the piecewise-linear approximator that *is* the slider path for
-  every gameplay purpose — lives there, not in `ppy/osu`. It pulls BASS transitively, and
-  `osu.Game` pulls `ppy/osu-resources` (CC-BY-NC) too. Under non-commercial use both are
-  fine: BASS is free for non-commercial use and the NC clause is satisfied rather than
-  tripped.
-- **Still never construct a `GameHost`, `AudioManager` or `OsuGameBase`** — but for
-  engineering reasons now, not licensing ones. A hosted game loop makes extraction
-  framerate-coupled, which is the one property the extraction layer cannot have, and drags
-  realm, SQLite, the skin manager and the beatmap manager into a process whose job is to
-  read two files. `HostGuardTests` asserts this by checking `/proc/self/maps`.
-- **Never ship audio or image assets. Geometry is fine.** The line is drawn at the media,
-  not at the map. Audio is unconditional and unchanged: beatmaps are user submissions of
-  third-party music, ppy claims no rights over distribution, so the burden is entirely ours,
-  none of that depends on commercial status, and only the Featured Artist catalogue is
-  blanket-cleared — and even there, tracks by a featured artist that aren't in their listing
-  aren't licensed. The same goes for every image that arrives with a `.osu`: backgrounds,
-  storyboard sprites, skin elements. None of those ship, ever.
-
-  What *does* ship is the playable geometry — object positions, timing, slider polylines,
-  the whole `scene` document. Nobody is going to sue over the coordinates of a circle, and
-  the project is non-commercial, so contorting the viewer to avoid publishing them buys
-  nothing. Decided 2026-09-14, when the `scene` command made the question concrete: its
-  document is a complete re-encoding of a beatmap's playable geometry, and it is cleared to
-  be embedded in a published artifact.
-
-  Tests still build beatmaps in code rather than carrying fixtures. That is now an
-  engineering preference rather than a licensing requirement, and it is still the right one.
-- **ppy assets in the UI** are now permitted, but an independent visual language is still
-  the better call for a tool that should look like its own thing.
-- **Naming.** "osu!" and "ppy" are trademarks and ppy asks to be contacted for clearance.
-  Lower stakes for a non-commercial tool, but a rename is still cheap.
-- **Top-50 corpus.** Other players' data through an API anyone with an account can use. An
-  email to ppy before pulling at volume is good manners.
-
-## Non-goals
-
-- LLM pattern classification.
-- VLM on gameplay frames as a perception layer.
-- Video rendering (danser-go / o!rdr) as the output medium.
-- Porting lazer's geometry, in any language. The viewer draws the shim's precomputed
-  polyline and never recomputes curves — reimplementing them in JS is the same non-goal
-  wearing a different hat.
-- The replay viewer before steps 1–6 are done.
