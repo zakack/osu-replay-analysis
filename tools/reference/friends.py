@@ -9,12 +9,12 @@ Friends inside the same rank band are neither. They are matched on skill and the
 same maps, so any map both have played is a controlled comparison for free: same geometry,
 same mods where they agree, and a peer rather than a god at the other end of it.
 
-Only the friends *list* needs user-scoped auth; everything downstream is public. Rather than
-handle a token, this reads user ids out of a saved friends page and uses client credentials
-from there. Re-save the page when the list changes.
+Only the friends *list* needs user-scoped auth; everything downstream is public. Once
+authorize.py has been run, the list comes live from /friends. Until then, or with --page given,
+user ids are read out of a saved friends page instead, which goes stale when the list changes.
 
     python3 tools/reference/friends.py [--page build/zaksynack-friends.html]
-                                       [--low 120000] [--high 220000]
+                                       [--low 70000] [--high 220000]
                                        [--include Name,Other]
 
 --include pulls named players whatever their rank. The band is the default because matched
@@ -26,6 +26,7 @@ import collections, json, os, re, sys, urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fetch import call, token
+from authorize import user_token
 
 OUT = "build"
 
@@ -36,11 +37,16 @@ def arg(flag, default):
 
 def main():
     page = arg("--page", f"{OUT}/zaksynack-friends.html")
-    low, high = arg("--low", 120_000), arg("--high", 220_000)
+    low, high = arg("--low", 70_000), arg("--high", 220_000)
 
-    html = open(page, encoding="utf-8", errors="replace").read()
-    ids = sorted({u for u in re.findall(r'osu\.ppy\.sh/users/(\d+)', html)}, key=int)
-    print(f"{len(ids)} user ids in {page}")
+    mine = None if "--page" in sys.argv else user_token()
+    if mine:
+        ids = sorted({str(u["id"]) for u in call("https://osu.ppy.sh/api/v2/friends", mine) or []}, key=int)
+        print(f"{len(ids)} user ids from /friends")
+    else:
+        html = open(page, encoding="utf-8", errors="replace").read()
+        ids = sorted({u for u in re.findall(r'osu\.ppy\.sh/users/(\d+)', html)}, key=int)
+        print(f"{len(ids)} user ids in {page}")
 
     bearer = token()
     profiles = {}
