@@ -516,7 +516,10 @@ def main() -> int:
                      if o.get("hx") is not None and o.get("hitTime") is not None]
 
             ghosts.append({
-                "name": when(path) if args.mine else username(path),
+                # Your own runs passed by hand are labelled like --mine, or they would
+                # all share your name.
+                "name": when(path) if args.mine or username(path) == username(args.replay)
+                        else username(path),
                 "sd": spread(other),
                 "frames": other["frames"],
                 "marks": marks,
@@ -524,6 +527,9 @@ def main() -> int:
                            for o in other["objects"] if o.get("error") is not None},
             })
             print(f"  {ghosts[-1]['name']:<18} spread {ghosts[-1]['sd']}ms")
+
+        if ghosts and all(username(p) == username(args.replay) for p in paths):
+            field = "your runs"
 
     payload = json.dumps(
         {"scene": subject, "ghosts": ghosts, "field": field, "notes": notes,
