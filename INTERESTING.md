@@ -1195,3 +1195,33 @@ After a k2 (index) press the next 1/2 jump is k1 99.3% of the time, from 2026-09
 `python3 tools/analysis/attribution_riding.py` → build/attribution-riding.txt, "riding double" row
 
 260 shifted circles in 11 traced replays, all on the riding cycle's slot for the circle lazer judged. Every other class improved under the new costs; this one didn't move. The plant note from arming the latch for a double or quad is the obvious suspect, since `deep,1` timestamps could exclude it.
+
+## 2026-10-18 — cursor timing swings more than button timing between plays, and they move together
+
+`/tmp/claude-1000/-home-zak-Projects-osu-replay-analysis/640ad7fa-b39d-4ca7-a144-5a1f02b4363f/scratchpad/step.py` (clicks.csv, closestTime - startTime vs pressTime - startTime, per-play medians); fantastic dreamer [Sotarks' Fantasy] 10-01..10-08, 14 plays: slope 1.61, r 0.93
+
+No setup change between those plays, so whatever moves both hands' timing from one play to the next is internal, and it moves the cursor further than the button. Confounds every before/after step test on hand sync.
+
+## 2026-10-21 — one-note-early Mehs deep in streams cluster in the analog-doubletap era
+
+`/tmp/claude-1000/-home-zak-Projects-osu-replay-analysis/76ce6fe2-5ce1-44b1-bf94-028bb699dd8f/scratchpad/tender.py` (temporary; rows are build/geometry.csv where replay contains "look at me tenderly (Cyllinus)") (look at me tenderly [(>///<)], top-10 local scores): early Mehs at about -76 ms (one 1/4 note) on 3rd+ notes of 1/4 runs: 0/3/4/7 per play before 2026-08-29, 8/13/18/18/25/35 after; the 2026-10-21 run is the 35
+
+Could be the press-attribution slip or doubletap's analog regime; 10 plays on one map, so check it pooled with streams.py
+
+## 2026-10-21 — 04-09 tenderly run: near-zero misses with poor accuracy
+
+`build/zaksynack/zaksynack playing goreshit - look at me tenderly (Cyllinus) [()] (2026-04-09_03-01).osr`; first 240 s: 1 miss but 128 stream non-Greats, UR 225; full run 13 misses, 1165 combo, 89.62%
+
+Player called it freaky and has no idea what was different that day
+
+## 2026-10-26 — top plays run half as long as friends' at the same rank
+
+`build/beatmap-meta.json` + `build/friends-best.jsonl` vs `build/best/manifest.json`: 3.5% of own top-200 maps are 4:00+ drain against 6.7% for the 100k-220k friends (10.1% vs 20.2% at 3:00+). Length, map age and HP don't explain why only 2 six-digit friends passed beatmap 806017 (median 6 on 15 comparable maps); its friends board leans to top players with HR/DT.
+
+Player calls such maps "attention poison": long, repetitive bursts. Could be a sustained-attention axis.
+
+## 2026-10-26 — slider-led 1/4 runs only cost when ridden deep; thresholds halved it
+
+`tools/analysis/riding.py` (traced replays 10-11..25): tapped slider-led odd runs show no penalty vs circle-led; deep-latch ones went from 30.5% vs 13.8% non-Great to 22.1% vs 13.4% after the 2026-10-20 threshold raise. Entry timing: press 1->2 ~10% short, 2->3 fixed by the change, 3->4 now ~7% long.
+
+Per-threshold tuning (actuation_mm for 1->2, bottom_out_mm for 3->4) could be simulated from the raw key traces.
