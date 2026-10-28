@@ -14,7 +14,13 @@ objects around it, judged against the beatmap, never against the player:
                 never rides them (tried as a ridden triple plus a tap; it does not work for
                 them), so an arm there is a misfire however fine the snap. Example:
                 NO GIRL NO CRY [DON'T CRY!] objects 595-622, six of them on 1/3.
-  rideable      a gap of <= 1/3 beat (+TOL) among the objects from the one before the arm to
+                Exception: the Xevel [Extreme] 452-455 line, which the player rides on
+                purpose as a triple plus a tap, so its arms land here but are meant.
+  doublet       the same for runs of exactly two circles on a fine snap: the player taps
+                these (or tries to), so a plant on one is a misfire. Example: the goreshit
+                o'er the flood kiai (objects 828-1074), where triples and longer are ridden
+                every time and the 1/4 doublets are planted in about half the runs.
+  rideable     a gap of <= 1/3 beat (+TOL) among the objects from the one before the arm to
                 RIDE_AHEAD objects after it. Meant, or at least plausibly meant.
   spinner       inside a spinner (+-SPIN_PAD). Holding both keys through a spinner is normal.
   slider hold   inside a slider's span with nothing rideable nearby: the held key is already
@@ -26,6 +32,12 @@ objects around it, judged against the beatmap, never against the player:
                 "unintended, close" may hold deliberate rides of close 1/2 patterns.
   break         more than GAP ms from any object (breaks, after the last object), or before
                 the first object: keys held through the lead-in.
+
+An arm is placed at its plant, the report where both keys reached the backplate, not where
+the latch armed: with latch_debounce_ms the arm waits for the next report still on the
+backplate, which on a silent keyboard is the first lift, ~70 ms later at any debounce, and
+judged there it slips past the objects it was planted for. The plant comes from the floor
+crossings at the trace's recorded backplate; an arm with no plant there keeps its own time.
 
 The confident cell's rate is per 1000 jump objects (JUMP+ radii, nothing on a fine snap around
 them), because how many arms a session can misfire depends on how jump-heavy its maps were.
@@ -47,6 +59,7 @@ import io
 import json
 import math
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -93,6 +106,19 @@ def object_times(path):
     return out
 
 
+def plants(crossings):
+    """(start, end) monotonic ms of every stretch with both keys on the backplate."""
+    on, out, start = {"k1": False, "k2": False}, [], None
+    for t, key, edge in crossings:
+        on[key] = edge == "land"
+        if on["k1"] and on["k2"]:
+            start = t
+        elif start is not None:
+            out.append((start, t))
+            start = None
+    return out
+
+
 def main():
     out_path = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else "build/arms.txt"
     traced = sessions()
@@ -114,7 +140,8 @@ def main():
     exposure = collections.defaultdict(lambda: [0.0, 0, 0])  # (group key) -> [hours, objects, jump objects]
     examples, dump = [], []
     tempo = collections.Counter()   # unintended arms by the tightest head-to-head gap around them, 25 ms bins
-    for name, (to_mono, spans, _) in traced.items():
+    planted = {}                    # id(crossings) -> plant stretches, one trace's worth
+    for name, (to_mono, spans, crossings) in traced.items():
         if name not in corpus or not objects.get(name):
             continue
         path = corpus[name]["BeatmapPath"]
@@ -139,8 +166,8 @@ def main():
         # gap after object i, in beats, from its end (a slider's tail) to the next head
         gaps = [(o[i + 1][0] - (o[i][0] + (o[i][2] + LENIENCY if o[i][1] == "slider" else 0))) / beat(o[i][0])
                 for i in range(len(o) - 1)]
-        # Straight fours: maximal runs on one fine snap, exactly four taps long.
-        straight = set()
+        # Straight fours and doublets: maximal runs on one fine snap, four or two taps long.
+        straight, doublet = set(), set()
         i = 0
         while i < len(gaps):
             if not 0 < gaps[i] <= FINE:
@@ -156,9 +183,11 @@ def main():
                     and all(o[x][3] >= LINE for x in run[1:])
                     and all(o[x][5] is not None and o[x][5] >= STRAIGHT for x in run[2:4])):
                 straight.update(run)
+            elif len(run) == 2 and all(o[x][1] == "circle" for x in run):
+                doublet.update(run)
             i = j + 1
         lo, hi = heads[0] - GAP, ends[-1] + GAP
-        day = name.rsplit("(", 1)[1][:10]
+        day = re.findall(r"\((\d{4}-\d\d-\d\d)_", name)[-1]
         keys = (("period", period_of.get(name, "unknown")), ("day", day))
         # Exposure for the confident cell: objects that are themselves a JUMP+ radii jump with
         # nothing on a fine snap around them, i.e. where an arm would land in that cell.
@@ -169,7 +198,14 @@ def main():
             exposure[key][1] += len(o)
             exposure[key][2] += jumps
 
+        if id(crossings) not in planted:
+            planted[id(crossings)] = plants(crossings)
+        stretches = planted[id(crossings)]
+        starts_p = [a for a, _ in stretches]
         for on, _ in spans:
+            k = bisect.bisect_right(starts_p, on + 1) - 1
+            if k >= 0 and stretches[k][1] >= on - 1:
+                on = stretches[k][0]
             if not lo <= on <= hi:
                 continue
             q = bisect.bisect_left(heads, on - 30.0)      # the object the arm leads into
@@ -182,6 +218,8 @@ def main():
             elif (fine := [i for i in window if 0 < gaps[i] <= FINE]) and all(
                     i in straight and i + 1 in straight for i in fine):
                 cell = "straight four"      # the only thing near it to ride is a line never ridden
+            elif fine and all(i in doublet and i + 1 in doublet for i in fine):
+                cell = "doublet"            # the same for two taps
             elif fine:
                 cell = "rideable"
             elif q > 0 and heads[q - 1] <= on <= ends[q - 1] and o[q - 1][1] == "slider":
@@ -199,7 +237,8 @@ def main():
             dump.append({"replay": name, "cell": cell, "object": index_of.get(led[0]),
                          "map_ms": round(led[0] + (on - heads[min(q, len(o) - 1)]))})
 
-    cells = ("rideable", "spinner", "slider hold", "unintended, close", "unintended, jump", "straight four", "break")
+    cells = ("rideable", "spinner", "slider hold", "unintended, close", "unintended, jump", "straight four", "doublet",
+             "break")
     buf = io.StringIO()
     p = lambda *a: print(*a, file=buf)
     for group in ("period", "day"):

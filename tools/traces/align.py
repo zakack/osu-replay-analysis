@@ -93,12 +93,18 @@ def cursor_at(us):
 idx = json.load(open("build/score-index.json"))
 idx = idx if isinstance(idx, list) else idx.get("entries", list(idx.values()))
 lo, hi = t0 / 1e6 + t0_real, presses[-1] / 1e6 + t0_real + 120
+# Two runs saved in the same minute share a Filename. The exporter (ScoreIndex.Export) numbers
+# them in date order, case-insensitively, as "<name> (2).osr" and on; name them the same way,
+# or both runs are looked up under the first one's file and the second goes untraced.
+seen = collections.Counter()
 mine = []
-for x in idx:
-    if x["User"] != "zaksynack": continue
+for x in sorted(idx, key=lambda x: x["Date"]):
+    if x["User"] != "zaksynack" or x.get("Ruleset", "osu") != "osu": continue
+    seen[x["Filename"].casefold()] += 1
+    n = seen[x["Filename"].casefold()]
     end = datetime.fromisoformat(x["Date"].replace("Z", "+00:00")[:26] + "+00:00" if x["Date"].endswith("Z") else x["Date"]).timestamp()
     if lo <= end <= hi:
-        mine.append((end, x["Filename"] + ".osr", x["Beatmap"], x["Rank"]))
+        mine.append((end, x["Filename"] + (f" ({n})" if n > 1 else "") + ".osr", x["Beatmap"], x["Rank"]))
 mine.sort()
 want = {m[1] for m in mine}
 rpress = collections.defaultdict(list)

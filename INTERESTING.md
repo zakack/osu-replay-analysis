@@ -1225,3 +1225,9 @@ Player calls such maps "attention poison": long, repetitive bursts. Could be a s
 `tools/analysis/riding.py` (traced replays 10-11..25): tapped slider-led odd runs show no penalty vs circle-led; deep-latch ones went from 30.5% vs 13.8% non-Great to 22.1% vs 13.4% after the 2026-10-20 threshold raise. Entry timing: press 1->2 ~10% short, 2->3 fixed by the change, 3->4 now ~7% long.
 
 Per-threshold tuning (actuation_mm for 1->2, bottom_out_mm for 3->4) could be simulated from the raw key traces.
+
+## 2026-10-28 — latch debounce waits for the next HID report, not for the timer
+
+`build/traces/2026-10-28T01-26-15.csv.zst` around us 671465-748475: both keys at 4.0000, no rows for 77 ms, arm on the first lift row
+
+Arm delay is ~70 ms median at debounce 10, 20, 32, 40 or 60 ms alike; what it actually filters is whether the first report after the plant is still inside the backplate band.
